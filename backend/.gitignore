@@ -1,0 +1,16 @@
+node_modules/
+.env
+logs/
+*.log
+.DS_Store
+dist/
+coverage/
+.nyc_output/
+.vscode/
+# Project files
+backend.rar
+*.txt
+
+# Logs
+logs/
+src/logs/

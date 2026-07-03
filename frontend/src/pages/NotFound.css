@@ -1,0 +1,209 @@
+/* ============================================
+   NotFound 404 — Catppuccin Mocha + Glassmorphism
+   ============================================ */
+
+/* Fuente declarada globalmente en index.html */
+
+.not-found {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 80px;
+  background:
+    radial-gradient(circle at top, #313244 0%, #1e1e2e 45%, #11111b 100%);
+  background-image:
+    radial-gradient(#cba6f720 1px, transparent 1px),
+    radial-gradient(circle at top, #313244 0%, #1e1e2e 45%, #11111b 100%);
+  background-size: 40px 40px, 100%;
+  font-family: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
+  color: var(--text, #cdd6f4);
+  position: relative;
+}
+
+/* Header */
+.not-found__header {
+  position: absolute;
+  top: 32px;
+  left: 80px;
+  right: 80px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.not-found__logo {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text, #cdd6f4);
+  letter-spacing: -0.3px;
+}
+
+.not-found__home-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(49, 50, 68, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: 12px 22px;
+  color: var(--text, #cdd6f4);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.not-found__home-btn:hover {
+  background: rgba(69, 71, 90, 0.7);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* Grid dos columnas */
+.not-found__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 80px;
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Columna de texto */
+.not-found__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.not-found__title {
+  font-size: 7rem;
+  font-weight: 900;
+  line-height: 1;
+  margin: 0;
+  background: linear-gradient(135deg, #f5c2e7, #cba6f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.not-found__subtitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text, #cdd6f4);
+}
+
+.not-found__text {
+  font-size: 18px;
+  line-height: 1.8;
+  color: var(--subtext, #bac2de);
+  margin: 0;
+  max-width: 400px;
+}
+
+/* Acciones */
+.not-found__actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.not-found__btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 28px;
+  border-radius: 18px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.not-found__btn--primary {
+  background: linear-gradient(135deg, #f5c2e7, #cba6f7);
+  color: #111;
+}
+
+.not-found__btn--primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 15px 35px rgba(203, 166, 247, 0.25);
+}
+
+.not-found__btn--secondary {
+  background: transparent;
+  border: 1px solid #45475a;
+  color: var(--text, #cdd6f4);
+}
+
+.not-found__btn--secondary:hover {
+  background: rgba(69, 71, 90, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Ilustración */
+.not-found__illustration {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.not-found__image {
+  max-width: 480px;
+  width: 100%;
+  height: auto;
+  animation: float 5s ease-in-out infinite;
+  filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.3));
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .not-found {
+    padding: 40px 24px;
+  }
+
+  .not-found__header {
+    left: 24px;
+    right: 24px;
+    top: 20px;
+  }
+
+  .not-found__grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    text-align: center;
+  }
+
+  .not-found__title {
+    font-size: 5rem;
+  }
+
+  .not-found__text {
+    max-width: 100%;
+  }
+
+  .not-found__actions {
+    justify-content: center;
+  }
+
+  .not-found__illustration {
+    order: -1;
+  }
+
+  .not-found__image {
+    max-width: 320px;
+  }
+}
