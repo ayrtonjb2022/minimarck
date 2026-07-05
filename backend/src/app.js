@@ -17,9 +17,12 @@ app.use(helmet());
 
 // CORS
 const corsRaw = process.env.CORS_ORIGIN;
+
+// Si CORS_ORIGIN=* o no está definido → permitir cualquier origen (dev)
+// Si tiene una lista → permitir solo esos orígenes (producción)
 const corsOrigin = corsRaw && corsRaw !== "*"
   ? corsRaw.split(",").map((s) => s.trim())
-  : ["http://localhost:5173"];
+  : true; // true = refleja cualquier origin (compatible con credentials:true)
 
 app.use(cors({
   origin: corsOrigin,
