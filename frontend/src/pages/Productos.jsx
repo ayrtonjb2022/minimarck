@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
 import Modal from "../components/common/Modal";
+import ScannerModal from "../components/common/ScannerModal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import ProductForm from "../components/forms/ProductForm";
 import { toast } from "react-toastify";
@@ -18,6 +19,11 @@ const Productos = () => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [stockModalProduct, setStockModalProduct] = useState(null);
+  const [stockCantidad, setStockCantidad] = useState("");
+  const [barcodePrefill, setBarcodePrefill] = useState(null);
 
   useEffect(() => {
     fetchProductos();
@@ -73,6 +79,46 @@ const Productos = () => {
     setConfirmOpen(false);
   };
 
+  const handleScan = async (codigo) => {
+    setScannerOpen(false);
+    try {
+      const response = await productosAPI.buscarPorCodigo(codigo);
+      // Producto encontrado → abrir modal para agregar stock
+      const producto = response.data.data;
+      setStockModalProduct(producto);
+      setStockCantidad("");
+      setStockModalOpen(true);
+    } catch (error) {
+      if (error.response?.status === 404) {
+        // Producto no encontrado → precargar código en creación
+        setBarcodePrefill(codigo);
+        setSelectedProduct(null);
+        setModalOpen(true);
+      } else {
+        toast.error("Error al buscar producto: " + (error.response?.data?.message || error.message));
+      }
+    }
+  };
+
+  const handleConfirmStock = async () => {
+    if (!stockModalProduct || !stockCantidad || parseInt(stockCantidad) <= 0) {
+      toast.warning("Ingresá una cantidad válida");
+      return;
+    }
+    try {
+      const nuevaCantidad = parseInt(stockCantidad);
+      await productosAPI.actualizar(stockModalProduct.id, {
+        stock: stockModalProduct.stock + nuevaCantidad,
+      });
+      toast.success(`Stock actualizado: +${nuevaCantidad} ${stockModalProduct.unidadMedida || "unidad(es)"}`);
+      setStockModalOpen(false);
+      setStockModalProduct(null);
+      fetchProductos();
+    } catch (error) {
+      toast.error("Error al actualizar stock: " + (error.response?.data?.message || error.message));
+    }
+  };
+
   const handleSave = async (formData) => {
     try {
       if (selectedProduct) {
@@ -83,6 +129,7 @@ const Productos = () => {
         toast.success("Producto creado exitosamente");
       }
       setModalOpen(false);
+      setBarcodePrefill(null);
       fetchProductos();
     } catch (error) {
       toast.error(error.response?.data?.message || "Error al guardar producto");
@@ -121,6 +168,15 @@ const Productos = () => {
                 </option>
               ))}
             </select>
+            <button
+              onClick={() => setScannerOpen(true)}
+              className="btn-secondary"
+              style={{ padding: "8px 14px" }}
+              title="Escanear código de barras"
+            >
+              <i className="fa-solid fa-camera"></i>
+              {" "}Escanear
+            </button>
             <button onClick={handleCreate} className="btn-primary">
               <i className="fa-solid fa-plus"></i>
               Nuevo Producto
@@ -196,9 +252,18 @@ const Productos = () => {
         )}
       </div>
 
+      <ScannerModal
+        isOpen={scannerOpen}
+        onScan={handleScan}
+        onClose={() => setScannerOpen(false)}
+      />
+
       <Modal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setBarcodePrefill(null);
+        }}
         title={selectedProduct ? "Editar Producto" : "Nuevo Producto"}
         size="lg"
       >
@@ -206,8 +271,78 @@ const Productos = () => {
           product={selectedProduct}
           categorias={categorias}
           onSave={handleSave}
-          onCancel={() => setModalOpen(false)}
+          onCancel={() => {
+            setModalOpen(false);
+            setBarcodePrefill(null);
+          }}
+          codigoPrefill={!selectedProduct ? barcodePrefill : null}
         />
+      </Modal>
+
+      {/* Modal para agregar stock desde escaneo */}
+      <Modal
+        isOpen={stockModalOpen}
+        onClose={() => {
+          setStockModalOpen(false);
+          setStockModalProduct(null);
+        }}
+        title="Agregar Stock"
+        size="sm"
+      >
+        {stockModalProduct && (
+          <div>
+            <p style={{ color: "#d4d4c8", marginBottom: 16, fontSize: 14 }}>
+              Producto: <strong>{stockModalProduct.nombre}</strong>
+              <br />
+              Stock actual:{" "}
+              <strong>
+                {stockModalProduct.stock}{" "}
+                {stockModalProduct.unidadMedida !== "unidad"
+                  ? stockModalProduct.unidadMedida
+                  : ""}
+              </strong>
+            </p>
+            <div className="form-group">
+              <label>Cantidad a agregar</label>
+              <input
+                type="number"
+                value={stockCantidad}
+                onChange={(e) => setStockCantidad(e.target.value)}
+                min="1"
+                autoFocus
+                placeholder="Ej: 10"
+              />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 12,
+                marginTop: 20,
+                paddingTop: 16,
+                borderTop: "1px solid #363432",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setStockModalOpen(false);
+                  setStockModalProduct(null);
+                }}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmStock}
+                className="btn-primary"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog

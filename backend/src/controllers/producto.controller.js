@@ -256,7 +256,29 @@ const update = async (req, res) => {
 };
 
 /**
- * ✅ CORREGIDO: Eliminar producto (soft delete)
+ * Buscar producto por código de barras
+ * GET /api/productos/codigo/:codigo
+ */
+const getByCode = async (req, res) => {
+  try {
+    const producto = await Producto.findOne({
+      where: {
+        codigo: req.params.codigo,
+        ...req.filterCondition,
+        activo: true,
+      },
+      include: [{ model: Categoria, as: "categoria", attributes: ["id", "nombre"] }],
+    });
+    if (!producto) return error(res, "Producto no encontrado", 404);
+    return success(res, producto, "Producto encontrado");
+  } catch (err) {
+    console.error("Error en getByCode producto:", err);
+    return error(res, "Error al buscar producto: " + err.message, 500);
+  }
+};
+
+/**
+ * Eliminar producto (soft delete)
  * DELETE /api/productos/:id
  */
 const remove = async (req, res) => {
@@ -298,6 +320,7 @@ const remove = async (req, res) => {
 module.exports = {
   getAll,
   getById,
+  getByCode,
   create,
   update,
   remove,

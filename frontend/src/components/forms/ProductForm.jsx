@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 
 const PRICE_MODE = { PRECIO: "precio", MARGEN: "margen" };
 
-const ProductForm = ({ product, categorias, onSave, onCancel }) => {
+const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) => {
   const [formData, setFormData] = useState({
     nombre: "",
     descripcion: "",
@@ -39,8 +39,10 @@ const ProductForm = ({ product, categorias, onSave, onCancel }) => {
         unidadMedida: product.unidadMedida || "unidad",
       });
       if (product.margen) setPriceMode(PRICE_MODE.MARGEN);
+    } else if (codigoPrefill) {
+      setFormData((prev) => ({ ...prev, codigo: codigoPrefill }));
     }
-  }, [product]);
+  }, [product, codigoPrefill]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;

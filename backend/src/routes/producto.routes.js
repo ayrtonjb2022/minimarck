@@ -4,6 +4,7 @@ const { businessScope } = require("../middlewares/businessScope");
 const {
   getAll,
   getById,
+  getByCode,
   create,
   update,
   remove,
@@ -17,6 +18,9 @@ router.use(businessScope);
 
 // Listar productos (scope por negocio)
 router.get("/", getAll);
+
+// Buscar por código de barras (va antes de /:id para que no compita)
+router.get("/codigo/:codigo", getByCode);
 
 // Obtener producto por ID
 router.get("/:id", getById);
