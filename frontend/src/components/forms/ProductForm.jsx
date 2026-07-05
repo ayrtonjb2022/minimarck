@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import ScannerModal from "../common/ScannerModal";
 
 const PRICE_MODE = { PRECIO: "precio", MARGEN: "margen" };
 
@@ -20,6 +21,7 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
   });
   const [priceMode, setPriceMode] = useState(PRICE_MODE.PRECIO);
   const [errors, setErrors] = useState({});
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -107,7 +109,12 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
         </div>
         <div className="form-group">
           <label>Código</label>
-          <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} style={{ flex: 1 }} />
+            <button type="button" onClick={() => setScannerOpen(true)} className="btn-secondary" title="Escanear código de barras" style={{ padding: "6px 12px" }}>
+              <i className="fa-solid fa-camera"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -207,6 +214,15 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
         <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
         <button type="submit" className="btn-primary">{product ? "Actualizar" : "Crear"}</button>
       </div>
+
+      <ScannerModal
+        isOpen={scannerOpen}
+        onScan={(codigo) => {
+          setFormData({ ...formData, codigo });
+          setScannerOpen(false);
+        }}
+        onClose={() => setScannerOpen(false)}
+      />
     </form>
   );
 };
