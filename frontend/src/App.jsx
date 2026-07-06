@@ -24,6 +24,7 @@ import Compras from "./pages/Compras";
 import Reportes from "./pages/Reportes";
 import Configuracion from "./pages/Configuracion";
 import NotFound from "./pages/NotFound";
+import ScannerSync from "./pages/ScannerSync";
 
 const PAGE_ROUTES = {
   dashboard: "/dashboard", pos: "/pos", productos: "/productos",
@@ -119,6 +120,7 @@ const App = () => {
         <Route path="/configuracion" element={<AppLayout><Configuracion /></AppLayout>} />
         <Route path="/pos" element={<FullLayout><CajaGuard><PuntoDeVenta /></CajaGuard></FullLayout>} />
       </Route>
+      <Route path="/scanner/:roomId" element={<ScannerSync />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
     </NotificacionProvider>

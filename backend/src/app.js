@@ -1,9 +1,11 @@
 require("dotenv").config();
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
+const { Server } = require("socket.io");
 const sequelize = require("./config/database");
 const errorHandler = require("./middlewares/errorHandler");
 
@@ -28,6 +30,14 @@ app.use(cors({
   origin: corsOrigin,
   credentials: true,
 }));
+
+// Crear servidor HTTP para socket.io
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: corsOrigin, credentials: true },
+});
+const setupSocket = require("./socket");
+setupSocket(io);
 
 // Rate limiting (configurable via env, default 2000/15min)
 const limiter = rateLimit({
@@ -133,7 +143,7 @@ const startServer = async () => {
       console.log(`📊 Total de usuarios: ${userCount}`);
     }
 
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
       console.log(`📝 Ambiente: ${process.env.NODE_ENV || "development"}`);
       console.log(`🔄 DB_FORCE_SYNC: ${process.env.DB_FORCE_SYNC || "false"}`);

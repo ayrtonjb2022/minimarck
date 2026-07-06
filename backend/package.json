@@ -1,35 +1,34 @@
 {
-    "name":  "backend",
-    "version":  "1.0.0",
-    "description":  "Sistema de Gestión de Negocios - Backend",
-    "main":  "src/app.js",
-    "scripts":  {
-                    "start":  "node src/app.js",
-                    "dev":  "nodemon src/app.js",
-                    "db:sync":  "node src/scripts/syncDb.js",
-                    "db:seed":  "node src/scripts/seedDb.js"
-                },
-    "keywords":  [
-
-                 ],
-    "author":  "",
-    "license":  "ISC",
-    "dependencies":  {
-                         "bcryptjs":  "^3.0.3",
-                         "cors":  "^2.8.6",
-                         "dotenv":  "^17.4.2",
-                         "express":  "^5.2.1",
-                         "express-rate-limit":  "^8.5.2",
-                         "express-validator":  "^7.3.2",
-                         "helmet":  "^8.2.0",
-                         "jsonwebtoken":  "^9.0.3",
-                         "morgan":  "^1.11.0",
-                         "mysql2":  "^3.22.5",
-                         "sequelize":  "^6.37.8",
-                         "winston":  "^3.17.0",
-                         "pdfkit":  "^0.15.0"
-                     },
-    "devDependencies":  {
-                            "nodemon":  "^3.1.0"
-                        }
+    "name": "backend",
+    "version": "1.0.0",
+    "description": "Sistema de Gestión de Negocios - Backend",
+    "main": "src/app.js",
+    "scripts": {
+        "start": "node src/app.js",
+        "dev": "nodemon src/app.js",
+        "db:sync": "node src/scripts/syncDb.js",
+        "db:seed": "node src/scripts/seedDb.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "bcryptjs": "^3.0.3",
+        "cors": "^2.8.6",
+        "dotenv": "^17.4.2",
+        "express": "^5.2.1",
+        "express-rate-limit": "^8.5.2",
+        "express-validator": "^7.3.2",
+        "helmet": "^8.2.0",
+        "jsonwebtoken": "^9.0.3",
+        "morgan": "^1.11.0",
+        "mysql2": "^3.22.5",
+        "pdfkit": "^0.15.0",
+        "sequelize": "^6.37.8",
+        "socket.io": "^4.8.3",
+        "winston": "^3.17.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.0"
+    }
 }

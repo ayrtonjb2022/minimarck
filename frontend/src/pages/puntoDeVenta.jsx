@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
 import { ventasAPI } from "../api/ventas";
 import { deudoresAPI } from "../api/deudores";
 import { useCaja } from "../context/CajaContext";
+import { useAuth } from "../context/AuthContext";
+import { connectSocket, disconnectSocket } from "../services/socket";
 
 const METODOS_PAGO = [
   { value: "efectivo", label: "Efectivo" },
@@ -156,6 +159,7 @@ function ModalCobro({ total, onConfirm, onClose, ticket }) {
 
 export default function PuntoDeVenta() {
   const { cajaActiva, loadingCaja } = useCaja();
+  const { user } = useAuth();
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [ticket, setTicket] = useState([]);
@@ -164,7 +168,10 @@ export default function PuntoDeVenta() {
   const [modalCobro, setModalCobro] = useState(false);
   const [toast, setToast] = useState(null);
   const [procesando, setProcesando] = useState(false);
+  const [scannerModalOpen, setScannerModalOpen] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
   const searchRef = useRef(null);
+  const agregarProductoRef = useRef(null);
 
   const showToast = useCallback((msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
   const cargarProductos = useCallback(() => {
@@ -177,6 +184,28 @@ export default function PuntoDeVenta() {
     const handler = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "f") { e.preventDefault(); searchRef.current?.focus(); } if (e.key === "Escape") setFiltro(""); };
     window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Conexión socket.io para escaneo remoto
+  useEffect(() => {
+    if (!user?.negocioId) return;
+    const socket = connectSocket(user.negocioId, "pos");
+    setSocketConnected(socket.connected);
+
+    socket.on("connect", () => setSocketConnected(true));
+    socket.on("disconnect", () => setSocketConnected(false));
+    socket.on("add-to-cart", ({ product }) => {
+      if (agregarProductoRef.current) {
+        agregarProductoRef.current(product);
+      }
+    });
+
+    return () => {
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("add-to-cart");
+      disconnectSocket();
+    };
+  }, [user?.negocioId]);
 
   const getCategoriaNombre = (catId) => {
     const cat = categorias.find((c) => c.id === catId);
@@ -207,6 +236,10 @@ export default function PuntoDeVenta() {
       return [...prev, { ...p, qty: 1, precio: parseFloat(p.precio) || 0 }];
     });
   };
+
+  // Mantener ref sincronizada con agregarProducto (después de la definición)
+  useEffect(() => { agregarProductoRef.current = agregarProducto; }, [agregarProducto]);
+
   const cambiarQty = (id, delta) => setTicket((prev) => prev.map((i) => { if (i.id !== id) return i; const newQty = i.qty + delta; if (newQty <= 0) return null; if (newQty > (i.stock ?? 0)) { showToast("Stock insuficiente", "warn"); return i; } return { ...i, qty: newQty }; }).filter(Boolean));
   const quitarItem = (id) => setTicket((prev) => prev.filter((i) => i.id !== id));
 
@@ -238,12 +271,59 @@ export default function PuntoDeVenta() {
 
       {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} />}
 
+      {scannerModalOpen && (
+        <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}} onClick={() => setScannerModalOpen(false)}>
+          <div className="card" style={{width:"100%",maxWidth:"400px"}} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header">
+              <div>
+                <h3 style={{margin:0,fontSize:"18px"}}>📱 Escanear desde celular</h3>
+                <span className="tag" style={{marginTop:"4px",display:"inline-block"}}>Conectá el escáner remoto</span>
+              </div>
+              <button onClick={() => setScannerModalOpen(false)} className="btn-secondary" style={{padding:"6px 10px"}}><i className="fa-solid fa-times"></i></button>
+            </div>
+            <div style={{padding:"24px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:"16px"}}>
+              <div style={{background:"#fff",padding:"16px",borderRadius:"12px",display:"inline-flex"}}>
+                {user?.negocioId ? (
+                  <QRCodeSVG value={`${window.location.origin}/scanner/${user.negocioId}`} size={180} />
+                ) : (
+                  <div style={{width:180,height:180,display:"flex",alignItems:"center",justifyContent:"center",color:"#94a3b8",fontSize:"14px"}}>Sin negocio asignado</div>
+                )}
+              </div>
+              <div>
+                <p style={{fontSize:"14px",fontWeight:600,color:"var(--kanagawa-fg)",margin:"0 0 4px"}}>Escané este QR con tu celular</p>
+                <p style={{fontSize:"12px",color:"var(--kanagawa-comment)",margin:0}}>para conectar el escáner remoto al POS</p>
+              </div>
+              <div style={{background:"var(--kanagawa-bg)",border:"1px solid var(--kanagawa-border)",borderRadius:"8px",padding:"12px",fontSize:"12px",color:"var(--kanagawa-fg-muted)",textAlign:"left",width:"100%"}}>
+                <p style={{margin:"0 0 6px",fontWeight:600}}>Instrucciones:</p>
+                <ol style={{margin:0,paddingLeft:"16px",display:"flex",flexDirection:"column",gap:"4px"}}>
+                  <li>Abrí la cámara de tu celular y escaneá el código QR</li>
+                  <li>Iniciá sesión si es necesario</li>
+                  <li>Escané los códigos de barras de los productos</li>
+                  <li>Se agregarán automáticamente al carrito del POS</li>
+                </ol>
+              </div>
+              <p style={{fontSize:"11px",color:"var(--kanawa-comment)",margin:0,wordBreak:"break-all"}}>
+                URL directa: {window.location.origin}/scanner/{user?.negocioId || "?"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="pos-left">
         <div className="pos-search-bar">
-          <div style={{position:"relative",marginBottom:"8px"}}>
-            <i className="fa-solid fa-search" style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"var(--kanagawa-comment)"}}></i>
-            <input ref={searchRef} type="text" value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Buscar producto... (Ctrl+F)" className="pos-search-input" />
-            {filtro && <button onClick={() => setFiltro("")} style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",color:"var(--kanagawa-comment)"}}><i className="fa-solid fa-times"></i></button>}
+          <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"8px"}}>
+            <div style={{position:"relative",flex:1}}>
+              <i className="fa-solid fa-search" style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"var(--kanagawa-comment)"}}></i>
+              <input ref={searchRef} type="text" value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Buscar producto... (Ctrl+F)" className="pos-search-input" />
+              {filtro && <button onClick={() => setFiltro("")} style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",color:"var(--kanagawa-comment)"}}><i className="fa-solid fa-times"></i></button>}
+            </div>
+            <button onClick={() => setScannerModalOpen(true)} className="btn-secondary" style={{whiteSpace:"nowrap",padding:"8px 12px",fontSize:"12px",display:"flex",alignItems:"center",gap:"6px"}} title="Escanear desde celular">
+              <span style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:socketConnected?"#22c55e":"#ef4444",display:"inline-block"}}></span>
+                📱 Escanear
+              </span>
+            </button>
           </div>
           <div className="pos-categories">
             <button onClick={() => setCategoriaActiva("Todas")}
