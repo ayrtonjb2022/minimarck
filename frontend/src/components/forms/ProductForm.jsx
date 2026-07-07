@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import ScannerModal from "../common/ScannerModal";
+import { useSubmitGuard } from "../../hooks/useSubmitGuard";
 
 const PRICE_MODE = { PRECIO: "precio", MARGEN: "margen" };
 
 const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) => {
+  const { isSubmitting, withGuard } = useSubmitGuard();
   const [formData, setFormData] = useState({
     nombre: "",
     descripcion: "",
@@ -71,28 +73,31 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!validate()) return;
-    const precioCompra = parseFloat(formData.precioCompra) || 0;
-    let precioFinal = priceMode === PRICE_MODE.PRECIO ? parseFloat(formData.precio) || 0 : 0;
-    if (priceMode === PRICE_MODE.MARGEN && precioCompra > 0) {
-      precioFinal = precioCompra * (1 + (parseFloat(formData.margen) || 0) / 100);
-    }
-    const submitData = {
-      nombre: formData.nombre,
-      descripcion: formData.descripcion,
-      codigo: formData.codigo,
-      categoriaId: formData.categoriaId ? parseInt(formData.categoriaId) : null,
-      precioCompra,
-      precio: precioFinal,
-      margen: formData.margen ? parseFloat(formData.margen) : null,
-      stock: parseInt(formData.stock) || 0,
-      stockMinimo: parseInt(formData.stockMinimo) || 0,
-      tieneIva: formData.tieneIva,
-      ivaPorcentaje: formData.tieneIva && formData.ivaPorcentaje ? parseFloat(formData.ivaPorcentaje) : null,
-      imagen: formData.imagen || null,
-      unidadMedida: formData.unidadMedida,
-    };
-    onSave(submitData);
+    if (isSubmitting) return;
+    withGuard(async () => {
+      if (!validate()) return;
+      const precioCompra = parseFloat(formData.precioCompra) || 0;
+      let precioFinal = priceMode === PRICE_MODE.PRECIO ? parseFloat(formData.precio) || 0 : 0;
+      if (priceMode === PRICE_MODE.MARGEN && precioCompra > 0) {
+        precioFinal = precioCompra * (1 + (parseFloat(formData.margen) || 0) / 100);
+      }
+      const submitData = {
+        nombre: formData.nombre,
+        descripcion: formData.descripcion,
+        codigo: formData.codigo,
+        categoriaId: formData.categoriaId ? parseInt(formData.categoriaId) : null,
+        precioCompra,
+        precio: precioFinal,
+        margen: formData.margen ? parseFloat(formData.margen) : null,
+        stock: parseInt(formData.stock) || 0,
+        stockMinimo: parseInt(formData.stockMinimo) || 0,
+        tieneIva: formData.tieneIva,
+        ivaPorcentaje: formData.tieneIva && formData.ivaPorcentaje ? parseFloat(formData.ivaPorcentaje) : null,
+        imagen: formData.imagen || null,
+        unidadMedida: formData.unidadMedida,
+      };
+      await onSave(submitData);
+    });
   };
 
   const previewPrecio = priceMode === PRICE_MODE.MARGEN && formData.precioCompra && formData.margen
@@ -212,7 +217,7 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 20, paddingTop: 16, borderTop: "1px solid #363432" }}>
         <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
-        <button type="submit" className="btn-primary">{product ? "Actualizar" : "Crear"}</button>
+        <button type="submit" className="btn-primary" disabled={isSubmitting}>{isSubmitting ? "Guardando..." : (product ? "Actualizar" : "Crear")}</button>
       </div>
 
       <ScannerModal

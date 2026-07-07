@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
 import Modal from "../components/common/Modal";
@@ -9,10 +10,9 @@ import { toast } from "react-toastify";
 import { formatCurrency } from "../utils/formatters";
 
 const Productos = () => {
-  const [productos, setProductos] = useState([]);
+  const queryClient = useQueryClient();
   const [categorias, setCategorias] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [pagination, setPagination] = useState({});
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
@@ -25,33 +25,67 @@ const Productos = () => {
   const [stockCantidad, setStockCantidad] = useState("");
   const [barcodePrefill, setBarcodePrefill] = useState(null);
 
+  // React Query — productos cacheados
+  const { data: productosData, isLoading } = useQuery({
+    queryKey: ["productos", search, filters, page],
+    queryFn: () =>
+      productosAPI
+        .listar({ page, limit: 20, search, ...filters })
+        .then((r) => r.data),
+    staleTime: 30000,
+  });
+
+  const productos = productosData?.data || [];
+  const pagination = productosData?.pagination || {};
+
+  // Resetear página al cambiar búsqueda o filtros
   useEffect(() => {
-    fetchProductos();
-    fetchCategorias();
+    setPage(1);
   }, [search, filters]);
 
-  const fetchProductos = async (page = 1) => {
-    try {
-      setLoading(true);
-      const params = { page, limit: 20, search, ...filters };
-      const response = await productosAPI.listar(params);
-      setProductos(response.data.data);
-      setPagination(response.data.pagination);
-    } catch (error) {
-      toast.error("Error al cargar productos");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Categorías (se cargan una vez)
+  useEffect(() => {
+    categoriasAPI
+      .listar()
+      .then((r) => setCategorias(r.data?.data || []))
+      .catch(() => {});
+  }, []);
 
-  const fetchCategorias = async () => {
-    try {
-      const response = await categoriasAPI.listar();
-      setCategorias(response.data?.data || []);
-    } catch (error) {
-      console.error("Error al cargar categorías:", error);
-    }
-  };
+  // Mutation — crear / actualizar producto
+  const saveMutation = useMutation({
+    mutationFn: (formData) => {
+      if (selectedProduct) {
+        return productosAPI.actualizar(selectedProduct.id, formData);
+      }
+      return productosAPI.crear(formData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["productos"] });
+      toast.success(
+        selectedProduct
+          ? "Producto actualizado exitosamente"
+          : "Producto creado exitosamente"
+      );
+      setModalOpen(false);
+      setBarcodePrefill(null);
+    },
+    onError: (error) => {
+      toast.error(
+        error.response?.data?.message || "Error al guardar producto"
+      );
+    },
+  });
+
+  // Mutation — eliminar producto
+  const deleteMutation = useMutation({
+    mutationFn: () => productosAPI.eliminar(productToDelete.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["productos"] });
+      toast.success("Producto eliminado exitosamente");
+      setConfirmOpen(false);
+    },
+    onError: () => toast.error("Error al eliminar producto"),
+  });
 
   const handleCreate = () => {
     setSelectedProduct(null);
@@ -69,14 +103,7 @@ const Productos = () => {
   };
 
   const confirmDelete = async () => {
-    try {
-      await productosAPI.eliminar(productToDelete.id);
-      toast.success("Producto eliminado exitosamente");
-      fetchProductos();
-    } catch (error) {
-      toast.error("Error al eliminar producto");
-    }
-    setConfirmOpen(false);
+    await deleteMutation.mutateAsync();
   };
 
   const handleScan = async (codigo) => {
@@ -113,27 +140,14 @@ const Productos = () => {
       toast.success(`Stock actualizado: +${nuevaCantidad} ${stockModalProduct.unidadMedida || "unidad(es)"}`);
       setStockModalOpen(false);
       setStockModalProduct(null);
-      fetchProductos();
+      queryClient.invalidateQueries({ queryKey: ["productos"] });
     } catch (error) {
       toast.error("Error al actualizar stock: " + (error.response?.data?.message || error.message));
     }
   };
 
   const handleSave = async (formData) => {
-    try {
-      if (selectedProduct) {
-        await productosAPI.actualizar(selectedProduct.id, formData);
-        toast.success("Producto actualizado exitosamente");
-      } else {
-        await productosAPI.crear(formData);
-        toast.success("Producto creado exitosamente");
-      }
-      setModalOpen(false);
-      setBarcodePrefill(null);
-      fetchProductos();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Error al guardar producto");
-    }
+    await saveMutation.mutateAsync(formData);
   };
 
   const getCategoriaNombre = (catId) => {
@@ -238,14 +252,14 @@ const Productos = () => {
         </table>
         {pagination && pagination.totalPages > 1 && (
           <div style={{ padding: "12px 22px", borderTop: "1px solid #e9edf2", display: "flex", justifyContent: "center", gap: "8px" }}>
-            {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((page) => (
+            {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((p) => (
               <button
-                key={page}
-                onClick={() => fetchProductos(page)}
-                className={page === pagination.page ? "btn-primary" : "btn-secondary"}
+                key={p}
+                onClick={() => setPage(p)}
+                className={p === pagination.page ? "btn-primary" : "btn-secondary"}
                 style={{ padding: "4px 12px", fontSize: "12px" }}
               >
-                {page}
+                {p}
               </button>
             ))}
           </div>

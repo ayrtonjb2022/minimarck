@@ -7,6 +7,7 @@ import { deudoresAPI } from "../api/deudores";
 import { useCaja } from "../context/CajaContext";
 import { useAuth } from "../context/AuthContext";
 import { connectSocket, disconnectSocket } from "../services/socket";
+import { useSubmitGuard } from "../hooks/useSubmitGuard";
 
 const METODOS_PAGO = [
   { value: "efectivo", label: "Efectivo" },
@@ -173,6 +174,8 @@ export default function PuntoDeVenta() {
   const searchRef = useRef(null);
   const agregarProductoRef = useRef(null);
 
+  const { isSubmitting, withGuard } = useSubmitGuard();
+
   const showToast = useCallback((msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
   const cargarProductos = useCallback(() => {
     productosAPI.listar({ limit: 500 }).then((r) => { const data = r.data?.data || []; setProductos(data.filter((p) => p.activo !== false)); })
@@ -245,22 +248,23 @@ export default function PuntoDeVenta() {
 
   const handleConfirmarVenta = async ({ metodoPago, cambio, clienteDeudorId }) => {
     if (!cajaActiva) { showToast("No hay caja abierta. Abrí una caja antes de vender.", "error"); setModalCobro(false); return; }
-    if (procesando) return;
-    setProcesando(true);
-    try {
-      const body = { items: ticket.map((i) => ({ productoId: i.id, cantidad: i.qty })), metodoPago };
-      if (clienteDeudorId) body.clienteDeudorId = clienteDeudorId;
-      const res = await ventasAPI.crear(body);
-      const advertencia = res.data?.data?.advertenciaLimite;
-      setTicket([]); setModalCobro(false);
-      const msg = metodoPago === "credito"
-        ? "Venta registrada · Cargada a la cuenta del cliente"
-        : cambio > 0 ? `Venta registrada · Cambio: $${cambio.toFixed(2)}` : "Venta registrada exitosamente";
-      showToast(msg);
-      if (advertencia) setTimeout(() => showToast(advertencia, "warn"), 500);
-      cargarProductos();
-    } catch (err) { showToast(err.response?.data?.message || "Error al registrar la venta", "error"); }
-    finally { setProcesando(false); }
+    await withGuard(async () => {
+      setProcesando(true);
+      try {
+        const body = { items: ticket.map((i) => ({ productoId: i.id, cantidad: i.qty })), metodoPago };
+        if (clienteDeudorId) body.clienteDeudorId = clienteDeudorId;
+        const res = await ventasAPI.crear(body);
+        const advertencia = res.data?.data?.advertenciaLimite;
+        setTicket([]); setModalCobro(false);
+        const msg = metodoPago === "credito"
+          ? "Venta registrada · Cargada a la cuenta del cliente"
+          : cambio > 0 ? `Venta registrada · Cambio: $${cambio.toFixed(2)}` : "Venta registrada exitosamente";
+        showToast(msg);
+        if (advertencia) setTimeout(() => showToast(advertencia, "warn"), 500);
+        cargarProductos();
+      } catch (err) { showToast(err.response?.data?.message || "Error al registrar la venta", "error"); }
+      finally { setProcesando(false); }
+    });
   };
 
   if (loadingCaja) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div className="spinner" style={{width:"32px",height:"32px",border:"3px solid #e2e8f0",borderTopColor:"#3b82f6",borderRadius:"50%",animation:"spin 0.8s linear infinite"}} /></div>;
@@ -454,9 +458,9 @@ export default function PuntoDeVenta() {
                 <i className="fa-solid fa-trash"></i> Vaciar
               </button>
             )}
-            <button onClick={() => ticket.length > 0 && setModalCobro(true)} disabled={ticket.length === 0 || procesando}
+            <button onClick={() => ticket.length > 0 && setModalCobro(true)} disabled={ticket.length === 0 || procesando || isSubmitting}
               className="btn-success" style={{gridColumn:ticket.length===0?"1/-1":""}}>
-              <i className="fa-solid fa-cash-register"></i> {procesando ? "Procesando..." : `Cobrar $${total.toFixed(2)}`}
+              <i className="fa-solid fa-cash-register"></i> {procesando || isSubmitting ? "Procesando..." : `Cobrar $${total.toFixed(2)}`}
             </button>
           </div>
         </div>
