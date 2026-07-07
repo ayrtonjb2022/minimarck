@@ -268,7 +268,7 @@ export default function PuntoDeVenta() {
         items: ticket.map((i) => ({
           productoId: i.productoId || i.id,
           cantidad: i.qty,
-          ...(i.peso ? { precioUnitario: i.precio } : {}),
+          ...(i.peso ? { precioUnitario: i.precio, nombre: i.nombre } : {}),
         })),
         metodoPago,
       };
@@ -399,6 +399,7 @@ export default function PuntoDeVenta() {
                     const stock = p.stock ?? 0;
                     const stockBajo = stock <= 5;
                     const enTicket = ticket.find((i) => i.id === p.id);
+                    const esPesable = p.unidadMedida && /^(kg|kilo|kilogramo|litro|l|lt|g|gramo|ml)$/i.test(p.unidadMedida.trim());
                     let cardClass = "pos-product-card";
                     if (enTicket) cardClass += " en-carrito";
                     else if (stockBajo) cardClass += " stock-bajo";
@@ -411,12 +412,14 @@ export default function PuntoDeVenta() {
                         <div className="name">{p.nombre}</div>
                         <div className="price">${parseFloat(p.precio||0).toFixed(2)}</div>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}}>
-                          <div className="stock" style={{color:stockBajo?"var(--kanagawa-orange)":"var(--kanagawa-green)", fontSize:"11px"}}>📦 {stock} {p.unidadMedida || "unidad"}</div>
-                          <div
-                            onClick={(e) => { e.stopPropagation(); setCalcProducto(p); }}
-                            style={{cursor:"pointer",fontSize:"13px",color:"var(--kanagawa-fg-muted)",padding:"2px 4px",borderRadius:"4px",lineHeight:1}}
-                            title="Calcular por peso"
-                          >⚖️</div>
+                          <div className="stock" style={{color:stockBajo?"var(--kanagawa-orange)":"var(--kanagawa-green)"}}>📦 {stock} {p.unidadMedida || "unidad"}</div>
+                          {esPesable && (
+                            <div
+                              onClick={(e) => { e.stopPropagation(); setCalcProducto(p); }}
+                              style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
+                              title="Calcular por peso"
+                            >⚖️</div>
+                          )}
                         </div>
                       </div>
                     );
