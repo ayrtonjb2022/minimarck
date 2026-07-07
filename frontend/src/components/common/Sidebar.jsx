@@ -17,7 +17,7 @@ const ICONS = {
   configuracion: "fa-solid fa-cog",
 };
 
-const Sidebar = ({ isOpen, onClose, currentPage, onNavigate }) => {
+const Sidebar = ({ isOpen, onClose, currentPage, onNavigate, collapsed, onToggleCollapse }) => {
   const { user, logout } = useAuth();
   const { cajaActiva } = useCaja();
 
@@ -41,7 +41,7 @@ const Sidebar = ({ isOpen, onClose, currentPage, onNavigate }) => {
   return (
     <>
       {isOpen && <div className="sidebar-overlay active" onClick={onClose} />}
-      <aside className={`sidebar ${isOpen ? "open" : ""}`}>
+      <aside className={`sidebar ${isOpen ? "open" : ""} ${collapsed ? "collapsed" : ""}`}>
         <div className="sidebar-brand">
           <i className="fa-solid fa-store"></i>
           <span>MiniMarck2</span>
@@ -66,6 +66,9 @@ const Sidebar = ({ isOpen, onClose, currentPage, onNavigate }) => {
           })}
         </ul>
 
+        <div className="sidebar-collapse-btn" onClick={onToggleCollapse} title={collapsed ? "Expandir menú" : "Colapsar menú"}>
+          <i className={`fa-solid fa-chevron-${collapsed ? "right" : "left"}`}></i>
+        </div>
         <div className="sidebar-footer">
           <div className="avatar-mini">{(user?.nombre || "U")[0]}</div>
           <div className="user-info">

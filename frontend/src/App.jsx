@@ -39,6 +39,7 @@ const App = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const currentPage = Object.keys(PAGE_ROUTES).find((k) => PAGE_ROUTES[k] === location.pathname) || "dashboard";
 
@@ -74,8 +75,15 @@ const App = () => {
 
   const AppLayout = ({ children }) => (
     <div className="app-layout">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} currentPage={currentPage} onNavigate={handleNavigate} />
-      <main className="main">
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        currentPage={currentPage}
+        onNavigate={handleNavigate}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
+      <main className={`main ${sidebarCollapsed ? "main--sidebar-collapsed" : ""}`}>
         <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
           <i className="fa-solid fa-bars"></i>
         </button>
@@ -90,8 +98,15 @@ const App = () => {
 
   const FullLayout = ({ children }) => (
     <div className="app-layout">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} currentPage={currentPage} onNavigate={handleNavigate} />
-      <main className="main main--pos">
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        currentPage={currentPage}
+        onNavigate={handleNavigate}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
+      <main className={`main main--pos ${sidebarCollapsed ? "main--sidebar-collapsed" : ""}`}>
         <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
           <i className="fa-solid fa-bars"></i>
         </button>

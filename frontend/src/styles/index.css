@@ -934,6 +934,55 @@ select.input-field { cursor: pointer; }
   .table-container .table-header .actions { flex-wrap: wrap; }
 }
 
+/* ===== DESKTOP COLLAPSE ===== */
+.sidebar.collapsed { width: 72px; padding: 24px 10px; }
+.sidebar.collapsed .sidebar-brand span,
+.sidebar.collapsed .sidebar-menu li span,
+.sidebar.collapsed .sidebar-menu .sub-label,
+.sidebar.collapsed .sidebar-footer .user-info,
+.sidebar.collapsed .sidebar-menu li .badge-count,
+.sidebar.collapsed .sidebar-menu li .lock-icon { display: none; }
+.sidebar.collapsed .sidebar-brand { justify-content: center; padding-bottom: 12px; margin-bottom: 16px; }
+.sidebar.collapsed .sidebar-brand i { font-size: 28px; }
+.sidebar.collapsed .sidebar-menu li { justify-content: center; padding: 10px; }
+.sidebar.collapsed .sidebar-menu li i { width: auto; font-size: 20px; }
+.sidebar.collapsed .sidebar-footer { justify-content: center; padding: 12px 0; }
+.sidebar.collapsed .sidebar-footer .avatar-mini { width: 32px; height: 32px; font-size: 14px; }
+
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  cursor: pointer;
+  color: var(--kanagawa-fg-muted);
+  font-size: 14px;
+  border-top: 1px solid var(--kanagawa-border);
+  margin: 8px -18px 0;
+  transition: color 0.2s;
+}
+.sidebar.collapsed .sidebar-collapse-btn {
+  margin: 8px -10px 0;
+}
+.sidebar-collapse-btn:hover {
+  color: var(--kanagawa-fg);
+}
+
+@media (max-width: 992px) {
+  .sidebar-collapse-btn { display: none; }
+  .sidebar.collapsed { width: 72px; padding: 16px 10px; }
+  .sidebar.collapsed .sidebar-brand span,
+  .sidebar.collapsed .sidebar-menu li span,
+  .sidebar.collapsed .sidebar-menu .sub-label,
+  .sidebar.collapsed .sidebar-footer .user-info,
+  .sidebar.collapsed .sidebar-menu li .badge-count,
+  .sidebar.collapsed .sidebar-menu li .lock-icon { display: none; }
+  .sidebar.collapsed .sidebar-brand { justify-content: center; padding-bottom: 12px; margin-bottom: 16px; }
+  .sidebar.collapsed .sidebar-menu li { justify-content: center; padding: 10px; }
+  .sidebar.collapsed .sidebar-menu li i { font-size: 20px; }
+  .sidebar.collapsed .sidebar-footer { justify-content: center; }
+}
+
 /* ===== MOBILE TOGGLE ===== */
 .sidebar-toggle { display: none; position: fixed; bottom: 20px; right: 20px; background: var(--kanagawa-blue); color: #181616; border: none; width: 56px; height: 56px; border-radius: 50%; font-size: 24px; cursor: pointer; box-shadow: 0 4px 16px rgba(137,180,250,0.3); z-index: 200; align-items: center; justify-content: center; }
 
