@@ -208,13 +208,18 @@ const reporteEstadoResultados = async (req, res) => {
       raw: true,
     });
 
-    // Egresos (movimientos caja manuales)
+    // Egresos (movimientos caja manuales — excluir compras que ya se contaron arriba)
     const movEgresos = await MovimientoCaja.findAll({
       attributes: [
         [Sequelize.fn("DATE", Sequelize.col("created_at")), "dia"],
         [Sequelize.fn("SUM", Sequelize.col("monto")), "total"],
       ],
-      where: { negocioId, tipo: "egreso", createdAt: dateWhere },
+      where: {
+        negocioId,
+        tipo: "egreso",
+        createdAt: dateWhere,
+        referencia: { [Op.notLike]: "compra-%" },
+      },
       group: [Sequelize.fn("DATE", Sequelize.col("created_at"))],
       order: [[Sequelize.fn("DATE", Sequelize.col("created_at")), "ASC"]],
       raw: true,
