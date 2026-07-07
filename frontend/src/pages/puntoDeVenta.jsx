@@ -9,6 +9,7 @@ import { useCaja } from "../context/CajaContext";
 import { useAuth } from "../context/AuthContext";
 import { connectSocket, disconnectSocket } from "../services/socket";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
+import CalculadoraPeso from "../components/common/CalculadoraPeso";
 
 const METODOS_PAGO = [
   { value: "efectivo", label: "Efectivo" },
@@ -187,6 +188,7 @@ export default function PuntoDeVenta() {
   const [toast, setToast] = useState(null);
   const [procesando, setProcesando] = useState(false);
   const [scannerModalOpen, setScannerModalOpen] = useState(false);
+  const [calcProducto, setCalcProducto] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const searchRef = useRef(null);
   const agregarProductoRef = useRef(null);
@@ -278,6 +280,24 @@ export default function PuntoDeVenta() {
     });
   };
 
+  const handleCalcularPeso = ({ productoId, nombre, peso, precio }) => {
+    const producto = productos.find((p) => p.id === productoId);
+    if (!producto) return;
+    const uid = `peso-${productoId}-${Date.now()}`;
+    showToast(`⚖️ ${nombre} — $${precio.toFixed(2)}`);
+    setTicket((prev) => [...prev, {
+      id: uid,
+      productoId,
+      nombre,
+      precio,
+      precioUnitario: precio,
+      qty: 1,
+      stock: 9999,
+      peso,
+    }]);
+    setCalcProducto(null);
+  };
+
   if (loadingCaja) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div className="spinner" style={{width:"32px",height:"32px",border:"3px solid #e2e8f0",borderTopColor:"#3b82f6",borderRadius:"50%",animation:"spin 0.8s linear infinite"}} /></div>;
 
   return (
@@ -285,6 +305,14 @@ export default function PuntoDeVenta() {
       {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
 
       {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
+
+      {calcProducto && (
+        <CalculadoraPeso
+          producto={calcProducto}
+          onConfirm={handleCalcularPeso}
+          onClose={() => setCalcProducto(null)}
+        />
+      )}
 
       {scannerModalOpen && (
         <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}} onClick={() => setScannerModalOpen(false)}>
@@ -375,7 +403,14 @@ export default function PuntoDeVenta() {
                         </div>
                         <div className="name">{p.nombre}</div>
                         <div className="price">${parseFloat(p.precio||0).toFixed(2)}</div>
-                        <div className="stock" style={{color:stockBajo?"var(--kanagawa-orange)":"var(--kanagawa-green)"}}>📦 {stock} {p.unidadMedida || "unidad"}</div>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}}>
+                          <div className="stock" style={{color:stockBajo?"var(--kanagawa-orange)":"var(--kanagawa-green)", fontSize:"11px"}}>📦 {stock} {p.unidadMedida || "unidad"}</div>
+                          <div
+                            onClick={(e) => { e.stopPropagation(); setCalcProducto(p); }}
+                            style={{cursor:"pointer",fontSize:"13px",color:"var(--kanagawa-fg-muted)",padding:"2px 4px",borderRadius:"4px",lineHeight:1}}
+                            title="Calcular por peso"
+                          >⚖️</div>
+                        </div>
                       </div>
                     );
                   })}
@@ -429,22 +464,30 @@ export default function PuntoDeVenta() {
                   <div className="item-info">
                     <div className="details">
                       <p className="name">{item.nombre}</p>
-                      <p className="unit">${parseFloat(item.precio).toFixed(2)} x {item.unidadMedida || "unidad"}</p>
+                      {item.peso ? (
+                        <p className="unit" style={{color:"var(--kanagawa-blue)"}}>
+                          ⚖️ {item.peso >= 1000 ? `${(item.peso/1000).toFixed(2)} kg` : `${item.peso.toFixed(0)} g`}
+                        </p>
+                      ) : (
+                        <p className="unit">${parseFloat(item.precio).toFixed(2)} x {item.unidadMedida || "unidad"}</p>
+                      )}
                     </div>
-                    <div className="qty-control">
-                      <button onClick={() => cambiarQty(item.id, -1)}><i className="fa-solid fa-minus" style={{fontSize:"10px"}}></i></button>
-                      <input type="number" min={1} max={item.stock ?? 9999}
-                        value={item.qty}
-                        onChange={(e) => {
-                          const v = parseInt(e.target.value) || 1;
-                          const stock = item.stock ?? 9999;
-                          if (v > stock) { showToast("Stock insuficiente", "warn"); return; }
-                          setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qty: Math.max(1, v) } : i));
-                        }}
-                        onBlur={(e) => { if (!e.target.value || parseInt(e.target.value) < 1) setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qty: 1 } : i)); }}
-                      />
-                      <button onClick={() => cambiarQty(item.id, +1)}><i className="fa-solid fa-plus" style={{fontSize:"10px"}}></i></button>
-                    </div>
+                    {!item.peso && (
+                      <div className="qty-control">
+                        <button onClick={() => cambiarQty(item.id, -1)}><i className="fa-solid fa-minus" style={{fontSize:"10px"}}></i></button>
+                        <input type="number" min={1} max={item.stock ?? 9999}
+                          value={item.qty}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value) || 1;
+                            const stock = item.stock ?? 9999;
+                            if (v > stock) { showToast("Stock insuficiente", "warn"); return; }
+                            setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qty: Math.max(1, v) } : i));
+                          }}
+                          onBlur={(e) => { if (!e.target.value || parseInt(e.target.value) < 1) setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qty: 1 } : i)); }}
+                        />
+                        <button onClick={() => cambiarQty(item.id, +1)}><i className="fa-solid fa-plus" style={{fontSize:"10px"}}></i></button>
+                      </div>
+                    )}
                   </div>
                   <span className="item-total">${subtotal.toFixed(2)}</span>
                   <button className="remove-btn" onClick={() => quitarItem(item.id)}><i className="fa-solid fa-times"></i></button>
