@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
@@ -17,7 +18,7 @@ const METODOS_PAGO = [
   { value: "mixto", label: "Mixto" },
 ];
 
-function ModalCobro({ total, onConfirm, onClose, ticket }) {
+function ModalCobro({ total, onConfirm, onClose, isSubmitting }) {
   const [metodoPago, setMetodoPago] = useState("efectivo");
   const [montoEntregado, setMontoEntregado] = useState("");
   const [busqueda, setBusqueda] = useState("");
@@ -146,10 +147,10 @@ function ModalCobro({ total, onConfirm, onClose, ticket }) {
             </div>
           )}
           <div style={{display:"flex",gap:"12px",marginTop:"16px",paddingTop:"16px",borderTop:"1px solid #e2e8f0"}}>
-            <button onClick={onClose} className="btn-secondary" style={{flex:1}}>Cancelar</button>
-            <button onClick={handleConfirm} disabled={metodoPago==="credito"?!deudorSel:!montoValido}
+            <button onClick={onClose} className="btn-secondary" style={{flex:1}} disabled={isSubmitting}>Cancelar</button>
+            <button onClick={handleConfirm} disabled={metodoPago==="credito"?!deudorSel:!montoValido||isSubmitting}
               className="btn-success" style={{flex:1}}>
-              <i className="fa-solid fa-check"></i> Confirmar Venta
+              <i className="fa-solid fa-check"></i> {isSubmitting ? "Procesando..." : "Confirmar Venta"}
             </button>
           </div>
         </div>
@@ -161,8 +162,24 @@ function ModalCobro({ total, onConfirm, onClose, ticket }) {
 export default function PuntoDeVenta() {
   const { cajaActiva, loadingCaja } = useCaja();
   const { user } = useAuth();
-  const [productos, setProductos] = useState([]);
-  const [categorias, setCategorias] = useState([]);
+  const queryClient = useQueryClient();
+
+  // React Query — productos cacheados (comparte caché con Productos)
+  const { data: productosAll = [] } = useQuery({
+    queryKey: ["productos", "all-for-pos"],
+    queryFn: () => productosAPI.listar({ limit: 500 }).then((r) => r.data?.data || []),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+  const productos = productosAll.filter((p) => p.activo !== false);
+
+  // Categorías con React Query
+  const { data: categorias = [] } = useQuery({
+    queryKey: ["categorias"],
+    queryFn: () => categoriasAPI.listar().then((r) => r.data?.data || []),
+    staleTime: 10 * 60 * 1000,
+  });
+
   const [ticket, setTicket] = useState([]);
   const [filtro, setFiltro] = useState("");
   const [categoriaActiva, setCategoriaActiva] = useState("Todas");
@@ -177,12 +194,6 @@ export default function PuntoDeVenta() {
   const { isSubmitting, withGuard } = useSubmitGuard();
 
   const showToast = useCallback((msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
-  const cargarProductos = useCallback(() => {
-    productosAPI.listar({ limit: 500 }).then((r) => { const data = r.data?.data || []; setProductos(data.filter((p) => p.activo !== false)); })
-      .catch(() => showToast("Error al cargar productos", "error"));
-  }, [showToast]);
-
-  useEffect(() => { cargarProductos(); categoriasAPI.listar().then((r) => setCategorias(r.data?.data || [])).catch(() => {}); }, [cargarProductos]);
   useEffect(() => {
     const handler = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "f") { e.preventDefault(); searchRef.current?.focus(); } if (e.key === "Escape") setFiltro(""); };
     window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler);
@@ -261,7 +272,7 @@ export default function PuntoDeVenta() {
           : cambio > 0 ? `Venta registrada · Cambio: $${cambio.toFixed(2)}` : "Venta registrada exitosamente";
         showToast(msg);
         if (advertencia) setTimeout(() => showToast(advertencia, "warn"), 500);
-        cargarProductos();
+        queryClient.invalidateQueries({ queryKey: ["productos", "all-for-pos"] });
       } catch (err) { showToast(err.response?.data?.message || "Error al registrar la venta", "error"); }
       finally { setProcesando(false); }
     });
@@ -273,7 +284,7 @@ export default function PuntoDeVenta() {
     <div className="pos-container">
       {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
 
-      {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} />}
+      {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
 
       {scannerModalOpen && (
         <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}} onClick={() => setScannerModalOpen(false)}>
