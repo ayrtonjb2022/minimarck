@@ -78,12 +78,12 @@ body {
   color: var(--kanagawa-fg);
   display: flex;
   flex-direction: column;
-  padding: 24px 18px;
+  padding: 16px 18px;
   flex-shrink: 0;
   height: 100vh;
   position: sticky;
   top: 0;
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 100;
   transition: all 0.3s ease;
 }
@@ -91,17 +91,17 @@ body {
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 22px;
+  gap: 10px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--kanagawa-fg);
-  margin-bottom: 20px;
-  padding-bottom: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--kanagawa-border);
   cursor: pointer;
 }
 
-.sidebar-brand i { color: var(--kanagawa-blue); font-size: 28px; }
+.sidebar-brand i { color: var(--kanagawa-blue); font-size: 22px; }
 
 .sidebar-brand span {
   background: linear-gradient(135deg, var(--ctp-blue), var(--ctp-mauve));
@@ -157,30 +157,30 @@ body {
 .sidebar-menu { list-style: none; flex: 1; }
 
 .sidebar-menu .sub-label {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--kanagawa-comment);
-  padding: 16px 14px 6px 14px;
+  padding: 10px 14px 4px 14px;
   font-weight: 600;
 }
 
 .sidebar-menu li {
-  padding: 10px 14px;
-  margin: 2px 0;
-  border-radius: 10px;
+  padding: 7px 14px;
+  margin: 1px 0;
+  border-radius: 8px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   font-weight: 500;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--kanagawa-comment);
   cursor: pointer;
   transition: all 0.2s;
   position: relative;
 }
 
-.sidebar-menu li i { width: 22px; text-align: center; font-size: 16px; }
+.sidebar-menu li i { width: 20px; text-align: center; font-size: 15px; }
 
 .sidebar-menu li:hover:not(.disabled) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
 .sidebar-menu li.active { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
@@ -217,25 +217,25 @@ body {
 /* ===== SIDEBAR FOOTER ===== */
 .sidebar-footer {
   border-top: 1px solid var(--kanagawa-border);
-  padding-top: 16px;
-  margin-top: 8px;
-  font-size: 13px;
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 12px;
   color: var(--kanagawa-fg-muted);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .sidebar-footer .avatar-mini {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 32px; height: 32px; border-radius: 50%;
   background: var(--kanagawa-blue); color: #181616;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 14px; flex-shrink: 0;
+  font-weight: 700; font-size: 13px; flex-shrink: 0;
 }
 
 .sidebar-footer .user-info { flex: 1; }
-.sidebar-footer .user-info .name { color: var(--kanagawa-fg); font-weight: 600; font-size: 13px; }
-.sidebar-footer .user-info .email { font-size: 11px; color: var(--kanagawa-fg-muted); }
+.sidebar-footer .user-info .name { color: var(--kanagawa-fg); font-weight: 600; font-size: 12px; }
+.sidebar-footer .user-info .email { font-size: 10px; color: var(--kanagawa-fg-muted); }
 .sidebar-footer .user-info .role-text { font-size: 10px; color: var(--kanagawa-comment); font-weight: 500; }
 
 /* ===== MAIN ===== */
@@ -935,7 +935,7 @@ select.input-field { cursor: pointer; }
 }
 
 /* ===== DESKTOP COLLAPSE ===== */
-.sidebar.collapsed { width: 72px; padding: 24px 10px; }
+.sidebar.collapsed { width: 72px; padding: 16px 10px; }
 .sidebar.collapsed .sidebar-brand span,
 .sidebar.collapsed .sidebar-menu li span,
 .sidebar.collapsed .sidebar-menu .sub-label,
@@ -953,16 +953,16 @@ select.input-field { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px;
+  padding: 6px;
   cursor: pointer;
   color: var(--kanagawa-fg-muted);
-  font-size: 14px;
+  font-size: 12px;
   border-top: 1px solid var(--kanagawa-border);
-  margin: 8px -18px 0;
+  margin: 4px -18px 0;
   transition: color 0.2s;
 }
 .sidebar.collapsed .sidebar-collapse-btn {
-  margin: 8px -10px 0;
+  margin: 4px -10px 0;
 }
 .sidebar-collapse-btn:hover {
   color: var(--kanagawa-fg);
