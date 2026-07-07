@@ -16,6 +16,7 @@ const cleanParams = (params) => Object.fromEntries(Object.entries(params).filter
 
 const tabs = [
   { key: "general", label: "General", icon: "fa-solid fa-chart-pie" },
+  { key: "ganancias", label: "Ganancias", icon: "fa-solid fa-money-bill-trend-up" },
   { key: "ventas", label: "Ventas", icon: "fa-solid fa-chart-line" },
   { key: "productos", label: "Productos", icon: "fa-solid fa-crown" },
 ];
@@ -36,20 +37,41 @@ const columnsProductos = [
   { key: "ingresos", header: "Ingresos", cell: (r) => `$${parseFloat(r.totalIngresos).toFixed(2)}` },
 ];
 
+const columnsGanancias = [
+  { key: "producto", header: "Producto", cell: (r) => r.producto || "-" },
+  { key: "cantidad", header: "Cant.", cell: (r) => String(r.cantidad) },
+  { key: "precioVenta", header: "Precio Venta", cell: (r) => `$${r.precioVenta.toFixed(2)}` },
+  { key: "precioCompra", header: "Precio Costo", cell: (r) => `$${r.precioCompra.toFixed(2)}` },
+  { key: "totalVenta", header: "Total Venta", cell: (r) => `$${r.totalVenta.toFixed(2)}` },
+  { key: "costoTotal", header: "Costo Total", cell: (r) => `$${r.costoTotal.toFixed(2)}` },
+  { key: "ganancia", header: "Ganancia", cell: (r) => (
+    <span style={{color: r.ganancia >= 0 ? "#16a34a" : "#dc2626", fontWeight: 700}}>
+      ${r.ganancia.toFixed(2)}
+    </span>
+  )},
+  { key: "margen", header: "Margen", cell: (r) => (
+    <span style={{color: r.margen >= 0 ? "#16a34a" : "#dc2626", fontWeight: 600}}>
+      {r.margen.toFixed(1)}%
+    </span>
+  )},
+];
+
 export default function Reportes() {
   const [tab, setTab] = useState("general");
   const [negocio, setNegocio] = useState(null);
-  const [loading, setLoading] = useState({ general: false, ventas: false, productos: false });
+  const [loading, setLoading] = useState({ general: false, ganancias: false, ventas: false, productos: false });
 
   useEffect(() => {
     negocioAPI.obtener().then((r) => setNegocio(r.data?.data || r.data)).catch(() => {});
   }, []);
   const [dates, setDates] = useState({
     general: { fechaInicio: monthStart(), fechaFin: today() },
+    ganancias: { fechaInicio: monthStart(), fechaFin: today() },
     ventas: { fechaInicio: monthStart(), fechaFin: today() },
     productos: { fechaInicio: monthStart(), fechaFin: today() },
   });
   const [generalResult, setGeneralResult] = useState(null);
+  const [gananciasResult, setGananciasResult] = useState(null);
   const [ventasResult, setVentasResult] = useState(null);
   const [productosResult, setProductosResult] = useState(null);
 
@@ -62,6 +84,45 @@ export default function Reportes() {
       setGeneralResult(res.data.data);
     } catch { toast.error("Error al consultar estado de resultados"); }
     finally { setLoading((p) => ({ ...p, general: false })); }
+  };
+
+  const handleConsultarGanancias = async () => {
+    const { fechaInicio, fechaFin } = dates.ganancias;
+    if (!fechaInicio || !fechaFin) { toast.error("Seleccioná fecha de inicio y fin"); return; }
+    try {
+      setLoading((p) => ({ ...p, ganancias: true }));
+      const res = await reportesAPI.ventas(cleanParams({ fechaInicio, fechaFin }));
+      const data = res.data.data;
+      const items = [];
+
+      for (const venta of data.detalle || []) {
+        for (const det of venta.detalles || []) {
+          const pv = parseFloat(det.precioUnitario) || 0;
+          const pc = parseFloat(det.producto?.precioCompra) || 0;
+          const cant = det.cantidad || 0;
+          const totalVenta = pv * cant;
+          const costoTotal = pc * cant;
+          const ganancia = totalVenta - costoTotal;
+          items.push({
+            producto: det.producto?.nombre || det.nombreProducto || "Producto",
+            cantidad: cant,
+            precioVenta: pv,
+            precioCompra: pc,
+            totalVenta,
+            costoTotal,
+            ganancia,
+            margen: totalVenta > 0 ? (ganancia / totalVenta) * 100 : 0,
+          });
+        }
+      }
+
+      const totalVenta = items.reduce((s, i) => s + i.totalVenta, 0);
+      const totalCosto = items.reduce((s, i) => s + i.costoTotal, 0);
+      const totalGanancia = items.reduce((s, i) => s + i.ganancia, 0);
+
+      setGananciasResult({ items, totalVenta, totalCosto, totalGanancia });
+    } catch { toast.error("Error al consultar ganancias"); }
+    finally { setLoading((p) => ({ ...p, ganancias: false })); }
   };
 
   const handleConsultarVentas = async () => {
@@ -144,7 +205,7 @@ export default function Reportes() {
             </div>
           </div>
           <button
-            onClick={tab === "general" ? handleConsultarGeneral : tab === "ventas" ? handleConsultarVentas : handleTopProductos}
+            onClick={tab === "general" ? handleConsultarGeneral : tab === "ganancias" ? handleConsultarGanancias : tab === "ventas" ? handleConsultarVentas : handleTopProductos}
             disabled={loading[tab]}
             className="btn-primary"
           >
@@ -188,6 +249,53 @@ export default function Reportes() {
                 <Bar dataKey="egresos" name="Gastos" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={32} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      {/* Ganancias tab */}
+      {tab === "ganancias" && gananciasResult && (
+        <>
+          <div className="stats-grid" style={{ marginBottom: 20 }}>
+            <div className="stat-card" style={{ borderTop: "3px solid #3b82f6" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Total Vendido</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#2563eb" }}>{fmt(gananciasResult.totalVenta)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #f59e0b" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Costo Total</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#d97706" }}>{fmt(gananciasResult.totalCosto)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #22c55e" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Ganancia Total</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#16a34a" }}>{fmt(gananciasResult.totalGanancia)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: `3px solid ${gananciasResult.totalVenta > 0 ? "#a855f7" : "#ef4444"}` }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Margen</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#a855f7" }}>
+                {gananciasResult.totalVenta > 0 ? ((gananciasResult.totalGanancia / gananciasResult.totalVenta) * 100).toFixed(1) : 0}%
+              </p>
+            </div>
+          </div>
+
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  {columnsGanancias.map((c) => (
+                    <th key={c.key} style={{ padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b" }}>{c.header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {gananciasResult.items.map((item, i) => (
+                  <tr key={i} className="table-row">
+                    {columnsGanancias.map((c) => (
+                      <td key={c.key} className="td">{c.cell(item)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}

@@ -28,7 +28,7 @@ const reporteVentas = async (req, res) => {
             {
               model: Producto,
               as: "producto",
-              attributes: ["id", "nombre", "codigo"],
+              attributes: ["id", "nombre", "codigo", "precioCompra"],
             },
           ],
         },
