@@ -226,7 +226,7 @@ const update = async (req, res) => {
       nombre: nombre || producto.nombre,
       descripcion:
         descripcion !== undefined ? descripcion : producto.descripcion,
-      codigo: codigo !== undefined ? codigo : producto.codigo,
+      codigo: codigo !== undefined ? (codigo || null) : producto.codigo,
       precio: precio !== undefined ? parseFloat(precio) : producto.precio,
       precioCompra: precioCompra !== undefined ? parseFloat(precioCompra) : producto.precioCompra,
       stock: stock !== undefined ? parseInt(stock) : producto.stock,
