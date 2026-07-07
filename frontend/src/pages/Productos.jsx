@@ -214,7 +214,7 @@ const Productos = () => {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {isLoading ? (
               <tr>
                 <td colSpan={8}>Cargando...</td>
               </tr>
