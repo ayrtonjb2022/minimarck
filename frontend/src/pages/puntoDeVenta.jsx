@@ -264,7 +264,14 @@ export default function PuntoDeVenta() {
     await withGuard(async () => {
       setProcesando(true);
       try {
-        const body = { items: ticket.map((i) => ({ productoId: i.id, cantidad: i.qty })), metodoPago };
+        const body = {
+        items: ticket.map((i) => ({
+          productoId: i.productoId || i.id,
+          cantidad: i.qty,
+          ...(i.peso ? { precioUnitario: i.precio } : {}),
+        })),
+        metodoPago,
+      };
         if (clienteDeudorId) body.clienteDeudorId = clienteDeudorId;
         const res = await ventasAPI.crear(body);
         const advertencia = res.data?.data?.advertenciaLimite;
