@@ -37,22 +37,27 @@ const columnsProductos = [
   { key: "ingresos", header: "Ingresos", cell: (r) => `$${parseFloat(r.totalIngresos).toFixed(2)}` },
 ];
 
+const sinCosto = (pc) => pc == null || pc === 0;
+const cellSinCosto = (val, fmtFn) => (val == null || val === 0)
+  ? <span style={{color: "#94a3b8", fontStyle: "italic"}}>—</span>
+  : fmtFn(val);
+
 const columnsGanancias = [
   { key: "producto", header: "Producto", cell: (r) => r.producto || "-" },
   { key: "cantidad", header: "Cant.", cell: (r) => String(r.cantidad) },
   { key: "precioVenta", header: "Precio Venta", cell: (r) => `$${r.precioVenta.toFixed(2)}` },
-  { key: "precioCompra", header: "Precio Costo", cell: (r) => `$${r.precioCompra.toFixed(2)}` },
+  { key: "precioCompra", header: "Precio Costo", cell: (r) => cellSinCosto(r.precioCompra, (v) => `$${v.toFixed(2)}`) },
   { key: "totalVenta", header: "Total Venta", cell: (r) => `$${r.totalVenta.toFixed(2)}` },
-  { key: "costoTotal", header: "Costo Total", cell: (r) => `$${r.costoTotal.toFixed(2)}` },
+  { key: "costoTotal", header: "Costo Total", cell: (r) => cellSinCosto(r.costoTotal, (v) => `$${v.toFixed(2)}`) },
   { key: "ganancia", header: "Ganancia", cell: (r) => (
-    <span style={{color: r.ganancia >= 0 ? "#16a34a" : "#dc2626", fontWeight: 700}}>
-      ${r.ganancia.toFixed(2)}
-    </span>
+    sinCosto(r.precioCompra)
+      ? <span style={{color: "#94a3b8", fontStyle: "italic"}}>—</span>
+      : <span style={{color: r.ganancia >= 0 ? "#16a34a" : "#dc2626", fontWeight: 700}}>${r.ganancia.toFixed(2)}</span>
   )},
   { key: "margen", header: "Margen", cell: (r) => (
-    <span style={{color: r.margen >= 0 ? "#16a34a" : "#dc2626", fontWeight: 600}}>
-      {r.margen.toFixed(1)}%
-    </span>
+    sinCosto(r.precioCompra)
+      ? <span style={{color: "#94a3b8", fontStyle: "italic"}}>—</span>
+      : <span style={{color: r.margen >= 0 ? "#16a34a" : "#dc2626", fontWeight: 600}}>{r.margen.toFixed(1)}%</span>
   )},
 ];
 
@@ -263,19 +268,33 @@ export default function Reportes() {
             </div>
             <div className="stat-card" style={{ borderTop: "3px solid #f59e0b" }}>
               <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Costo Total</p>
-              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#d97706" }}>{fmt(gananciasResult.totalCosto)}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#d97706" }}>
+                {gananciasResult.totalCosto > 0 ? fmt(gananciasResult.totalCosto) : <span style={{color: "#94a3b8", fontStyle: "italic"}}>— sin datos</span>}
+              </p>
             </div>
             <div className="stat-card" style={{ borderTop: "3px solid #22c55e" }}>
               <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Ganancia Total</p>
-              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#16a34a" }}>{fmt(gananciasResult.totalGanancia)}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#16a34a" }}>
+                {gananciasResult.totalCosto > 0 ? fmt(gananciasResult.totalGanancia) : <span style={{color: "#94a3b8", fontStyle: "italic"}}>— sin datos</span>}
+              </p>
             </div>
-            <div className="stat-card" style={{ borderTop: `3px solid ${gananciasResult.totalVenta > 0 ? "#a855f7" : "#ef4444"}` }}>
+            <div className="stat-card" style={{ borderTop: `3px solid ${gananciasResult.totalCosto > 0 ? "#a855f7" : "#94a3b8"}` }}>
               <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Margen</p>
-              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#a855f7" }}>
-                {gananciasResult.totalVenta > 0 ? ((gananciasResult.totalGanancia / gananciasResult.totalVenta) * 100).toFixed(1) : 0}%
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: gananciasResult.totalCosto > 0 ? "#a855f7" : "#94a3b8" }}>
+                {gananciasResult.totalCosto > 0
+                  ? ((gananciasResult.totalGanancia / gananciasResult.totalVenta) * 100).toFixed(1) + "%"
+                  : <span style={{fontStyle: "italic", fontSize: 16}}>sin costo configurado</span>}
               </p>
             </div>
           </div>
+
+          {gananciasResult.items.every((i) => !i.precioCompra) && (
+            <div style={{background: "#fef9c3", border: "1px solid #fde047", borderRadius: 12, padding: "14px 18px", marginBottom: 20, fontSize: 13, color: "#854d0e"}}>
+              <i className="fa-solid fa-triangle-exclamation" style={{marginRight: 6}}></i>
+              <strong>Sin precios de costo.</strong> Los productos no tienen <strong>Precio Costo</strong> configurado.
+              Andá a <strong>Productos</strong>, editá cada producto y completá el campo <strong>Precio Costo</strong> para ver ganancias reales.
+            </div>
+          )}
 
           <div className="table-container">
             <table>

@@ -5,8 +5,28 @@ const formatPeso = (g) => {
   return `${g.toFixed(0)} g`;
 };
 
+const UNIDAD_KG = /^(kg|kilo|kilogramo|l|litro|lt)$/i;
+const UNIDAD_G = /^(g|gramo|ml)$/i;
+
+const factorKg = (unidad) => {
+  const u = (unidad || "").trim();
+  if (UNIDAD_G.test(u)) return 1000;  // precio está por gramo/ml → multiplicar para obtener kg/l
+  return 1;                            // ya está por kg/litro
+};
+
+const etiquetaUnidad = (unidad) => {
+  const u = (unidad || "").trim();
+  if (UNIDAD_KG.test(u)) return "kg";
+  if (UNIDAD_G.test(u)) return "g";
+  return "kg";
+};
+
 export default function CalculadoraPeso({ producto, onConfirm, onClose }) {
-  const precioKg = parseFloat(producto.precio) || 0;
+  const unidad = producto.unidadMedida || "";
+  const base = parseFloat(producto.precio) || 0;
+  const factor = factorKg(unidad);
+  const precioKg = base * factor;
+  const labelUnidad = etiquetaUnidad(unidad);
   const [modo, setModo] = useState("monto"); // "monto" | "peso"
   const [monto, setMonto] = useState("");
   const [peso, setPeso] = useState("");
@@ -91,11 +111,16 @@ export default function CalculadoraPeso({ producto, onConfirm, onClose }) {
             }}
           >
             <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "4px" }}>
-              Precio por kg
+              Precio por {labelUnidad === "g" ? "gramo" : "kg"}
             </p>
             <p style={{ fontSize: "26px", fontWeight: 700, color: "#1d4ed8", margin: 0 }}>
-              ${precioKg.toFixed(2)}
+              {(base).toFixed(2)}
             </p>
+            {labelUnidad === "g" && (
+              <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>
+                = ${precioKg.toFixed(2)} / kg
+              </p>
+            )}
           </div>
 
           {/* Toggle modo */}
@@ -157,7 +182,7 @@ export default function CalculadoraPeso({ producto, onConfirm, onClose }) {
               <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 6px", fontWeight: 500 }}>
                 {modo === "monto"
                   ? `Con $${montoNum.toFixed(2)} le corresponden`
-                  : `${formatPeso(pesoNum)} a $${precioKg.toFixed(2)}/kg son`}
+                  : `${formatPeso(pesoNum)} a $${(base).toFixed(2)}/${labelUnidad === "g" ? "g" : "kg"} son`}
               </p>
               <div style={{ display: "flex", justifyContent: "center", gap: "24px" }}>
                 <div>
