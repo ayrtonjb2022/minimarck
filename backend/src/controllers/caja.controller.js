@@ -153,8 +153,11 @@ const getAll = async (req, res) => {
     }
 
     if (fechaInicio && fechaFin) {
+      const fin = new Date(fechaFin + "T12:00:00Z");
+      fin.setUTCDate(fin.getUTCDate() + 1);
       where.fechaApertura = {
-        [Op.between]: [new Date(fechaInicio), new Date(fechaFin)],
+        [Op.gte]: fechaInicio,
+        [Op.lt]: fin.toISOString().slice(0, 10),
       };
     }
 

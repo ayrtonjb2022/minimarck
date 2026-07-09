@@ -3,6 +3,24 @@ const { success, error } = require("../utils/response");
 const { Op, Sequelize } = require("sequelize");
 const sequelize = require("../config/database");
 
+/**
+ * Crea un filtro de fecha que funciona con DATETIME (hoy, sin migration)
+ * Y con DATE (post-migration).
+ *
+ * Usa [Op.gte]: fecha + [Op.lt]: díaSiguiente en vez de BETWEEN,
+ * porque BETWEEN con strings en DATETIME solo agarra medianoche.
+ *
+ * @param {string} fechaInicio - "YYYY-MM-DD"
+ * @param {string} fechaFin   - "YYYY-MM-DD"
+ * @returns {{ [Op.gte]: string, [Op.lt]: string }}
+ */
+function dateFilter(fechaInicio, fechaFin) {
+  const fin = new Date(fechaFin + "T12:00:00Z"); // mediodía UTC evita off-by-one por timezone
+  fin.setUTCDate(fin.getUTCDate() + 1);
+  const nextDay = fin.toISOString().slice(0, 10); // YYYY-MM-DD
+  return { [Op.gte]: fechaInicio, [Op.lt]: nextDay };
+}
+
 const reporteVentas = async (req, res) => {
   try {
     const { fechaInicio, fechaFin } = req.query;
@@ -13,9 +31,7 @@ const reporteVentas = async (req, res) => {
 
     const where = {
       ...req.filterCondition,
-      fecha: {
-        [Op.between]: [fechaInicio, fechaFin],
-      },
+      fecha: dateFilter(fechaInicio, fechaFin),
     };
 
     const ventas = await Venta.findAll({
@@ -73,9 +89,7 @@ const reporteProductosMasVendidos = async (req, res) => {
     const where = {};
 
     if (fechaInicio && fechaFin) {
-      where["$venta.fecha$"] = {
-        [Op.between]: [new Date(fechaInicio), new Date(fechaFin)],
-      };
+      where["$venta.fecha$"] = dateFilter(fechaInicio, fechaFin);
     }
 
     if (req.filterCondition) {
@@ -178,9 +192,8 @@ const reporteEstadoResultados = async (req, res) => {
 
     const negocioId = req.filterCondition?.negocioId || req.user?.negocioId;
 
-    const dateWhere = {
-      [Op.between]: [`${fechaInicio}`, `${fechaFin}`],
-    };
+    // Filtro que funciona con DATETIME (hoy) Y con DATE (post-migration)
+    const fDate = dateFilter(fechaInicio, fechaFin);
 
     // Ingresos (ventas completadas)
     const ventas = await Venta.findAll({
@@ -189,7 +202,7 @@ const reporteEstadoResultados = async (req, res) => {
         [Sequelize.fn("COUNT", Sequelize.col("id")), "cantidad"],
         [Sequelize.fn("SUM", Sequelize.col("total")), "total"],
       ],
-      where: { negocioId, fecha: dateWhere, estado: "completada" },
+      where: { negocioId, fecha: fDate, estado: "completada" },
       group: [Sequelize.fn("DATE", Sequelize.col("fecha"))],
       order: [[Sequelize.fn("DATE", Sequelize.col("fecha")), "ASC"]],
       raw: true,
@@ -202,13 +215,14 @@ const reporteEstadoResultados = async (req, res) => {
         [Sequelize.fn("COUNT", Sequelize.col("id")), "cantidad"],
         [Sequelize.fn("SUM", Sequelize.col("total")), "total"],
       ],
-      where: { negocioId, fecha: dateWhere, estado: "completada" },
+      where: { negocioId, fecha: fDate, estado: "completada" },
       group: [Sequelize.fn("DATE", Sequelize.col("fecha"))],
       order: [[Sequelize.fn("DATE", Sequelize.col("fecha")), "ASC"]],
       raw: true,
     });
 
     // Egresos (movimientos caja manuales — excluir compras que ya se contaron arriba)
+    // createdAt es TIMESTAMP UTC → ajustar filtro a UTC-3 (Argentina)
     const movEgresos = await MovimientoCaja.findAll({
       attributes: [
         [Sequelize.fn("DATE", Sequelize.col("created_at")), "dia"],
@@ -217,7 +231,12 @@ const reporteEstadoResultados = async (req, res) => {
       where: {
         negocioId,
         tipo: "egreso",
-        createdAt: dateWhere,
+        createdAt: {
+          [Op.gte]: Sequelize.literal(`'${fechaInicio} 03:00:00'`),
+          [Op.lt]: Sequelize.literal(
+            `'${fechaFin}' + INTERVAL 1 DAY + INTERVAL 3 HOUR`,
+          ),
+        },
         referencia: { [Op.notLike]: "compra-%" },
       },
       group: [Sequelize.fn("DATE", Sequelize.col("created_at"))],
@@ -227,9 +246,9 @@ const reporteEstadoResultados = async (req, res) => {
 
     // Merge daily data
     const dailyMap = {};
-    const start = new Date(fechaInicio);
-    const end = new Date(fechaFin);
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const start = new Date(fechaInicio + "T12:00:00Z");
+    const end = new Date(fechaFin + "T12:00:00Z");
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
       const key = d.toISOString().slice(0, 10);
       dailyMap[key] = { fecha: key, ingresos: 0, egresos: 0, ganancia: 0 };
     }

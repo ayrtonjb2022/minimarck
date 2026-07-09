@@ -8,6 +8,7 @@ const {
   ClienteDeudor, // ✅ Agregado
 } = require("../models/index");
 const { success, error, paginated } = require("../utils/response");
+const { todayArgentina } = require("../utils/date");
 const { Op } = require("sequelize");
 const sequelize = require("../config/database");
 
@@ -84,7 +85,7 @@ const create = async (req, res) => {
     const venta = await Venta.create(
       {
         folio,
-        fecha: new Date(),
+        fecha: todayArgentina(),
         subtotal,
         iva,
         descuento: 0,
@@ -253,8 +254,11 @@ const getAll = async (req, res) => {
     };
 
     if (fechaInicio && fechaFin) {
+      const fin = new Date(fechaFin + "T12:00:00Z");
+      fin.setUTCDate(fin.getUTCDate() + 1);
       where.fecha = {
-        [Op.between]: [new Date(fechaInicio), new Date(fechaFin)],
+        [Op.gte]: fechaInicio,
+        [Op.lt]: fin.toISOString().slice(0, 10),
       };
     }
 

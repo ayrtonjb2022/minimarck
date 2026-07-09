@@ -1,5 +1,6 @@
 const { ClienteDeudor, PagoDeuda, Venta, User } = require("../models/index");
 const { success, error, paginated } = require("../utils/response");
+const { todayArgentina } = require("../utils/date");
 const { Op } = require("sequelize");
 
 /**
@@ -304,7 +305,7 @@ const registrarPago = async (req, res) => {
       const pago = await PagoDeuda.create(
         {
           monto: parseFloat(monto),
-          fecha: new Date(),
+          fecha: todayArgentina(),
           metodoPago: metodoPago ? metodoPago.toLowerCase() : "efectivo",
           referencia: referencia || null,
           observaciones: observaciones || null,

@@ -14,8 +14,22 @@ export const formatCurrency = (amount) => {
 
 const DATE_LOCALE = import.meta.env.VITE_CURRENCY_LOCALE || "es-CL";
 
+/** Detecta si es fecha sola "YYYY-MM-DD" sin componente horario */
+const isDateOnly = (d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d);
+
+/**
+ * Formatea fecha con hora.
+ * Si la fecha viene como "YYYY-MM-DD" (date-only, sin hora), la muestra
+ * sin pasar por new Date() para evitar el desvío de medianoche UTC → día anterior en Argentina.
+ */
 export const formatDate = (date) => {
   if (!date) return "-";
+
+  if (isDateOnly(date)) {
+    const [y, m, d] = date.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
   return new Date(date).toLocaleDateString(DATE_LOCALE, {
     day: "2-digit",
     month: "2-digit",
@@ -25,8 +39,18 @@ export const formatDate = (date) => {
   });
 };
 
+/**
+ * Formatea fecha corta (solo día/mes/año).
+ * Si la fecha viene como "YYYY-MM-DD" (date-only), la muestra directo sin desvío de timezone.
+ */
 export const formatDateShort = (date) => {
   if (!date) return "-";
+
+  if (isDateOnly(date)) {
+    const [y, m, d] = date.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
   return new Date(date).toLocaleDateString(DATE_LOCALE, {
     day: "2-digit",
     month: "2-digit",

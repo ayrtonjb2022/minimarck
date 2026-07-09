@@ -1,5 +1,6 @@
 const { Compra, CompraDetalle, Producto, Proveedor, Caja, MovimientoCaja } = require("../models/index");
 const { success, error, paginated } = require("../utils/response");
+const { todayArgentina } = require("../utils/date");
 const sequelize = require("../config/database");
 
 const getAll = async (req, res) => {
@@ -72,6 +73,7 @@ const create = async (req, res) => {
 
     const compra = await Compra.create({
       folio: folio || `CMP-${Date.now()}`,
+      fecha: todayArgentina(),
       subtotal,
       iva: 0,
       descuento: 0,

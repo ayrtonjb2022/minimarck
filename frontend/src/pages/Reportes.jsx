@@ -3,6 +3,7 @@ import { reportesAPI } from "../api/reportes";
 import { negocioAPI } from "../api/negocio";
 import { exportExcel, exportPDF } from "../utils/export";
 import { toast } from "react-toastify";
+import { formatDateShort } from "../utils/formatters";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -23,7 +24,7 @@ const tabs = [
 
 const columnsVentas = [
   { key: "folio", header: "Folio", cell: (r) => r.folio },
-  { key: "fecha", header: "Fecha", cell: (r) => new Date(r.fecha).toLocaleDateString(import.meta.env.VITE_CURRENCY_LOCALE || "es-CL") },
+  { key: "fecha", header: "Fecha", cell: (r) => formatDateShort(r.fecha) },
   { key: "total", header: "Total", cell: (r) => `$${parseFloat(r.total).toFixed(2)}` },
   { key: "metodoPago", header: "Método Pago", cell: (r) => r.metodoPago },
   { key: "usuario", header: "Usuario", cell: (r) => r.usuario?.nombre || "-" },
