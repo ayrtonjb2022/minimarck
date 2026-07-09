@@ -1006,3 +1006,44 @@ select.input-field { cursor: pointer; }
 .Toastify__toast--success { border-left: 4px solid var(--kanagawa-green) !important; }
 .Toastify__toast--error { border-left: 4px solid var(--kanagawa-red) !important; }
 .Toastify__toast--warning { border-left: 4px solid var(--kanagawa-orange) !important; }
+
+/* ===== POS THEMES (solo afecta al POS) ===== */
+.pos-theme-light {
+  --ctp-base: #ffffff;
+  --ctp-crust: #f1f5f9;
+  --ctp-surface0: #e2e8f0;
+  --ctp-surface1: #cbd5e1;
+
+  --kanagawa-bg: #ffffff;
+  --kanagawa-bg-alt: #f8fafc;
+  --kanagawa-bg-dim: #f1f5f9;
+  --kanagawa-fg: #0f172a;
+  --kanagawa-fg-muted: #475569;
+  --kanagawa-comment: #94a3b8;
+  --kanagawa-border: #e2e8f0;
+  --kanagawa-blue: #3b82f6;
+  --kanagawa-green: #22c55e;
+  --kanagawa-red: #ef4444;
+  --kanagawa-orange: #f97316;
+}
+
+/* Toggle button */
+.pos-theme-toggle {
+  border: 1px solid var(--kanagawa-border);
+  background: var(--kanagawa-bg);
+  color: var(--kanagawa-fg-muted);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: 0.2s;
+  flex-shrink: 0;
+}
+.pos-theme-toggle:hover {
+  border-color: var(--kanagawa-fg-muted);
+  color: var(--kanagawa-fg);
+}

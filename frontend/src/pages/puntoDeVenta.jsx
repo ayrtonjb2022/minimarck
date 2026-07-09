@@ -194,6 +194,14 @@ export default function PuntoDeVenta() {
   const agregarProductoRef = useRef(null);
 
   const { isSubmitting, withGuard } = useSubmitGuard();
+  const [posTheme, setPosTheme] = useState(() => localStorage.getItem("pos-theme") || "light");
+  const toggleTheme = useCallback(() => {
+    setPosTheme((prev) => {
+      const next = prev === "light" ? "dark" : "light";
+      localStorage.setItem("pos-theme", next);
+      return next;
+    });
+  }, []);
 
   const showToast = useCallback((msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
   useEffect(() => {
@@ -308,7 +316,7 @@ export default function PuntoDeVenta() {
   if (loadingCaja) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div className="spinner" style={{width:"32px",height:"32px",border:"3px solid #e2e8f0",borderTopColor:"#3b82f6",borderRadius:"50%",animation:"spin 0.8s linear infinite"}} /></div>;
 
   return (
-    <div className="pos-container">
+    <div className={`pos-container pos-theme-${posTheme}`}>
       {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
 
       {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
@@ -368,6 +376,9 @@ export default function PuntoDeVenta() {
               <input ref={searchRef} type="text" value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Buscar producto... (Ctrl+F)" className="pos-search-input" />
               {filtro && <button onClick={() => setFiltro("")} style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",color:"var(--kanagawa-comment)"}}><i className="fa-solid fa-times"></i></button>}
             </div>
+            <button onClick={toggleTheme} className="pos-theme-toggle" title={posTheme === "light" ? "Modo oscuro" : "Modo claro"}>
+              <i className={`fa-solid ${posTheme === "light" ? "fa-moon" : "fa-sun"}`}></i>
+            </button>
             <button onClick={() => setScannerModalOpen(true)} className="btn-secondary" style={{whiteSpace:"nowrap",padding:"8px 12px",fontSize:"12px",display:"flex",alignItems:"center",gap:"6px"}} title="Escanear desde celular">
               <span style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
                 <span style={{width:8,height:8,borderRadius:"50%",background:socketConnected?"#22c55e":"#ef4444",display:"inline-block"}}></span>
