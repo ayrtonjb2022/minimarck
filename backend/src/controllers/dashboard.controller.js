@@ -32,7 +32,7 @@ const getStats = async (req, res) => {
       fechaInicio.setFullYear(fechaInicio.getFullYear() - 1);
     }
 
-    whereVenta.fecha = { [Op.gte]: fechaInicio };
+    whereVenta.fecha = { [Op.gte]: fechaInicio.toISOString().slice(0, 10) };
 
     // 1. Estadísticas de ventas
     const totalVentas = (await Venta.count({ where: whereVenta })) || 0;
@@ -63,7 +63,7 @@ const getStats = async (req, res) => {
           as: "venta",
           attributes: [],
           where: {
-            fecha: { [Op.gte]: fechaInicio },
+            fecha: { [Op.gte]: fechaInicio.toISOString().slice(0, 10) },
             estado: "completada",
             ...filterCondition,
           },
@@ -128,7 +128,7 @@ const getStats = async (req, res) => {
       ],
       where: {
         ...whereVenta,
-        fecha: { [Op.gte]: sieteDiasAtras },
+        fecha: { [Op.gte]: sieteDiasAtras.toISOString().slice(0, 10) },
       },
       group: [Sequelize.fn("DATE", Sequelize.col("fecha"))],
       order: [[Sequelize.fn("DATE", Sequelize.col("fecha")), "ASC"]],

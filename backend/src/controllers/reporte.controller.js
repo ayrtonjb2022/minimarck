@@ -14,7 +14,7 @@ const reporteVentas = async (req, res) => {
     const where = {
       ...req.filterCondition,
       fecha: {
-        [Op.between]: [new Date(fechaInicio), new Date(fechaFin)],
+        [Op.between]: [fechaInicio, fechaFin],
       },
     };
 
@@ -179,7 +179,7 @@ const reporteEstadoResultados = async (req, res) => {
     const negocioId = req.filterCondition?.negocioId || req.user?.negocioId;
 
     const dateWhere = {
-      [Op.between]: [new Date(fechaInicio), new Date(`${fechaFin}T23:59:59`)],
+      [Op.between]: [`${fechaInicio}`, `${fechaFin}`],
     };
 
     // Ingresos (ventas completadas)
