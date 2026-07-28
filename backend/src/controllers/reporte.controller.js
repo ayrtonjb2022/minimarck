@@ -237,7 +237,10 @@ const reporteEstadoResultados = async (req, res) => {
             `'${fechaFin}' + INTERVAL 1 DAY + INTERVAL 3 HOUR`,
           ),
         },
-        referencia: { [Op.notLike]: "compra-%" },
+        [Op.or]: [
+          { referencia: { [Op.notLike]: "compra-%" } },
+          { referencia: null },
+        ],
       },
       group: [Sequelize.literal("DATE(created_at - INTERVAL 3 HOUR)")],
       order: [Sequelize.literal("DATE(created_at - INTERVAL 3 HOUR) ASC")],
