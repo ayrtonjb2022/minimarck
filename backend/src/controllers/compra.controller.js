@@ -5,7 +5,8 @@ const sequelize = require("../config/database");
 
 const getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 20, estado } = req.query;
+    let { page = 1, limit = 20, estado } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
     const offset = (parseInt(page) - 1) * limit;
     const where = { ...req.filterCondition };
 
@@ -13,7 +14,7 @@ const getAll = async (req, res) => {
 
     const { rows, count } = await Compra.findAndCountAll({
       where,
-      limit: parseInt(limit),
+      limit: limit,
       offset: parseInt(offset),
       order: [["fecha", "DESC"]],
       include: [
@@ -21,7 +22,7 @@ const getAll = async (req, res) => {
       ],
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en compra.getAll:", err);
     return error(res, "Error al obtener compras", 500);
@@ -173,7 +174,12 @@ const update = async (req, res) => {
     if (compra.estado === "cancelada") {
       return error(res, "No se puede modificar una compra cancelada", 400);
     }
-    await compra.update(req.body);
+    const allowedFields = ["observaciones"];
+    const sanitized = {};
+    for (const key of allowedFields) {
+      if (req.body[key] !== undefined) sanitized[key] = req.body[key];
+    }
+    await compra.update(sanitized);
     return success(res, compra, "Compra actualizada exitosamente");
   } catch (err) {
     if (err.name === "SequelizeValidationError") {

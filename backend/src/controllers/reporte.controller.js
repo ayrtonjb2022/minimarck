@@ -8,6 +8,7 @@ const {
   PagoDeuda,
   ClienteDeudor,
   Proveedor,
+  Negocio,
 } = require("../models/index");
 const { success, error } = require("../utils/response");
 const { Op, Sequelize } = require("sequelize");
@@ -196,8 +197,10 @@ const reporteCaja = async (req, res) => {
 const reporteEstadoResultados = async (req, res) => {
   try {
     const { fechaInicio, fechaFin } = req.query;
-    if (!fechaInicio || !fechaFin) {
-      return error(res, "Debe proporcionar fechaInicio y fechaFin", 400);
+
+    const errorValidacion = validarPeriodo(fechaInicio, fechaFin);
+    if (errorValidacion) {
+      return error(res, errorValidacion, 400);
     }
 
     const negocioId = req.filterCondition?.negocioId || req.user?.negocioId;
@@ -1200,6 +1203,243 @@ const reporteDeudores = async (req, res) => {
   }
 };
 
+/**
+ * Reporte de impuestos: resumen impositivo simplificado para monotributistas.
+ * Los precios son finales (IVA incluido si aplica). Se estima el componente
+ * de IVA dividiendo por 1.21 y multiplicando por 0.21 (alícuota 21%).
+ *
+ * Estimación de IVA incluido en ventas (21%). Solo aplica si el negocio
+ * emite factura A. Para monotributo, este valor es orientativo.
+ *
+ * GET /api/reportes/impuestos?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD
+ */
+const reporteImpuestos = async (req, res) => {
+  try {
+    const { fechaInicio, fechaFin } = req.query;
+
+    const errorValidacion = validarPeriodo(fechaInicio, fechaFin);
+    if (errorValidacion) {
+      return error(res, errorValidacion, 400);
+    }
+
+    const negocioId = req.filterCondition?.negocioId || req.user?.negocioId;
+
+    const fDate = dateFilter(fechaInicio, fechaFin);
+
+    // ---- Ventas completadas con detalles (para costo de mercadería) ----
+    const ventas = await Venta.findAll({
+      where: { negocioId, fecha: fDate, estado: "completada" },
+      include: [
+        {
+          model: VentaDetalle,
+          as: "detalles",
+          include: [
+            {
+              model: Producto,
+              as: "producto",
+              attributes: ["id", "precioCompra"],
+            },
+          ],
+        },
+      ],
+    });
+
+    let totalVentas = 0;
+    let costoMercaderia = 0;
+    for (const v of ventas) {
+      totalVentas += parseFloat(v.total) || 0;
+      for (const d of v.detalles || []) {
+        costoMercaderia +=
+          (d.cantidad || 0) * (parseFloat(d.producto?.precioCompra) || 0);
+      }
+    }
+
+    const gananciaBruta = totalVentas - costoMercaderia;
+
+    // ---- Compras completadas ----
+    const totalCompras =
+      parseFloat(
+        (await Compra.sum("total", {
+          where: { negocioId, fecha: fDate, estado: "completada" },
+        })) || 0,
+      ) || 0;
+
+    // ---- Gastos operativos: misma definición que reporteGerencial ----
+    const gastosOperativos =
+      parseFloat(
+        (await MovimientoCaja.sum("monto", {
+          where: {
+            negocioId,
+            tipo: "egreso",
+            createdAt: {
+              [Op.gte]: Sequelize.literal(`'${fechaInicio} 03:00:00'`),
+              [Op.lt]: Sequelize.literal(
+                `'${fechaFin}' + INTERVAL 1 DAY + INTERVAL 3 HOUR`,
+              ),
+            },
+            [Op.or]: [
+              { referencia: { [Op.notLike]: "compra-%" } },
+              { referencia: null },
+            ],
+          },
+        })) || 0,
+      ) || 0;
+
+    const gananciaNeta = gananciaBruta - gastosOperativos;
+
+    // ---- Estimación de IVA incluido en precios finales ----
+    // Si los precios son IVA-incluido (factura B / monotributo), el componente
+    // de IVA es: total / 1.21 * 0.21 ≈ total × 0.1736.
+    // Solo aplica si el negocio emite factura A. Para monotributo, este valor
+    // es orientativo.
+    const ivaFacturado = totalVentas > 0 ? (totalVentas / 1.21) * 0.21 : 0;
+    const ivaCompras = totalCompras > 0 ? (totalCompras / 1.21) * 0.21 : 0;
+    const ivaNeto = ivaFacturado - ivaCompras;
+
+    return success(res, {
+      periodo: { fechaInicio, fechaFin },
+      resumen: {
+        totalVentas,
+        totalCompras,
+        gananciaBruta,
+        gastosOperativos,
+        gananciaNeta,
+        ivaFacturado,
+        ivaCompras,
+        ivaNeto,
+      },
+    });
+  } catch (err) {
+    console.error("Error en reporteImpuestos:", err);
+    return error(
+      res,
+      "Error al generar reporte de impuestos: " + err.message,
+      500,
+    );
+  }
+};
+
+/**
+ * Reporte de punto de equilibrio simplificado: volumen de ventas necesario
+ * para cubrir costos operativos.
+ *
+ * Suposición: gastos operativos manuales se tratan como costos fijos.
+ * Costos fijos reales (alquiler, sueldo, servicios) deben cargarse como
+ * gastos en Caja para un cálculo preciso.
+ *
+ * GET /api/reportes/punto-equilibrio?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD
+ */
+const reportePuntoEquilibrio = async (req, res) => {
+  try {
+    const { fechaInicio, fechaFin } = req.query;
+
+    const errorValidacion = validarPeriodo(fechaInicio, fechaFin);
+    if (errorValidacion) {
+      return error(res, errorValidacion, 400);
+    }
+
+    const negocioId = req.filterCondition?.negocioId || req.user?.negocioId;
+
+    const fDate = dateFilter(fechaInicio, fechaFin);
+
+    // ---- Ventas completadas con detalles (para costo de mercadería) ----
+    const ventas = await Venta.findAll({
+      where: { negocioId, fecha: fDate, estado: "completada" },
+      include: [
+        {
+          model: VentaDetalle,
+          as: "detalles",
+          include: [
+            {
+              model: Producto,
+              as: "producto",
+              attributes: ["id", "precioCompra"],
+            },
+          ],
+        },
+      ],
+    });
+
+    let ventasPeriodo = 0;
+    let costoVariableTotal = 0;
+    for (const v of ventas) {
+      ventasPeriodo += parseFloat(v.total) || 0;
+      for (const d of v.detalles || []) {
+        costoVariableTotal +=
+          (d.cantidad || 0) * (parseFloat(d.producto?.precioCompra) || 0);
+      }
+    }
+
+    const margenContribucion = ventasPeriodo - costoVariableTotal;
+    const margenContribucionPct =
+      ventasPeriodo > 0 ? (margenContribucion / ventasPeriodo) * 100 : 0;
+
+    // ---- Gastos operativos como proxy de costos fijos ----
+    // Suposición: los gastos operativos manuales representan costos fijos.
+    // Costos fijos reales (alquiler, sueldo, servicios) deben cargarse
+    // como gastos en Caja para un cálculo preciso.
+    const gastosFijos =
+      parseFloat(
+        (await MovimientoCaja.sum("monto", {
+          where: {
+            negocioId,
+            tipo: "egreso",
+            createdAt: {
+              [Op.gte]: Sequelize.literal(`'${fechaInicio} 03:00:00'`),
+              [Op.lt]: Sequelize.literal(
+                `'${fechaFin}' + INTERVAL 1 DAY + INTERVAL 3 HOUR`,
+              ),
+            },
+            [Op.or]: [
+              { referencia: { [Op.notLike]: "compra-%" } },
+              { referencia: null },
+            ],
+          },
+        })) || 0,
+      ) || 0;
+
+    // ---- Punto de equilibrio en $ ----
+    // PE = Costos fijos / (Margen de contribución % / 100)
+    const puntoEquilibrio =
+      margenContribucionPct > 0
+        ? gastosFijos / (margenContribucionPct / 100)
+        : null;
+
+    // ---- Métricas de tiempo ----
+    const start = new Date(fechaInicio + "T12:00:00Z");
+    const end = new Date(fechaFin + "T12:00:00Z");
+    const diasPeriodo =
+      Math.round((end - start) / 86400000) + 1; // inclusive
+    const ventasDiarias = diasPeriodo > 0 ? ventasPeriodo / diasPeriodo : 0;
+    const puntoEquilibrioDias =
+      puntoEquilibrio != null && ventasDiarias > 0
+        ? puntoEquilibrio / ventasDiarias
+        : null;
+
+    return success(res, {
+      periodo: { fechaInicio, fechaFin },
+      resumen: {
+        ventasPeriodo,
+        costoVariableTotal,
+        margenContribucion,
+        margenContribucionPct,
+        gastosFijos,
+        puntoEquilibrio,
+        diasPeriodo,
+        ventasDiarias,
+        puntoEquilibrioDias,
+      },
+    });
+  } catch (err) {
+    console.error("Error en reportePuntoEquilibrio:", err);
+    return error(
+      res,
+      "Error al generar reporte de punto de equilibrio: " + err.message,
+      500,
+    );
+  }
+};
+
 module.exports = {
   reporteVentas,
   reporteProductosMasVendidos,
@@ -1211,4 +1451,6 @@ module.exports = {
   reporteGastos,
   reporteCompras,
   reporteDeudores,
+  reporteImpuestos,
+  reportePuntoEquilibrio,
 };

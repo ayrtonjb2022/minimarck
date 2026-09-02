@@ -1,6 +1,8 @@
 import React, { useRef } from "react";
 import { formatCurrency, formatDate } from "../../utils/formatters";
 
+const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 const BoletaPago = ({ deudor, pagos, onClose }) => {
   const printRef = useRef(null);
 
@@ -15,7 +17,7 @@ const BoletaPago = ({ deudor, pagos, onClose }) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Boleta de Pago - ${deudor.nombre}</title>
+        <title>Boleta de Pago - ${esc(deudor.nombre)}</title>
         <style>
           @page { margin: 15mm; size: auto; }
           * { margin: 0; padding: 0; box-sizing: border-box; }

@@ -24,18 +24,30 @@ const create = async (req, res) => {
       return error(res, "El monto debe ser mayor a 0", 400);
     }
 
-    const caja = await Caja.findByPk(cajaId);
-    if (!caja) return error(res, "Caja no encontrada", 404);
-    if (caja.estado === "cerrada")
+    t = await sequelize.transaction();
+
+    // Buscar caja con lock dentro de la transacción para evitar race conditions
+    const caja = await Caja.findOne({
+      where: { id: cajaId, negocioId: req.businessId || req.user?.negocioId },
+      lock: true,
+      transaction: t,
+    });
+    if (!caja) {
+      await t.rollback();
+      return error(res, "Caja no encontrada", 404);
+    }
+    if (caja.estado === "cerrada") {
+      await t.rollback();
       return error(res, "La caja está cerrada. No se pueden registrar movimientos", 400);
-    if (caja.userId !== req.userId)
+    }
+    if (caja.userId !== req.userId) {
+      await t.rollback();
       return error(res, "No tiene permisos para registrar movimientos en esta caja", 403);
+    }
 
     const saldoActual = parseFloat(caja.saldoInicial) + parseFloat(caja.totalIngresos) - parseFloat(caja.totalEgresos);
     const saldoAnterior = saldoActual;
     const saldoNuevo = tipo === "ingreso" ? saldoActual + parseFloat(monto) : saldoActual - parseFloat(monto);
-
-    t = await sequelize.transaction();
 
     const movimiento = await MovimientoCaja.create({
       tipo,
@@ -61,7 +73,7 @@ const create = async (req, res) => {
   } catch (err) {
     if (t) await t.rollback();
     console.error("Error en create movimiento:", err);
-    return error(res, "Error al registrar movimiento: " + err.message, 500);
+    return error(res, "Error al registrar movimiento", 500);
   }
 };
 
@@ -71,9 +83,10 @@ const create = async (req, res) => {
  */
 const getByCaja = async (req, res) => {
   try {
-    const { page = 1, limit = 20, tipo } = req.query;
+    let { page = 1, limit = 20, tipo } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
     const { cajaId } = req.params;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * limit;
 
     const where = { cajaId, ...req.filterCondition };
     if (tipo) {
@@ -89,15 +102,15 @@ const getByCaja = async (req, res) => {
           attributes: ["id", "nombre", "email"],
         },
       ],
-      limit: parseInt(limit),
+      limit: limit,
       offset: offset,
       order: [["createdAt", "DESC"]],
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en getByCaja movimientos:", err);
-    return error(res, "Error al obtener movimientos: " + err.message, 500);
+    return error(res, "Error al obtener movimientos", 500);
   }
 };
 
@@ -140,7 +153,7 @@ const getResumen = async (req, res) => {
     );
   } catch (err) {
     console.error("Error en getResumen movimientos:", err);
-    return error(res, "Error al obtener resumen: " + err.message, 500);
+    return error(res, "Error al obtener resumen", 500);
   }
 };
 

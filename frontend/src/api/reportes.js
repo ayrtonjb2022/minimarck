@@ -11,4 +11,6 @@ export const reportesAPI = {
   gastos: (params) => apiClient.get("/reportes/gastos", { params }),
   compras: (params) => apiClient.get("/reportes/compras", { params }),
   deudores: (params) => apiClient.get("/reportes/deudores", { params }),
+  impuestos: (params) => apiClient.get("/reportes/impuestos", { params }),
+  puntoEquilibrio: (params) => apiClient.get("/reportes/punto-equilibrio", { params }),
 };

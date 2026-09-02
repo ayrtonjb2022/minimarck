@@ -72,6 +72,11 @@ const User = sequelize.define(
     timestamps: true,
     underscored: true,
     paranoid: true, // Soft delete
+    indexes: [
+      {
+        fields: ["negocioId"],
+      },
+    ],
     hooks: {
       // Hash password antes de crear
       beforeCreate: async (user) => {

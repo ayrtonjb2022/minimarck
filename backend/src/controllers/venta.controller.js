@@ -236,7 +236,7 @@ const create = async (req, res) => {
   } catch (err) {
     try { await transaction.rollback(); } catch (_) {}
     console.error("Error en create venta:", err);
-    return error(res, "Error al registrar la venta: " + err.message, 500);
+    return error(res, "Error al registrar la venta", 500);
   }
 };
 
@@ -246,8 +246,9 @@ const create = async (req, res) => {
  */
 const getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 20, fechaInicio, fechaFin, estado } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let { page = 1, limit = 20, fechaInicio, fechaFin, estado } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
+    const offset = (parseInt(page) - 1) * limit;
 
     const where = {
       ...req.filterCondition,
@@ -291,15 +292,15 @@ const getAll = async (req, res) => {
           attributes: ["id", "nombre", "deudaTotal", "deudaPendiente"],
         },
       ],
-      limit: parseInt(limit),
+      limit: limit,
       offset: offset,
       order: [["fecha", "DESC"]],
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en getAll ventas:", err);
-    return error(res, "Error al obtener ventas: " + err.message, 500);
+    return error(res, "Error al obtener ventas", 500);
   }
 };
 
@@ -344,7 +345,7 @@ const getById = async (req, res) => {
     return success(res, venta, "Venta obtenida exitosamente");
   } catch (err) {
     console.error("Error en getById venta:", err);
-    return error(res, "Error al obtener venta: " + err.message, 500);
+    return error(res, "Error al obtener venta", 500);
   }
 };
 

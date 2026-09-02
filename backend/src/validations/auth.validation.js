@@ -15,7 +15,7 @@ const validateRegister = [
 
   body("password")
     .notEmpty().withMessage("La contraseña es requerida")
-    .isLength({ min: 6, max: 100 }).withMessage("La contraseña debe tener al menos 6 caracteres"),
+    .isLength({ min: 8, max: 100 }).withMessage("La contraseña debe tener al menos 8 caracteres"),
 
   body("nombreNegocio")
     .notEmpty().withMessage("El nombre del negocio es requerido")

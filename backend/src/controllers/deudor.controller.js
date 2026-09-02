@@ -9,8 +9,9 @@ const { Op } = require("sequelize");
  */
 const getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search, conDeuda } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let { page = 1, limit = 20, search, conDeuda } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
+    const offset = (parseInt(page) - 1) * limit;
 
     const where = {
       ...req.filterCondition,
@@ -31,18 +32,18 @@ const getAll = async (req, res) => {
 
     const { count, rows } = await ClienteDeudor.findAndCountAll({
       where,
-      limit: parseInt(limit),
+      limit: limit,
       offset: offset,
       order: [["deudaPendiente", "DESC"]],
       attributes: { exclude: ["createdAt", "updatedAt"] }, // Seguridad: no exponer timestamps
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en getAll deudores:", err);
     return error(
       res,
-      "Error al obtener clientes deudores: " + err.message,
+      "Error al obtener clientes deudores",
       500,
     );
   }
@@ -82,7 +83,7 @@ const getById = async (req, res) => {
     return success(res, deudor, "Cliente deudor obtenido exitosamente");
   } catch (err) {
     console.error("Error en getById deudor:", err);
-    return error(res, "Error al obtener cliente deudor: " + err.message, 500);
+    return error(res, "Error al obtener cliente deudor", 500);
   }
 };
 
@@ -148,7 +149,7 @@ const create = async (req, res) => {
     return success(res, deudor, "Cliente deudor creado exitosamente", 201);
   } catch (err) {
     console.error("Error en create deudor:", err);
-    return error(res, "Error al crear cliente deudor: " + err.message, 500);
+    return error(res, "Error al crear cliente deudor", 500);
   }
 };
 
@@ -232,7 +233,7 @@ const update = async (req, res) => {
     console.error("Error en update deudor:", err);
     return error(
       res,
-      "Error al actualizar cliente deudor: " + err.message,
+      "Error al actualizar cliente deudor",
       500,
     );
   }
@@ -254,7 +255,7 @@ const remove = async (req, res) => {
     return success(res, null, "Cliente deudor eliminado exitosamente");
   } catch (err) {
     console.error("Error en remove deudor:", err);
-    return error(res, "Error al eliminar cliente deudor: " + err.message, 500);
+    return error(res, "Error al eliminar cliente deudor", 500);
   }
 };
 
@@ -302,6 +303,27 @@ const registrarPago = async (req, res) => {
     const transaction = await ClienteDeudor.sequelize.transaction();
 
     try {
+      // Re-leer el deudor con lock dentro de la transacción para evitar race conditions
+      const deudorLocked = await ClienteDeudor.findOne({
+        where: { id: deudor.id },
+        lock: true,
+        transaction,
+      });
+      if (!deudorLocked) {
+        await transaction.rollback();
+        return error(res, "Cliente deudor no encontrado", 404);
+      }
+
+      // Verificar saldo DESPUÉS de adquirir el lock
+      if (parseFloat(monto) > parseFloat(deudorLocked.deudaPendiente)) {
+        await transaction.rollback();
+        return error(
+          res,
+          `El monto excede la deuda pendiente (${deudorLocked.deudaPendiente})`,
+          400,
+        );
+      }
+
       const pago = await PagoDeuda.create(
         {
           monto: parseFloat(monto),
@@ -309,7 +331,7 @@ const registrarPago = async (req, res) => {
           metodoPago: metodoPago ? metodoPago.toLowerCase() : "efectivo",
           referencia: referencia || null,
           observaciones: observaciones || null,
-          deudorId: deudor.id,
+          deudorId: deudorLocked.id,
           negocioId: req.businessId || req.user?.negocioId,
           userId: req.userId,
         },
@@ -318,8 +340,8 @@ const registrarPago = async (req, res) => {
 
       // Actualizar deuda
       const nuevaDeudaPendiente =
-        parseFloat(deudor.deudaPendiente) - parseFloat(monto);
-      await deudor.update(
+        parseFloat(deudorLocked.deudaPendiente) - parseFloat(monto);
+      await deudorLocked.update(
         {
           deudaPendiente: nuevaDeudaPendiente,
         },
@@ -349,7 +371,7 @@ const registrarPago = async (req, res) => {
     }
   } catch (err) {
     console.error("Error en registrarPago:", err);
-    return error(res, "Error al registrar pago: " + err.message, 500);
+    return error(res, "Error al registrar pago", 500);
   }
 };
 
@@ -359,8 +381,9 @@ const registrarPago = async (req, res) => {
  */
 const getPagos = async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let { page = 1, limit = 20 } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
+    const offset = (parseInt(page) - 1) * limit;
 
     const { count, rows } = await PagoDeuda.findAndCountAll({
       where: {
@@ -374,16 +397,16 @@ const getPagos = async (req, res) => {
           attributes: ["id", "nombre", "email"], // Solo campos necesarios
         },
       ],
-      limit: parseInt(limit),
+      limit: limit,
       offset: offset,
       order: [["fecha", "DESC"]],
       attributes: { exclude: ["createdAt", "updatedAt"] },
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en getPagos:", err);
-    return error(res, "Error al obtener pagos: " + err.message, 500);
+    return error(res, "Error al obtener pagos", 500);
   }
 };
 

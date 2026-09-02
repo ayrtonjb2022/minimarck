@@ -8,8 +8,9 @@ const { Op } = require("sequelize");
  */
 const getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let { page = 1, limit = 20, search } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
+    const offset = (parseInt(page) - 1) * limit;
 
     const where = {
       ...req.filterCondition,
@@ -22,15 +23,15 @@ const getAll = async (req, res) => {
 
     const { count, rows } = await Categoria.findAndCountAll({
       where,
-      limit: parseInt(limit),
+      limit: limit,
       offset: offset,
       order: [["nombre", "ASC"]],
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en getAll categorías:", err);
-    return error(res, "Error al obtener categorías: " + err.message, 500);
+    return error(res, "Error al obtener categorías", 500);
   }
 };
 
@@ -47,7 +48,7 @@ const getById = async (req, res) => {
     return success(res, categoria, "Categoría obtenida exitosamente");
   } catch (err) {
     console.error("Error en getById categoría:", err);
-    return error(res, "Error al obtener categoría: " + err.message, 500);
+    return error(res, "Error al obtener categoría", 500);
   }
 };
 
@@ -87,7 +88,7 @@ const create = async (req, res) => {
     return success(res, categoria, "Categoría creada exitosamente", 201);
   } catch (err) {
     console.error("Error en create categoría:", err);
-    return error(res, "Error al crear categoría: " + err.message, 500);
+    return error(res, "Error al crear categoría", 500);
   }
 };
 
@@ -130,7 +131,7 @@ const update = async (req, res) => {
     return success(res, categoria, "Categoría actualizada exitosamente");
   } catch (err) {
     console.error("Error en update categoría:", err);
-    return error(res, "Error al actualizar categoría: " + err.message, 500);
+    return error(res, "Error al actualizar categoría", 500);
   }
 };
 
@@ -176,7 +177,7 @@ const remove = async (req, res) => {
     return success(res, null, "Categoría eliminada exitosamente");
   } catch (err) {
     console.error("Error en remove categoría:", err);
-    return error(res, "Error al eliminar categoría: " + err.message, 500);
+    return error(res, "Error al eliminar categoría", 500);
   }
 };
 

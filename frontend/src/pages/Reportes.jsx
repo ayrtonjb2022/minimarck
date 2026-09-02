@@ -31,13 +31,15 @@ const tabs = [
   { key: "general", label: "General", icon: "fa-solid fa-chart-pie" },
   { key: "ganancias", label: "Ganancias", icon: "fa-solid fa-money-bill-trend-up" },
   { key: "caja", label: "Caja", icon: "fa-solid fa-coins" },
+  { key: "impuestos", label: "Impuestos", icon: "fa-solid fa-file-invoice" },
+  { key: "equilibrio", label: "Punto de equilibrio", icon: "fa-solid fa-scale-balanced" },
 ];
 
 // Agrupación del menú con encabezados de sección
 const tabGroups = [
   { label: "Diagnóstico", keys: ["gerencial", "analisis"] },
   { label: "Operativos", keys: ["ventas", "productos", "compras", "stock", "gastos", "deudores"] },
-  { label: "Financieros", keys: ["general", "ganancias", "caja"] },
+  { label: "Financieros", keys: ["general", "ganancias", "caja", "impuestos", "equilibrio"] },
 ];
 
 // Busca el tab por clave (para el botón Consultar y la barra agrupada)
@@ -368,6 +370,7 @@ export default function Reportes() {
   const [loading, setLoading] = useState({
     gerencial: false, general: false, ganancias: false, analisis: false, ventas: false,
     productos: false, stock: false, gastos: false, compras: false, deudores: false, caja: false,
+    impuestos: false, equilibrio: false,
   });
   const { cajaActiva } = useCaja();
 
@@ -386,6 +389,8 @@ export default function Reportes() {
     compras: { fechaInicio: monthStart(), fechaFin: today() },
     deudores: { fechaInicio: monthStart(), fechaFin: today() },
     caja: { fechaInicio: monthStart(), fechaFin: today() },
+    impuestos: { fechaInicio: monthStart(), fechaFin: today() },
+    equilibrio: { fechaInicio: monthStart(), fechaFin: today() },
   });
   const [gerencialResult, setGerencialResult] = useState(null);
   const [generalResult, setGeneralResult] = useState(null);
@@ -398,6 +403,8 @@ export default function Reportes() {
   const [comprasResult, setComprasResult] = useState(null);
   const [deudoresResult, setDeudoresResult] = useState(null);
   const [cajaResult, setCajaResult] = useState(null);
+  const [impuestosResult, setImpuestosResult] = useState(null);
+  const [equilibrioResult, setEquilibrioResult] = useState(null);
 
   const handleConsultarGerencial = async () => {
     const { fechaInicio, fechaFin } = dates.gerencial;
@@ -536,6 +543,28 @@ export default function Reportes() {
     finally { setLoading((p) => ({ ...p, deudores: false })); }
   };
 
+  const handleConsultarImpuestos = async () => {
+    const { fechaInicio, fechaFin } = dates.impuestos;
+    if (!fechaInicio || !fechaFin) { toast.error("Seleccioná fecha de inicio y fin"); return; }
+    try {
+      setLoading((p) => ({ ...p, impuestos: true }));
+      const res = await reportesAPI.impuestos(cleanParams({ fechaInicio, fechaFin }));
+      setImpuestosResult(res.data.data);
+    } catch { toast.error("Error al consultar reporte de impuestos"); }
+    finally { setLoading((p) => ({ ...p, impuestos: false })); }
+  };
+
+  const handleConsultarEquilibrio = async () => {
+    const { fechaInicio, fechaFin } = dates.equilibrio;
+    if (!fechaInicio || !fechaFin) { toast.error("Seleccioná fecha de inicio y fin"); return; }
+    try {
+      setLoading((p) => ({ ...p, equilibrio: true }));
+      const res = await reportesAPI.puntoEquilibrio(cleanParams({ fechaInicio, fechaFin }));
+      setEquilibrioResult(res.data.data);
+    } catch { toast.error("Error al consultar punto de equilibrio"); }
+    finally { setLoading((p) => ({ ...p, equilibrio: false })); }
+  };
+
   // Caja: usa la caja abierta actual vía CajaContext; si no hay, avisa al usuario
   const handleConsultarCaja = async () => {
     if (!cajaActiva) { toast.error("Necesitás tener una caja abierta (ver menú Caja)"); return; }
@@ -560,6 +589,8 @@ export default function Reportes() {
     compras: handleConsultarCompras,
     deudores: handleConsultarDeudores,
     caja: handleConsultarCaja,
+    impuestos: handleConsultarImpuestos,
+    equilibrio: handleConsultarEquilibrio,
   };
 
   const currentDates = dates[tab];
@@ -1414,6 +1445,295 @@ export default function Reportes() {
             ) : (
               <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>La caja abierta no tiene movimientos</div>
             )}
+          </div>
+        </>
+      )}
+
+      {/* Impuestos tab */}
+      {tab === "impuestos" && impuestosResult && (
+        <>
+          <div className="stats-grid" style={{ marginBottom: 20 }}>
+            <div className="stat-card" style={{ borderTop: "3px solid #22c55e" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Total ventas</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#16a34a" }}>{fmt(impuestosResult.resumen?.totalVentas ?? 0)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #3b82f6" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Total compras</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#2563eb" }}>{fmt(impuestosResult.resumen?.totalCompras ?? 0)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #a855f7" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Ganancia bruta</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#a855f7" }}>{fmt(impuestosResult.resumen?.gananciaBruta ?? 0)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #ef4444" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Gastos operativos</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#dc2626" }}>{fmt(impuestosResult.resumen?.gastosOperativos ?? 0)}</p>
+            </div>
+          </div>
+
+          <div className="stats-grid" style={{ marginBottom: 20 }}>
+            <div className="stat-card" style={{ borderTop: `3px solid ${(impuestosResult.resumen?.gananciaNeta ?? 0) >= 0 ? "#22c55e" : "#ef4444"}` }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Ganancia neta</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: (impuestosResult.resumen?.gananciaNeta ?? 0) >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(impuestosResult.resumen?.gananciaNeta ?? 0)}</p>
+            </div>
+          </div>
+
+          {/* Disclaimers */}
+          <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 12, padding: "14px 18px", marginBottom: 20, fontSize: 13, color: "#854d0e" }}>
+            <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: 6 }}></i>
+            <strong>Valores estimados basados en IVA 21%. Consultá a tu contador para el cálculo exacto.</strong>
+          </div>
+
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h3 style={{ margin: "0 0 14px", fontSize: 16 }}>Estimación de IVA incluido</h3>
+            <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 14px" }}>
+              Los precios son finales (IVA incluido si aplica). Se estima el componente de IVA dividiendo por 1.21 y multiplicando por 0.21.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+              {[
+                { label: "IVA facturado (estimado)", value: fmt(impuestosResult.resumen?.ivaFacturado ?? 0), color: "#2563eb" },
+                { label: "IVA en compras (estimado)", value: fmt(impuestosResult.resumen?.ivaCompras ?? 0), color: "#d97706" },
+                { label: "IVA neto a remitir", value: fmt(impuestosResult.resumen?.ivaNeto ?? 0), color: (impuestosResult.resumen?.ivaNeto ?? 0) >= 0 ? "#dc2626" : "#16a34a" },
+              ].map((s) => (
+                <div key={s.label} className="stat-card">
+                  <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>{s.label}</p>
+                  <p style={{ fontSize: 15, fontWeight: 600, margin: "4px 0 0", color: s.color }}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>Explicación</h3>
+            <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 12px" }}>
+              Los valores son orientativos para un monotributista. No constituyen una liquidación oficial de IVA.
+            </p>
+            <div style={{ background: "#f8fafc", borderRadius: 8, padding: 16, fontSize: 13, color: "#475569" }}>
+              <p style={{ fontWeight: 600, margin: "0 0 6px" }}>Fórmula</p>
+              <p style={{ margin: 0, fontFamily: "monospace" }}>IVA estimado = Total / 1.21 × 0.21</p>
+              <p style={{ margin: "6px 0 0", fontFamily: "monospace", color: "#64748b" }}>
+                Ejemplo: $100.000 de ventas → IVA = $100.000 / 1.21 × 0.21 = ${((100000 / 1.21) * 0.21).toFixed(0)}
+              </p>
+            </div>
+          </div>
+
+          {impuestosResult.resumen && (
+            <div className="card">
+              <div style={{ display: "flex", gap: 8, marginTop: 0 }}>
+                <button
+                  onClick={() => exportExcel(
+                    [
+                      { Concepto: "Total ventas", Valor: fmt(impuestosResult.resumen.totalVentas) },
+                      { Concepto: "Total compras", Valor: fmt(impuestosResult.resumen.totalCompras) },
+                      { Concepto: "Ganancia bruta", Valor: fmt(impuestosResult.resumen.gananciaBruta) },
+                      { Concepto: "Gastos operativos", Valor: fmt(impuestosResult.resumen.gastosOperativos) },
+                      { Concepto: "Ganancia neta", Valor: fmt(impuestosResult.resumen.gananciaNeta) },
+                      { Concepto: "IVA facturado (estimado)", Valor: fmt(impuestosResult.resumen.ivaFacturado) },
+                      { Concepto: "IVA compras (estimado)", Valor: fmt(impuestosResult.resumen.ivaCompras) },
+                      { Concepto: "IVA neto a remitir", Valor: fmt(impuestosResult.resumen.ivaNeto) },
+                    ],
+                    [],
+                    `impuestos-${dates.impuestos.fechaInicio}-${dates.impuestos.fechaFin}`
+                  )}
+                  className="btn-secondary" style={{ fontSize: 13 }}
+                >
+                  <i className="fa-solid fa-file-excel"></i> Excel
+                </button>
+                <button
+                  onClick={() => exportPDF(
+                    "Reporte de Impuestos",
+                    [{ key: "Concepto", header: "Concepto" }, { key: "Valor", header: "Valor" }],
+                    [
+                      { Concepto: "Total ventas", Valor: fmt(impuestosResult.resumen.totalVentas) },
+                      { Concepto: "Total compras", Valor: fmt(impuestosResult.resumen.totalCompras) },
+                      { Concepto: "Ganancia bruta", Valor: fmt(impuestosResult.resumen.gananciaBruta) },
+                      { Concepto: "Gastos operativos", Valor: fmt(impuestosResult.resumen.gastosOperativos) },
+                      { Concepto: "Ganancia neta", Valor: fmt(impuestosResult.resumen.gananciaNeta) },
+                      { Concepto: "IVA facturado (estimado)", Valor: fmt(impuestosResult.resumen.ivaFacturado) },
+                      { Concepto: "IVA compras (estimado)", Valor: fmt(impuestosResult.resumen.ivaCompras) },
+                      { Concepto: "IVA neto a remitir", Valor: fmt(impuestosResult.resumen.ivaNeto) },
+                    ],
+                    `impuestos-${dates.impuestos.fechaInicio}-${dates.impuestos.fechaFin}`,
+                    negocio
+                  )}
+                  className="btn-secondary" style={{ fontSize: 13 }}
+                >
+                  <i className="fa-solid fa-file-pdf"></i> PDF
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Punto de equilibrio tab */}
+      {tab === "equilibrio" && equilibrioResult && (
+        <>
+          <div className="stats-grid" style={{ marginBottom: 20 }}>
+            <div className="stat-card" style={{ borderTop: "3px solid #22c55e" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Ventas del período</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#16a34a" }}>{fmt(equilibrioResult.resumen?.ventasPeriodo ?? 0)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #f59e0b" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Costo variable total</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#d97706" }}>{fmt(equilibrioResult.resumen?.costoVariableTotal ?? 0)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #3b82f6" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Margen de contribución</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#2563eb" }}>{fmt(equilibrioResult.resumen?.margenContribucion ?? 0)} <span style={{ fontSize: 14 }}>({(equilibrioResult.resumen?.margenContribucionPct ?? 0).toFixed(1)}%)</span></p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #ef4444" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Gastos fijos (gastos operativos)</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#dc2626" }}>{fmt(equilibrioResult.resumen?.gastosFijos ?? 0)}</p>
+            </div>
+          </div>
+
+          <div className="stats-grid" style={{ marginBottom: 20 }}>
+            <div className="stat-card" style={{ borderTop: "3px solid #a855f7" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Punto de equilibrio ($)</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#a855f7" }}>
+                {equilibrioResult.resumen?.puntoEquilibrio != null
+                  ? fmt(equilibrioResult.resumen.puntoEquilibrio)
+                  : <span style={{ fontStyle: "italic", fontSize: 16, color: "#94a3b8" }}>— sin margen</span>}
+              </p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #94a3b8" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Ventas diarias</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#475569" }}>{fmt(equilibrioResult.resumen?.ventasDiarias ?? 0)}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #94a3b8" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Días para equilibrio</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#475569" }}>
+                {equilibrioResult.resumen?.puntoEquilibrioDias != null
+                  ? `${equilibrioResult.resumen.puntoEquilibrioDias.toFixed(1)} días`
+                  : <span style={{ fontStyle: "italic", fontSize: 16, color: "#94a3b8" }}>— sin margen</span>}
+              </p>
+            </div>
+            <div className="stat-card" style={{ borderTop: `3px solid ${(equilibrioResult.resumen?.margenContribucionPct ?? 0) > 0 ? "#22c55e" : "#ef4444"}` }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Resultado del período</p>
+              <p style={{ fontSize: 20, fontWeight: 700, margin: "4px 0 0", color: (equilibrioResult.resumen?.margenContribucionPct ?? 0) > 0 ? "#16a34a" : "#dc2626" }}>
+                {(equilibrioResult.resumen?.ventasPeriodo ?? 0) >= (equilibrioResult.resumen?.puntoEquilibrio ?? Infinity)
+                  ? <><i className="fa-solid fa-arrow-trend-up" style={{ marginRight: 6 }}></i>Por encima del punto de equilibrio</>
+                  : <><i className="fa-solid fa-arrow-trend-down" style={{ marginRight: 6 }}></i>Por debajo del punto de equilibrio</>}
+              </p>
+            </div>
+          </div>
+
+          {/* Progress bar visual indicator */}
+          {equilibrioResult.resumen?.puntoEquilibrio != null && equilibrioResult.resumen.puntoEquilibrio > 0 && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <h3 style={{ margin: "0 0 14px", fontSize: 16 }}>Progreso hacia punto de equilibrio</h3>
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+                  <span>Ventas: {fmt(equilibrioResult.resumen.ventasPeriodo)}</span>
+                  <span>P.E.: {fmt(equilibrioResult.resumen.puntoEquilibrio)}</span>
+                </div>
+                <div style={{ width: "100%", height: 24, background: "#e2e8f0", borderRadius: 12, overflow: "hidden", position: "relative" }}>
+                  <div
+                    style={{
+                      width: `${Math.min(100, ((equilibrioResult.resumen.ventasPeriodo / equilibrioResult.resumen.puntoEquilibrio) * 100))}%`,
+                      height: "100%",
+                      background: (equilibrioResult.resumen.ventasPeriodo / equilibrioResult.resumen.puntoEquilibrio) >= 1
+                        ? "linear-gradient(90deg, #22c55e, #16a34a)"
+                        : (equilibrioResult.resumen.ventasPeriodo / equilibrioResult.resumen.puntoEquilibrio) >= 0.7
+                          ? "linear-gradient(90deg, #f59e0b, #d97706)"
+                          : "linear-gradient(90deg, #ef4444, #dc2626)",
+                      borderRadius: 12,
+                      transition: "width 0.5s ease",
+                    }}
+                  />
+                </div>
+                <p style={{ fontSize: 12, color: "#94a3b8", margin: "6px 0 0", textAlign: "center" }}>
+                  {((equilibrioResult.resumen.ventasPeriodo / equilibrioResult.resumen.puntoEquilibrio) * 100).toFixed(1)}% del punto de equilibrio alcanzado
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Disclaimer */}
+          <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 12, padding: "14px 18px", marginBottom: 20, fontSize: 13, color: "#854d0e" }}>
+            <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: 6 }}></i>
+            <strong>Suposición:</strong> gastos operativos manuales se tratan como costos fijos. Costos fijos reales (alquiler, sueldo, servicios) deben cargarse como gastos en Caja para un cálculo preciso.
+          </div>
+
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h3 style={{ margin: "0 0 14px", fontSize: 16 }}>Resumen del período</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+              {[
+                { label: "Gastos fijos (operativos)", value: fmt(equilibrioResult.resumen?.gastosFijos ?? 0), color: "#dc2626" },
+                { label: "Costo variable total", value: fmt(equilibrioResult.resumen?.costoVariableTotal ?? 0), color: "#d97706" },
+                { label: "Margen de contribución", value: `${fmt(equilibrioResult.resumen?.margenContribucion ?? 0)} (${(equilibrioResult.resumen?.margenContribucionPct ?? 0).toFixed(1)}%)`, color: "#2563eb" },
+                { label: "Días del período", value: String(equilibrioResult.resumen?.diasPeriodo ?? 0), color: "#0f172a" },
+                { label: "Ventas diarias", value: fmt(equilibrioResult.resumen?.ventasDiarias ?? 0), color: "#16a34a" },
+                { label: "Días para punto de equilibrio", value: equilibrioResult.resumen?.puntoEquilibrioDias != null ? `${equilibrioResult.resumen.puntoEquilibrioDias.toFixed(1)} días` : "—", color: "#a855f7" },
+              ].map((s) => (
+                <div key={s.label} className="stat-card">
+                  <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>{s.label}</p>
+                  <p style={{ fontSize: 15, fontWeight: 600, margin: "4px 0 0", color: s.color, wordBreak: "break-word" }}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>Explicación</h3>
+            <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 12px" }}>
+              El punto de equilibrio indica cuánto necesitás vender para cubrir todos tus costos operativos.
+            </p>
+            <div style={{ background: "#f8fafc", borderRadius: 8, padding: 16, fontSize: 13, color: "#475569" }}>
+              <p style={{ fontWeight: 600, margin: "0 0 6px" }}>Fórmula</p>
+              <p style={{ margin: 0, fontFamily: "monospace" }}>P.E. ($) = Gastos fijos / (Margen de contribución % / 100)</p>
+              <p style={{ margin: "6px 0 0", fontFamily: "monospace", color: "#64748b" }}>
+                {equilibrioResult.resumen?.puntoEquilibrio != null
+                  ? `${fmt(equilibrioResult.resumen.gastosFijos)} / ${((equilibrioResult.resumen.margenContribucionPct ?? 0) / 100).toFixed(4)} = ${fmt(equilibrioResult.resumen.puntoEquilibrio)}`
+                  : "— sin margen de contribución positivo"}
+              </p>
+            </div>
+          </div>
+
+          <div className="card">
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => exportExcel(
+                  [
+                    { Concepto: "Ventas del período", Valor: fmt(equilibrioResult.resumen?.ventasPeriodo ?? 0) },
+                    { Concepto: "Costo variable total", Valor: fmt(equilibrioResult.resumen?.costoVariableTotal ?? 0) },
+                    { Concepto: "Margen de contribución", Valor: `${fmt(equilibrioResult.resumen?.margenContribucion ?? 0)} (${(equilibrioResult.resumen?.margenContribucionPct ?? 0).toFixed(1)}%)` },
+                    { Concepto: "Gastos fijos (operativos)", Valor: fmt(equilibrioResult.resumen?.gastosFijos ?? 0) },
+                    { Concepto: "Punto de equilibrio ($)", Valor: equilibrioResult.resumen?.puntoEquilibrio != null ? fmt(equilibrioResult.resumen.puntoEquilibrio) : "N/A" },
+                    { Concepto: "Días del período", Valor: String(equilibrioResult.resumen?.diasPeriodo ?? 0) },
+                    { Concepto: "Ventas diarias", Valor: fmt(equilibrioResult.resumen?.ventasDiarias ?? 0) },
+                    { Concepto: "Días para punto de equilibrio", Valor: equilibrioResult.resumen?.puntoEquilibrioDias != null ? `${equilibrioResult.resumen.puntoEquilibrioDias.toFixed(1)} días` : "N/A" },
+                  ],
+                  [],
+                  `punto-equilibrio-${dates.equilibrio.fechaInicio}-${dates.equilibrio.fechaFin}`
+                )}
+                className="btn-secondary" style={{ fontSize: 13 }}
+              >
+                <i className="fa-solid fa-file-excel"></i> Excel
+              </button>
+              <button
+                onClick={() => exportPDF(
+                  "Punto de Equilibrio",
+                  [{ key: "Concepto", header: "Concepto" }, { key: "Valor", header: "Valor" }],
+                  [
+                    { Concepto: "Ventas del período", Valor: fmt(equilibrioResult.resumen?.ventasPeriodo ?? 0) },
+                    { Concepto: "Costo variable total", Valor: fmt(equilibrioResult.resumen?.costoVariableTotal ?? 0) },
+                    { Concepto: "Margen de contribución", Valor: `${fmt(equilibrioResult.resumen?.margenContribucion ?? 0)} (${(equilibrioResult.resumen?.margenContribucionPct ?? 0).toFixed(1)}%)` },
+                    { Concepto: "Gastos fijos (operativos)", Valor: fmt(equilibrioResult.resumen?.gastosFijos ?? 0) },
+                    { Concepto: "Punto de equilibrio ($)", Valor: equilibrioResult.resumen?.puntoEquilibrio != null ? fmt(equilibrioResult.resumen.puntoEquilibrio) : "N/A" },
+                    { Concepto: "Días del período", Valor: String(equilibrioResult.resumen?.diasPeriodo ?? 0) },
+                    { Concepto: "Ventas diarias", Valor: fmt(equilibrioResult.resumen?.ventasDiarias ?? 0) },
+                    { Concepto: "Días para punto de equilibrio", Valor: equilibrioResult.resumen?.puntoEquilibrioDias != null ? `${equilibrioResult.resumen.puntoEquilibrioDias.toFixed(1)} días` : "N/A" },
+                  ],
+                  `punto-equilibrio-${dates.equilibrio.fechaInicio}-${dates.equilibrio.fechaFin}`,
+                  negocio
+                )}
+                className="btn-secondary" style={{ fontSize: 13 }}
+              >
+                <i className="fa-solid fa-file-pdf"></i> PDF
+              </button>
+            </div>
           </div>
         </>
       )}

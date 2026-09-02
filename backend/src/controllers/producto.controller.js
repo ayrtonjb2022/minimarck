@@ -9,8 +9,9 @@ const sequelize = require("../config/database");
  */
 const getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search, categoriaId, minStock } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let { page = 1, limit = 20, search, categoriaId, minStock } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
+    const offset = (parseInt(page) - 1) * limit;
 
     const where = {
       ...req.filterCondition,
@@ -41,15 +42,15 @@ const getAll = async (req, res) => {
           attributes: ["id", "nombre"],
         },
       ],
-      limit: parseInt(limit),
+      limit: limit,
       offset: offset,
       order: [["nombre", "ASC"]],
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en getAll productos:", err);
-    return error(res, "Error al obtener productos: " + err.message, 500);
+    return error(res, "Error al obtener productos", 500);
   }
 };
 
@@ -67,7 +68,7 @@ const getById = async (req, res) => {
     return success(res, producto, "Producto obtenido exitosamente");
   } catch (err) {
     console.error("Error en getById producto:", err);
-    return error(res, "Error al obtener producto: " + err.message, 500);
+    return error(res, "Error al obtener producto", 500);
   }
 };
 
@@ -160,7 +161,7 @@ const create = async (req, res) => {
     return success(res, producto, "Producto creado exitosamente", 201);
   } catch (err) {
     console.error("Error en create producto:", err);
-    return error(res, "Error al crear producto: " + err.message, 500);
+    return error(res, "Error al crear producto", 500);
   }
 };
 
@@ -251,7 +252,7 @@ const update = async (req, res) => {
     return success(res, producto, "Producto actualizado exitosamente");
   } catch (err) {
     console.error("Error en update producto:", err);
-    return error(res, "Error al actualizar producto: " + err.message, 500);
+    return error(res, "Error al actualizar producto", 500);
   }
 };
 
@@ -273,7 +274,7 @@ const getByCode = async (req, res) => {
     return success(res, producto, "Producto encontrado");
   } catch (err) {
     console.error("Error en getByCode producto:", err);
-    return error(res, "Error al buscar producto: " + err.message, 500);
+    return error(res, "Error al buscar producto", 500);
   }
 };
 
@@ -313,7 +314,7 @@ const remove = async (req, res) => {
     return success(res, null, "Producto eliminado exitosamente");
   } catch (err) {
     console.error("Error en remove producto:", err);
-    return error(res, "Error al eliminar producto: " + err.message, 500);
+    return error(res, "Error al eliminar producto", 500);
   }
 };
 

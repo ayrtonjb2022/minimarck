@@ -195,7 +195,7 @@ const getStats = async (req, res) => {
     });
   } catch (err) {
     console.error("Error en getStats:", err);
-    return error(res, "Error al obtener estadísticas: " + err.message, 500);
+    return error(res, "Error al obtener estadísticas", 500);
   }
 };
 

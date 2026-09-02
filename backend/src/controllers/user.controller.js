@@ -4,7 +4,7 @@ const { paginated, error } = require("../utils/response");
 // ── GET /users ───────────────────────────────────────────
 const getUsers = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const page = parseInt(req.query.page) || 1;
     const offset = (page - 1) * limit;
 

@@ -12,23 +12,26 @@ const abrirCaja = async (req, res) => {
   try {
     const { saldoInicial, observaciones } = req.body;
 
-    // Verificar si ya hay una caja abierta en el negocio
+    t = await sequelize.transaction();
+
+    // Verificar si ya hay una caja abierta en el negocio DENTRO de la transacción con lock
     const cajaAbierta = await Caja.findOne({
       where: {
         negocioId: req.businessId || req.user?.negocioId,
         estado: "abierta",
       },
+      lock: true,
+      transaction: t,
     });
 
     if (cajaAbierta) {
+      await t.rollback();
       return error(
         res,
         "Ya existe una caja abierta. Debe cerrarla antes de abrir otra",
         400,
       );
     }
-
-    t = await sequelize.transaction();
 
     const caja = await Caja.create({
       fechaApertura: new Date(),
@@ -60,7 +63,7 @@ const abrirCaja = async (req, res) => {
   } catch (err) {
     if (t) await t.rollback();
     console.error("Error en abrirCaja:", err);
-    return error(res, "Error al abrir caja: " + err.message, 500);
+    return error(res, "Error al abrir caja", 500);
   }
 };
 
@@ -99,7 +102,7 @@ const cerrarCaja = async (req, res) => {
     return success(res, caja, "Caja cerrada exitosamente");
   } catch (err) {
     console.error("Error en cerrarCaja:", err);
-    return error(res, "Error al cerrar caja: " + err.message, 500);
+    return error(res, "Error al cerrar caja", 500);
   }
 };
 
@@ -131,7 +134,7 @@ const getCajaActiva = async (req, res) => {
     return success(res, caja, "Caja activa obtenida exitosamente");
   } catch (err) {
     console.error("Error en getCajaActiva:", err);
-    return error(res, "Error al obtener caja activa: " + err.message, 500);
+    return error(res, "Error al obtener caja activa", 500);
   }
 };
 
@@ -141,8 +144,9 @@ const getCajaActiva = async (req, res) => {
  */
 const getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 20, estado, fechaInicio, fechaFin } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let { page = 1, limit = 20, estado, fechaInicio, fechaFin } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
+    const offset = (parseInt(page) - 1) * limit;
 
     const where = {
       ...req.filterCondition,
@@ -175,15 +179,15 @@ const getAll = async (req, res) => {
           attributes: ["id", "nombre", "email"],
         },
       ],
-      limit: parseInt(limit),
+      limit: limit,
       offset: offset,
       order: [["fechaApertura", "DESC"]],
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en getAll cajas:", err);
-    return error(res, "Error al obtener cajas: " + err.message, 500);
+    return error(res, "Error al obtener cajas", 500);
   }
 };
 
@@ -228,7 +232,7 @@ const getById = async (req, res) => {
     return success(res, caja, "Caja obtenida exitosamente");
   } catch (err) {
     console.error("Error en getById caja:", err);
-    return error(res, "Error al obtener caja: " + err.message, 500);
+    return error(res, "Error al obtener caja", 500);
   }
 };
 

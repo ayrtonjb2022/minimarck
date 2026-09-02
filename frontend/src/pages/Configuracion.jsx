@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 const TABS = [
   { id: "general", label: "General", icon: "fa-cog" },
+  { id: "fiscal", label: "Fiscal", icon: "fa-file-invoice" },
   { id: "alertas", label: "Alertas", icon: "fa-bell" },
   { id: "pos", label: "POS / Ticket", icon: "fa-cash-register" },
   { id: "perfil", label: "Perfil", icon: "fa-user" },
@@ -23,6 +24,7 @@ const Configuracion = () => {
   });
   const [alertas, setAlertas] = useState({ alertaCajaMin: "", alertaCajaMax: "" });
   const [posConfig, setPosConfig] = useState({ ticketHeader: "", ticketFooter: "" });
+  const [fiscalConfig, setFiscalConfig] = useState({ ivaPorcentaje: "", costoFijoMensual: "" });
 
   // Perfil / Contraseña
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -44,6 +46,10 @@ const Configuracion = () => {
           const c = n.configuracion || {};
           setAlertas({ alertaCajaMin: c.alertaCajaMin || "", alertaCajaMax: c.alertaCajaMax || "" });
           setPosConfig({ ticketHeader: c.ticketHeader || "", ticketFooter: c.ticketFooter || "" });
+          setFiscalConfig({
+            ivaPorcentaje: c.ivaPorcentaje != null ? String(c.ivaPorcentaje) : "",
+            costoFijoMensual: c.costoFijoMensual != null ? String(c.costoFijoMensual) : "",
+          });
         }
       })
       .catch(() => toast.error("Error al cargar configuración"))
@@ -79,9 +85,24 @@ const Configuracion = () => {
       toast.success("Configuración POS guardada");
     } catch (err) {
       toast.error(err.response?.data?.message || "Error al guardar");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
+  };
+
+  const handleSaveFiscal = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await negocioAPI.actualizar({
+        configuracion: {
+          ...negocio?.configuracion,
+          ivaPorcentaje: parseFloat(fiscalConfig.ivaPorcentaje) || 0,
+          costoFijoMensual: parseFloat(fiscalConfig.costoFijoMensual) || 0,
+        },
+      });
+      toast.success("Configuración fiscal guardada");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Error al guardar");
+    } finally { setSaving(false); }
   };
 
   const handlePasswordChange = (e) => {
@@ -189,6 +210,46 @@ const Configuracion = () => {
             <button type="submit" className="btn-primary" disabled={saving}>
               <i className="fa-solid fa-save"></i>
               {saving ? " Guardando..." : " Guardar cambios"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {tab === "fiscal" && (
+        <form onSubmit={handleSaveFiscal} className="card" style={{ maxWidth: 640, padding: 24 }}>
+          <p style={{ fontSize: 13, color: "#8992a7", marginBottom: 20 }}>
+            Configurá los parámetros fiscales y de costos para los reportes de IVA y punto de equilibrio.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="form-group">
+              <label>Alícuota de IVA (%)</label>
+              <input
+                type="number"
+                value={fiscalConfig.ivaPorcentaje}
+                onChange={(e) => setFiscalConfig({ ...fiscalConfig, ivaPorcentaje: e.target.value })}
+                placeholder="21"
+                min="0"
+                max="100"
+                step="0.01"
+              />
+              <small style={{ fontSize: 11, color: "#6a6a6b" }}>Porcentaje de IVA. Usado en el reporte de impuestos. Si no facturás IVA, poné 0.</small>
+            </div>
+            <div className="form-group">
+              <label>Costo fijo mensual ($)</label>
+              <input
+                type="number"
+                value={fiscalConfig.costoFijoMensual}
+                onChange={(e) => setFiscalConfig({ ...fiscalConfig, costoFijoMensual: e.target.value })}
+                placeholder="150000"
+                min="0"
+              />
+              <small style={{ fontSize: 11, color: "#6a6a6b" }}>Suma de alquiler + sueldos + servicios + otros costos fijos. Usado en el reporte de punto de equilibrio.</small>
+            </div>
+          </div>
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #363432", display: "flex", justifyContent: "flex-end" }}>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              <i className="fa-solid fa-save"></i>
+              {saving ? " Guardando..." : " Guardar configuración fiscal"}
             </button>
           </div>
         </form>

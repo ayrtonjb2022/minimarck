@@ -1,25 +1,40 @@
 const { Producto, Categoria } = require("../models");
+const { verifyToken } = require("../utils/generateToken");
 
 const setupSocket = (io) => {
   io.on("connection", (socket) => {
-    console.log(`Socket conectado: ${socket.id}`);
+    // Autenticación: se valida JWT del handshake y se ignora el negocioId del cliente — siempre se usa el del token.
+    const token = socket.handshake.auth.token || socket.handshake.query.token;
+    if (!token) {
+      console.log(`Socket rechazado: sin token`);
+      return socket.disconnect();
+    }
 
-    socket.on("join-room", ({ role, negocioId }) => {
-      if (!negocioId) return;
-      socket.negocioId = negocioId;
-      socket.role = role; // "pos" o "scanner"
-      const room = `negocio:${negocioId}`;
+    const decoded = verifyToken(token);
+    if (!decoded || !decoded.negocioId) {
+      console.log(`Socket rechazado: token inválido`);
+      return socket.disconnect();
+    }
+
+    const negocioIdFromToken = decoded.negocioId;
+    console.log(`Socket conectado: ${socket.id} (negocio: ${negocioIdFromToken})`);
+
+    socket.on("join-room", ({ role }) => {
+      // Ignorar el negocioId del cliente — siempre usar el del token
+      const room = `negocio:${negocioIdFromToken}`;
       socket.join(room);
+      socket.negocioId = negocioIdFromToken;
+      socket.role = role; // "pos" o "scanner"
       console.log(`${role} ${socket.id} unido a ${room}`);
     });
 
-    socket.on("scan-barcode", async ({ codigo, negocioId }) => {
+    socket.on("scan-barcode", async ({ codigo }) => {
       try {
-        if (!codigo || !negocioId) return;
-        const room = `negocio:${negocioId}`;
+        if (!codigo) return;
+        const room = `negocio:${negocioIdFromToken}`;
 
         const producto = await Producto.findOne({
-          where: { codigo, negocioId, activo: true },
+          where: { codigo, negocioId: negocioIdFromToken, activo: true },
           include: [
             {
               model: Categoria,

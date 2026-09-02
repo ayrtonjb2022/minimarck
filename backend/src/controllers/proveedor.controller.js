@@ -3,7 +3,8 @@ const { success, error, paginated } = require("../utils/response");
 
 const getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search, activo } = req.query;
+    let { page = 1, limit = 20, search, activo } = req.query;
+    limit = Math.min(parseInt(limit) || 20, 100);
     const offset = (page - 1) * limit;
     const where = { ...req.filterCondition };
 
@@ -16,12 +17,12 @@ const getAll = async (req, res) => {
 
     const { rows, count } = await Proveedor.findAndCountAll({
       where,
-      limit: parseInt(limit),
+      limit: limit,
       offset: parseInt(offset),
       order: [["nombre", "ASC"]],
     });
 
-    return paginated(res, rows, count, parseInt(page), parseInt(limit));
+    return paginated(res, rows, count, parseInt(page), limit);
   } catch (err) {
     console.error("Error en proveedor.getAll:", err);
     return error(res, "Error al obtener proveedores", 500);
@@ -43,7 +44,8 @@ const getById = async (req, res) => {
 
 const create = async (req, res) => {
   try {
-    const data = { ...req.body, negocioId: req.businessId || req.user.negocioId };
+    const { nombre, ruc, telefono, email, direccion } = req.body;
+    const data = { nombre, ruc, telefono, email, direccion, negocioId: req.businessId || req.user.negocioId };
     const proveedor = await Proveedor.create(data);
     return success(res, proveedor, "Proveedor creado exitosamente", 201);
   } catch (err) {
@@ -51,7 +53,7 @@ const create = async (req, res) => {
       return error(res, err.errors.map((e) => e.message).join(", "), 400);
     }
     console.error("Error en proveedor.create:", err);
-    return error(res, "Error al crear proveedor", 500);
+    return error(res, "Error al registrar proveedor", 500);
   }
 };
 
@@ -61,7 +63,12 @@ const update = async (req, res) => {
       where: { id: req.params.id, ...req.filterCondition },
     });
     if (!proveedor) return error(res, "Proveedor no encontrado", 404);
-    await proveedor.update(req.body);
+    const allowedFields = ["nombre", "ruc", "telefono", "email", "direccion", "contacto", "notas", "activo"];
+    const sanitized = {};
+    for (const key of allowedFields) {
+      if (req.body[key] !== undefined) sanitized[key] = req.body[key];
+    }
+    await proveedor.update(sanitized);
     return success(res, proveedor, "Proveedor actualizado exitosamente");
   } catch (err) {
     if (err.name === "SequelizeValidationError") {
