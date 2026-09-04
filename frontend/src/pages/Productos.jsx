@@ -7,7 +7,7 @@ import ScannerModal from "../components/common/ScannerModal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import ProductForm from "../components/forms/ProductForm";
 import { toast } from "react-toastify";
-import { formatCurrency } from "../utils/formatters";
+import { formatCurrency, formatDateShort } from "../utils/formatters";
 
 const Productos = () => {
   const queryClient = useQueryClient();
@@ -209,6 +209,7 @@ const Productos = () => {
               <th>Precio</th>
               <th>IVA</th>
               <th>Stock / U.M.</th>
+              <th>Vencimiento</th>
               <th>Estado</th>
               <th>Acciones</th>
             </tr>
@@ -216,11 +217,11 @@ const Productos = () => {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={8}>Cargando...</td>
+                <td colSpan={9}>Cargando...</td>
               </tr>
             ) : productos.length === 0 ? (
               <tr>
-                <td colSpan={8}>No hay productos registrados</td>
+                <td colSpan={9}>No hay productos registrados</td>
               </tr>
             ) : (
               productos.map((row) => (
@@ -231,6 +232,21 @@ const Productos = () => {
                   <td>{formatCurrency(row.precio)}</td>
                   <td>{row.tieneIva ? `${row.ivaPorcentaje || 21}%` : "—"}</td>
                   <td>{row.stock} {row.unidadMedida !== "unidad" ? row.unidadMedida || "" : ""}</td>
+                  <td>
+                    {row.fechaVencimiento ? (() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const fv = row.fechaVencimiento;
+                      const diffDays = Math.ceil((new Date(fv + "T12:00:00Z") - new Date(today + "T12:00:00Z")) / 86400000);
+                      let color = "#16a34a";
+                      if (diffDays <= 0) color = "#dc2626";
+                      else if (diffDays <= 30) color = "#d97706";
+                      return (
+                        <span style={{ color, fontWeight: 600, fontSize: 13 }}>
+                          {formatDateShort(fv)}
+                        </span>
+                      );
+                    })() : "—"}
+                  </td>
                   <td>
                     <span className={`status ${row.activo ? "active-s" : "inactive-s"}`}>
                       <span className="dot"></span>

@@ -14,6 +14,7 @@ const {
   reporteDeudores,
   reporteImpuestos,
   reportePuntoEquilibrio,
+  reporteVencimiento,
 } = require("../controllers/reporte.controller");
 
 // Todas las rutas requieren autenticaciÃ³n
@@ -30,6 +31,7 @@ router.get("/estado-resultados", reporteEstadoResultados);
 router.get("/gerencial", reporteGerencial);
 router.get("/analisis-negocio", reporteAnalisisNegocio);
 router.get("/stock", reporteStock);
+router.get("/vencimiento", reporteVencimiento);
 router.get("/gastos", reporteGastos);
 router.get("/compras", reporteCompras);
 router.get("/deudores", reporteDeudores);

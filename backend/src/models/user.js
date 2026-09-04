@@ -74,7 +74,7 @@ const User = sequelize.define(
     paranoid: true, // Soft delete
     indexes: [
       {
-        fields: ["negocioId"],
+        fields: ["negocio_id"],
       },
     ],
     hooks: {

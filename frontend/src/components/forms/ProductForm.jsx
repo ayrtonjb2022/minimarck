@@ -19,6 +19,7 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
     imagen: "",
     stock: "",
     stockMinimo: "",
+    fechaVencimiento: "",
     unidadMedida: "unidad",
   });
   const [priceMode, setPriceMode] = useState(PRICE_MODE.PRECIO);
@@ -40,6 +41,7 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
         imagen: product.imagen || "",
         stock: product.stock || "",
         stockMinimo: product.stockMinimo || "",
+        fechaVencimiento: product.fechaVencimiento || "",
         unidadMedida: product.unidadMedida || "unidad",
       });
       if (product.margen) setPriceMode(PRICE_MODE.MARGEN);
@@ -91,6 +93,7 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
         margen: formData.margen ? parseFloat(formData.margen) : null,
         stock: parseInt(formData.stock) || 0,
         stockMinimo: parseInt(formData.stockMinimo) || 0,
+        fechaVencimiento: formData.fechaVencimiento || null,
         tieneIva: formData.tieneIva,
         ivaPorcentaje: formData.tieneIva && formData.ivaPorcentaje ? parseFloat(formData.ivaPorcentaje) : null,
         imagen: formData.imagen || null,
@@ -197,6 +200,17 @@ const ProductForm = ({ product, categorias, onSave, onCancel, codigoPrefill }) =
           <label>Stock Mínimo</label>
           <input type="number" name="stockMinimo" value={formData.stockMinimo} onChange={handleChange} min="0" />
         </div>
+      </div>
+
+      <div className="form-group">
+        <label>Fecha de Vencimiento <span style={{ fontSize: 12, color: "#8992a7", fontWeight: 400 }}>(opcional — dejar vacío si no aplica)</span></label>
+        <input
+          type="date"
+          name="fechaVencimiento"
+          value={formData.fechaVencimiento}
+          onChange={handleChange}
+          style={{ maxWidth: 240 }}
+        />
       </div>
 
       <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "#1d1c19", borderRadius: 8, border: "1px solid #363432" }}>

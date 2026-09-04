@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { reportesAPI } from "../api/reportes";
 import { negocioAPI } from "../api/negocio";
 import { useCaja } from "../context/CajaContext";
@@ -25,6 +26,7 @@ const tabs = [
   { key: "productos", label: "Productos", icon: "fa-solid fa-crown" },
   { key: "compras", label: "Compras", icon: "fa-solid fa-truck-ramp-box" },
   { key: "stock", label: "Stock", icon: "fa-solid fa-boxes-stacked" },
+  { key: "vencimiento", label: "Vencimiento", icon: "fa-solid fa-clock" },
   { key: "gastos", label: "Gastos", icon: "fa-solid fa-file-invoice-dollar" },
   { key: "deudores", label: "Deudores", icon: "fa-solid fa-hand-holding-dollar" },
   // Financieros
@@ -38,7 +40,7 @@ const tabs = [
 // Agrupación del menú con encabezados de sección
 const tabGroups = [
   { label: "Diagnóstico", keys: ["gerencial", "analisis"] },
-  { label: "Operativos", keys: ["ventas", "productos", "compras", "stock", "gastos", "deudores"] },
+  { label: "Operativos", keys: ["ventas", "productos", "compras", "stock", "vencimiento", "gastos", "deudores"] },
   { label: "Financieros", keys: ["general", "ganancias", "caja", "impuestos", "equilibrio"] },
 ];
 
@@ -365,11 +367,12 @@ const DetalleReporte = ({ titulo, columns, columnsExport, rows, renderExcel, fil
 );
 
 export default function Reportes() {
-  const [tab, setTab] = useState("gerencial");
+  const location = useLocation();
+  const [tab, setTab] = useState(location.state?.tab || "gerencial");
   const [negocio, setNegocio] = useState(null);
   const [loading, setLoading] = useState({
     gerencial: false, general: false, ganancias: false, analisis: false, ventas: false,
-    productos: false, stock: false, gastos: false, compras: false, deudores: false, caja: false,
+    productos: false, stock: false, vencimiento: false, gastos: false, compras: false, deudores: false, caja: false,
     impuestos: false, equilibrio: false,
   });
   const { cajaActiva } = useCaja();
@@ -385,6 +388,7 @@ export default function Reportes() {
     ventas: { fechaInicio: monthStart(), fechaFin: today() },
     productos: { fechaInicio: monthStart(), fechaFin: today() },
     stock: { fechaInicio: monthStart(), fechaFin: today() },
+    vencimiento: { dias: 30 },
     gastos: { fechaInicio: monthStart(), fechaFin: today() },
     compras: { fechaInicio: monthStart(), fechaFin: today() },
     deudores: { fechaInicio: monthStart(), fechaFin: today() },
@@ -399,6 +403,7 @@ export default function Reportes() {
   const [ventasResult, setVentasResult] = useState(null);
   const [productosResult, setProductosResult] = useState(null);
   const [stockResult, setStockResult] = useState(null);
+  const [vencimientoResult, setVencimientoResult] = useState(null);
   const [gastosResult, setGastosResult] = useState(null);
   const [comprasResult, setComprasResult] = useState(null);
   const [deudoresResult, setDeudoresResult] = useState(null);
@@ -510,6 +515,15 @@ export default function Reportes() {
     finally { setLoading((p) => ({ ...p, stock: false })); }
   };
 
+  const handleConsultarVencimiento = async () => {
+    try {
+      setLoading((p) => ({ ...p, vencimiento: true }));
+      const res = await reportesAPI.vencimiento({ dias: dates.vencimiento.dias || 30 });
+      setVencimientoResult(res.data.data);
+    } catch { toast.error("Error al consultar reporte de vencimiento"); }
+    finally { setLoading((p) => ({ ...p, vencimiento: false })); }
+  };
+
   const handleConsultarGastos = async () => {
     const { fechaInicio, fechaFin } = dates.gastos;
     if (!fechaInicio || !fechaFin) { toast.error("Seleccioná fecha de inicio y fin"); return; }
@@ -585,6 +599,7 @@ export default function Reportes() {
     ventas: handleConsultarVentas,
     productos: handleTopProductos,
     stock: handleConsultarStock,
+    vencimiento: handleConsultarVencimiento,
     gastos: handleConsultarGastos,
     compras: handleConsultarCompras,
     deudores: handleConsultarDeudores,
@@ -655,7 +670,7 @@ export default function Reportes() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
           {/* Stock y Caja no usan fechas: oculto los inputs para no confundir */}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-            {tab !== "stock" && tab !== "caja" && (
+            {tab !== "stock" && tab !== "vencimiento" && tab !== "caja" && (
               <>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Fecha Inicio</label>
@@ -666,6 +681,19 @@ export default function Reportes() {
                   <input type="date" value={currentDates.fechaFin} onChange={(e) => setCurrentDates((prev) => ({ ...prev, fechaFin: e.target.value }))} />
                 </div>
               </>
+            )}
+            {tab === "vencimiento" && (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Días</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={currentDates.dias || 30}
+                  onChange={(e) => setCurrentDates((prev) => ({ ...prev, dias: parseInt(e.target.value) || 30 }))}
+                  style={{ width: 100 }}
+                />
+              </div>
             )}
           </div>
           <button
@@ -1172,6 +1200,111 @@ export default function Reportes() {
               </button>
             </div>
           </div>
+        </>
+      )}
+
+      {/* Vencimiento tab */}
+      {tab === "vencimiento" && vencimientoResult && (
+        <>
+          <div className="stats-grid" style={{ marginBottom: 20 }}>
+            <div className="stat-card" style={{ borderTop: "3px solid #dc2626" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Vencidos</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#dc2626" }}>{vencimientoResult.resumen?.totalVencidos ?? 0}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #d97706" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Próximos a vencer</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#d97706" }}>{vencimientoResult.resumen?.totalPorVencer ?? 0}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #dc2626" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Stock en vencidos</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#dc2626" }}>{vencimientoResult.resumen?.stockEnVencidos ?? 0}</p>
+            </div>
+            <div className="stat-card" style={{ borderTop: "3px solid #d97706" }}>
+              <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Stock por vencer</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#d97706" }}>{vencimientoResult.resumen?.stockPorVencer ?? 0}</p>
+            </div>
+          </div>
+
+          {vencimientoResult.vencidos?.length > 0 ? (
+            <DetalleReporte
+              titulo="Productos vencidos"
+              columns={[
+                { key: "nombre", header: "Producto", cell: (r) => r.nombre },
+                { key: "codigo", header: "Código", cell: (r) => r.codigo || "-" },
+                { key: "stock", header: "Stock", cell: (r) => String(r.stock) },
+                { key: "fechaVencimiento", header: "Vencimiento", cell: (r) => <span style={{ color: "#dc2626", fontWeight: 600 }}>{formatDateShort(r.fechaVencimiento)}</span> },
+                { key: "diasDesdeVencimiento", header: "Días vencido", cell: (r) => <span style={{ color: "#dc2626", fontWeight: 600 }}>{r.diasDesdeVencimiento} día(s)</span> },
+              ]}
+              columnsExport={[
+                { key: "nombre", header: "Producto", cell: (r) => r.nombre },
+                { key: "codigo", header: "Código", cell: (r) => r.codigo || "-" },
+                { key: "stock", header: "Stock", cell: (r) => String(r.stock) },
+                { key: "fechaVencimiento", header: "Vencimiento", cell: (r) => formatDateShort(r.fechaVencimiento) },
+                { key: "diasDesdeVencimiento", header: "Días vencido", cell: (r) => `${r.diasDesdeVencimiento} día(s)` },
+              ]}
+              rows={vencimientoResult.vencidos}
+              renderExcel={(items) => items.map((i) => ({
+                Producto: i.nombre,
+                Código: i.codigo || "-",
+                Stock: String(i.stock),
+                Vencimiento: formatDateShort(i.fechaVencimiento),
+                "Días vencido": `${i.diasDesdeVencimiento} día(s)`,
+              }))}
+              filename={`vencidos-${today()}`}
+              negocio={negocio}
+            />
+          ) : (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8", fontSize: 13 }}>
+                No hay productos vencidos
+              </div>
+            </div>
+          )}
+
+          {vencimientoResult.porVencer?.length > 0 ? (
+            <DetalleReporte
+              titulo="Próximos a vencer"
+              columns={[
+                { key: "nombre", header: "Producto", cell: (r) => r.nombre },
+                { key: "codigo", header: "Código", cell: (r) => r.codigo || "-" },
+                { key: "stock", header: "Stock", cell: (r) => String(r.stock) },
+                { key: "fechaVencimiento", header: "Vencimiento", cell: (r) => <span style={{ color: "#d97706", fontWeight: 600 }}>{formatDateShort(r.fechaVencimiento)}</span> },
+                { key: "diasParaVencer", header: "Días restantes", cell: (r) => <span style={{ color: "#d97706", fontWeight: 600 }}>{r.diasParaVencer} día(s)</span> },
+              ]}
+              columnsExport={[
+                { key: "nombre", header: "Producto", cell: (r) => r.nombre },
+                { key: "codigo", header: "Código", cell: (r) => r.codigo || "-" },
+                { key: "stock", header: "Stock", cell: (r) => String(r.stock) },
+                { key: "fechaVencimiento", header: "Vencimiento", cell: (r) => formatDateShort(r.fechaVencimiento) },
+                { key: "diasParaVencer", header: "Días restantes", cell: (r) => `${r.diasParaVencer} día(s)` },
+              ]}
+              rows={vencimientoResult.porVencer}
+              renderExcel={(items) => items.map((i) => ({
+                Producto: i.nombre,
+                Código: i.codigo || "-",
+                Stock: String(i.stock),
+                Vencimiento: formatDateShort(i.fechaVencimiento),
+                "Días restantes": `${i.diasParaVencer} día(s)`,
+              }))}
+              filename={`por-vencer-${today()}`}
+              negocio={negocio}
+            />
+          ) : (
+            <div className="card">
+              <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8", fontSize: 13 }}>
+                No hay productos próximos a vencer
+              </div>
+            </div>
+          )}
+
+          {(!vencimientoResult.vencidos?.length && !vencimientoResult.porVencer?.length) && (
+            <div className="card">
+              <div style={{ textAlign: "center", padding: "40px", color: "#94a3b8", fontSize: 14 }}>
+                <i className="fa-solid fa-check-circle" style={{ fontSize: 28, marginBottom: 12, display: "block", color: "#16a34a" }}></i>
+                No hay productos vencidos ni próximos a vencer
+              </div>
+            </div>
+          )}
         </>
       )}
 

@@ -1,20 +1,35 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { dashboardAPI } from "../api/dashboard";
+import { reportesAPI } from "../api/reportes";
 import Loader from "../components/common/Loader";
 import { formatCurrency, formatNumber } from "../utils/formatters";
 import { toast } from "react-toastify";
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
+  const [vencimientoData, setVencimientoData] = useState(null);
 
   // all users have access
 
   useEffect(() => {
     fetchDashboardData();
+    fetchVencimientoData();
   }, []);
+
+  const fetchVencimientoData = async () => {
+    try {
+      const res = await reportesAPI.vencimiento({ dias: 30 });
+      setVencimientoData(res.data.data);
+    } catch (error) {
+      // Silent — dashboard shouldn't break if vencimiento endpoint fails
+      console.error("Error fetching vencimiento data:", error);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -28,6 +43,9 @@ const Dashboard = () => {
   };
 
   if (loading) return <Loader />;
+
+  const totalVencidos = vencimientoData?.resumen?.totalVencidos ?? 0;
+  const totalPorVencer = vencimientoData?.resumen?.totalPorVencer ?? 0;
 
   const chartData = stats?.ventas?.diarias || [
     { day: "Lun", value: 0 },
@@ -49,6 +67,34 @@ const Dashboard = () => {
 
   return (
     <div>
+      {/* Alerta de vencimiento */}
+      {(totalVencidos > 0 || totalPorVencer > 0) && (
+        <div
+          style={{
+            background: totalVencidos > 0 ? "#fef2f2" : "#fffbeb",
+            border: `1px solid ${totalVencidos > 0 ? "#fca5a5" : "#fde68a"}`,
+            borderRadius: 12,
+            padding: "14px 18px",
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontSize: 14,
+            color: totalVencidos > 0 ? "#991b1b" : "#92400e",
+            cursor: "pointer",
+          }}
+          onClick={() => navigate("/reportes", { state: { tab: "vencimiento" } })}
+        >
+          <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 18 }}></i>
+          <span>
+            {totalVencidos > 0 && <><strong>{totalVencidos}</strong> producto(s) vencido(s)</>}
+            {totalVencidos > 0 && totalPorVencer > 0 && " · "}
+            {totalPorVencer > 0 && <><strong>{totalPorVencer}</strong> producto(s) próximo(s) a vencer</>}
+          </span>
+          <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>Ver reporte →</span>
+        </div>
+      )}
+
       <div className="stats-grid">
         <div className="stat-card">
           <div className="label">

@@ -944,6 +944,7 @@ const reporteStock = async (req, res) => {
         "stock",
         "stockMinimo",
         "activo",
+        "fechaVencimiento",
       ],
       order: [["nombre", "ASC"]],
     });
@@ -958,12 +959,24 @@ const reporteStock = async (req, res) => {
     });
     const sinStock = activos.filter((p) => p.stock <= 0);
 
+    // Próximos a vencer: productos activos con fechaVencimiento dentro de 30 días
+    const today = new Date().toISOString().slice(0, 10);
+    const todayDate = new Date(today + "T12:00:00Z");
+    const limit30 = new Date(todayDate);
+    limit30.setUTCDate(limit30.getUTCDate() + 30);
+    const limit30Str = limit30.toISOString().slice(0, 10);
+    const proximosAVencer = activos.filter((p) => {
+      if (!p.fechaVencimiento) return false;
+      return p.fechaVencimiento > today && p.fechaVencimiento <= limit30Str;
+    }).length;
+
     return success(res, {
       resumen: {
         totalProductos,
         activos: activos.length,
         stockBajo: stockBajo.length,
         sinStock: sinStock.length,
+        proximosAVencer,
       },
       stockBajo: stockBajo.map((p) => ({
         id: p.id,
@@ -1440,6 +1453,87 @@ const reportePuntoEquilibrio = async (req, res) => {
   }
 };
 
+/**
+ * Reporte de vencimiento: productos vencidos y próximos a vencer.
+ * GET /api/reportes/vencimiento?dias=30
+ */
+const reporteVencimiento = async (req, res) => {
+  try {
+    let { dias } = req.query;
+    dias = parseInt(dias) || 30;
+    if (dias < 1) dias = 1;
+    if (dias > 365) dias = 365;
+
+    const negocioId = req.filterCondition?.negocioId || req.user?.negocioId;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todayDate = new Date(today + "T12:00:00Z");
+    const limitDate = new Date(todayDate);
+    limitDate.setUTCDate(limitDate.getUTCDate() + dias);
+    const limitStr = limitDate.toISOString().slice(0, 10);
+
+    // Productos activos con fechaVencimiento NOT NULL
+    const productos = await Producto.findAll({
+      where: {
+        negocioId,
+        activo: true,
+        fechaVencimiento: { [Op.not]: null },
+      },
+      attributes: ["id", "nombre", "codigo", "stock", "fechaVencimiento"],
+      order: [["fechaVencimiento", "ASC"]],
+    });
+
+    const vencidos = [];
+    const porVencer = [];
+
+    for (const p of productos) {
+      const fv = p.fechaVencimiento; // YYYY-MM-DD string
+      if (fv <= today) {
+        // Calcular días desde vencimiento
+        const fvDate = new Date(fv + "T12:00:00Z");
+        const diffMs = todayDate - fvDate;
+        const diasDesde = Math.floor(diffMs / 86400000);
+        vencidos.push({
+          id: p.id,
+          nombre: p.nombre,
+          codigo: p.codigo,
+          stock: p.stock,
+          fechaVencimiento: fv,
+          diasDesdeVencimiento: diasDesde,
+        });
+      } else if (fv <= limitStr) {
+        // Calcular días para vencer
+        const fvDate = new Date(fv + "T12:00:00Z");
+        const diffMs = fvDate - todayDate;
+        const diasPara = Math.ceil(diffMs / 86400000);
+        porVencer.push({
+          id: p.id,
+          nombre: p.nombre,
+          codigo: p.codigo,
+          stock: p.stock,
+          fechaVencimiento: fv,
+          diasParaVencer: diasPara,
+        });
+      }
+    }
+
+    return success(res, {
+      parametros: { dias },
+      vencidos,
+      porVencer,
+      resumen: {
+        totalVencidos: vencidos.length,
+        totalPorVencer: porVencer.length,
+        stockEnVencidos: vencidos.reduce((s, p) => s + (p.stock || 0), 0),
+        stockPorVencer: porVencer.reduce((s, p) => s + (p.stock || 0), 0),
+      },
+    });
+  } catch (err) {
+    console.error("Error en reporteVencimiento:", err);
+    return error(res, "Error al generar reporte de vencimiento: " + err.message, 500);
+  }
+};
+
 module.exports = {
   reporteVentas,
   reporteProductosMasVendidos,
@@ -1453,4 +1547,5 @@ module.exports = {
   reporteDeudores,
   reporteImpuestos,
   reportePuntoEquilibrio,
+  reporteVencimiento,
 };

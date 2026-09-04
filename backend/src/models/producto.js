@@ -51,6 +51,11 @@ const Producto = sequelize.define(
       field: "stock_minimo",
       validate: { min: 0 },
     },
+    fechaVencimiento: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      field: "fecha_vencimiento",
+    },
     categoriaId: {
       type: DataTypes.INTEGER,
       allowNull: true,

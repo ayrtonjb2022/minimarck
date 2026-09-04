@@ -86,6 +86,7 @@ const create = async (req, res) => {
       precioCompra,
       stock,
       stockMinimo,
+      fechaVencimiento,
       categoriaId,
       imagen,
       tieneIva,
@@ -148,6 +149,7 @@ const create = async (req, res) => {
       precioCompra: precioCompraVal,
       stock: stock ? parseInt(stock) : 0,
       stockMinimo: stockMinimo ? parseInt(stockMinimo) : 5,
+      fechaVencimiento: fechaVencimiento || null,
       categoriaId: categoriaId ? parseInt(categoriaId) : null,
       imagen: imagen || null,
       tieneIva: tieneIva || false,
@@ -183,6 +185,7 @@ const update = async (req, res) => {
       precioCompra,
       stock,
       stockMinimo,
+      fechaVencimiento,
       categoriaId,
       activo,
       imagen,
@@ -235,6 +238,8 @@ const update = async (req, res) => {
         stockMinimo !== undefined
           ? parseInt(stockMinimo)
           : producto.stockMinimo,
+      fechaVencimiento:
+        fechaVencimiento !== undefined ? (fechaVencimiento || null) : producto.fechaVencimiento,
       categoriaId:
         categoriaId !== undefined
           ? categoriaId
