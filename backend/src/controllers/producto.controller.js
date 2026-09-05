@@ -9,9 +9,10 @@ const sequelize = require("../config/database");
  */
 const getAll = async (req, res) => {
   try {
-    let { page = 1, limit = 20, search, categoriaId, minStock } = req.query;
-    limit = Math.min(parseInt(limit) || 20, 100);
-    const offset = (parseInt(page) - 1) * limit;
+    let { page = 1, limit = 20, search, categoriaId, minStock, all } = req.query;
+    const fetchAll = all === "true";
+    limit = fetchAll ? 99999 : Math.min(parseInt(limit) || 20, 100);
+    const offset = fetchAll ? 0 : (parseInt(page) - 1) * limit;
 
     const where = {
       ...req.filterCondition,
@@ -47,7 +48,7 @@ const getAll = async (req, res) => {
       order: [["nombre", "ASC"]],
     });
 
-    return paginated(res, rows, count, parseInt(page), limit);
+    return paginated(res, rows, count, fetchAll ? 1 : parseInt(page), fetchAll ? count : limit);
   } catch (err) {
     console.error("Error en getAll productos:", err);
     return error(res, "Error al obtener productos", 500);

@@ -172,7 +172,7 @@ export default function PuntoDeVenta() {
   // React Query — productos cacheados (comparte caché con Productos)
   const { data: productosAll = [] } = useQuery({
     queryKey: ["productos", "all-for-pos"],
-    queryFn: () => productosAPI.listar({ limit: 500 }).then((r) => r.data?.data || []),
+    queryFn: () => productosAPI.listar({ all: "true" }).then((r) => r.data?.data || []),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
