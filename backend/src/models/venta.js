@@ -99,6 +99,12 @@ const Venta = sequelize.define(
       allowNull: true,
       field: "deudor_id",
     },
+    idempotencyKey: {
+      type: DataTypes.STRING(36),
+      allowNull: true,
+      field: "idempotency_key",
+      unique: true,
+    },
   },
   {
     tableName: "ventas",

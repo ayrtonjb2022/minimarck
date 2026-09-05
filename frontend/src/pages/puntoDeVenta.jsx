@@ -9,7 +9,11 @@ import { useCaja } from "../context/CajaContext";
 import { useAuth } from "../context/AuthContext";
 import { connectSocket, disconnectSocket } from "../services/socket";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { getQueuedSales, removeQueuedSale, getQueuedCount } from "../utils/offlineQueue";
 import CalculadoraPeso from "../components/common/CalculadoraPeso";
+import ShortcutsHelp from "../components/common/ShortcutsHelp";
+import useKeyboardShortcuts from "../hooks/useKeyboardShortcuts";
 
 const METODOS_PAGO = [
   { value: "efectivo", label: "Efectivo" },
@@ -19,8 +23,8 @@ const METODOS_PAGO = [
   { value: "mixto", label: "Mixto" },
 ];
 
-function ModalCobro({ total, onConfirm, onClose, isSubmitting }) {
-  const [metodoPago, setMetodoPago] = useState("efectivo");
+function ModalCobro({ total, onConfirm, onClose, isSubmitting, initialMetodoPago }) {
+  const [metodoPago, setMetodoPago] = useState(initialMetodoPago || "efectivo");
   const [montoEntregado, setMontoEntregado] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [deudores, setDeudores] = useState([]);
@@ -190,8 +194,15 @@ export default function PuntoDeVenta() {
   const [scannerModalOpen, setScannerModalOpen] = useState(false);
   const [calcProducto, setCalcProducto] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [queuedCount, setQueuedCount] = useState(() => getQueuedCount());
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [quickSaleMethod, setQuickSaleMethod] = useState(null);
   const searchRef = useRef(null);
   const agregarProductoRef = useRef(null);
+
+  const isOnline = useOnlineStatus();
 
   const { isSubmitting, withGuard } = useSubmitGuard();
   const [posTheme, setPosTheme] = useState(() => localStorage.getItem("pos-theme") || "light");
@@ -204,10 +215,6 @@ export default function PuntoDeVenta() {
   }, []);
 
   const showToast = useCallback((msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
-  useEffect(() => {
-    const handler = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "f") { e.preventDefault(); searchRef.current?.focus(); } if (e.key === "Escape") setFiltro(""); };
-    window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler);
-  }, []);
 
   // Conexión socket.io para escaneo remoto
   useEffect(() => {
@@ -230,6 +237,31 @@ export default function PuntoDeVenta() {
       disconnectSocket();
     };
   }, [user?.negocioId]);
+
+  // Sincronizar ventas encoladas offline al cargar el componente
+  useEffect(() => {
+    const queue = getQueuedSales();
+    if (queue.length === 0) return;
+    showToast(`Sincronizando ${queue.length} venta(s) pendiente(s)...`, "info");
+    for (const sale of queue) {
+      const saleData = { items: sale.items, metodoPago: sale.metodoPago };
+      if (sale.clienteDeudorId) saleData.clienteDeudorId = sale.clienteDeudorId;
+      ventasAPI
+        .crear(saleData)
+        .then(() => {
+          removeQueuedSale(sale.id);
+          setQueuedCount((prev) => Math.max(0, prev - 1));
+        })
+        .catch(() => {}); // Reintentará en el próximo carga
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escuchar evento de venta encolada desde el interceptor
+  useEffect(() => {
+    const handleQueued = () => setQueuedCount(getQueuedCount());
+    window.addEventListener("offline-sale-queued", handleQueued);
+    return () => window.removeEventListener("offline-sale-queued", handleQueued);
+  }, []);
 
   const getCategoriaNombre = (catId) => {
     const cat = categorias.find((c) => c.id === catId);
@@ -263,6 +295,61 @@ export default function PuntoDeVenta() {
 
   // Mantener ref sincronizada con agregarProducto (después de la definición)
   useEffect(() => { agregarProductoRef.current = agregarProducto; }, [agregarProducto]);
+
+  // --- Keyboard shortcuts (after conStock and agregarProducto are defined) ---
+  const isAnyModalOpen = modalCobro || scannerModalOpen || calcProducto || shortcutsOpen;
+
+  const { selectedCartIndex } = useKeyboardShortcuts({
+    cart: ticket,
+    setCart: setTicket,
+    onConfirmSale: () => {
+      if (ticket.length > 0) setModalCobro(true);
+    },
+    onQuickSale: (metodo) => {
+      if (ticket.length > 0) {
+        window.dispatchEvent(new CustomEvent("pos:quick-sale", { detail: { metodo } }));
+        setModalCobro(true);
+      }
+    },
+    searchInputRef: searchRef,
+    isModalOpen: isAnyModalOpen,
+    setIsModalOpen: (open) => {
+      if (!open) {
+        setModalCobro(false);
+        setScannerModalOpen(false);
+        setCalcProducto(null);
+        setShortcutsOpen(false);
+      }
+    },
+    searchResults: conStock,
+    selectedSearchIndex,
+    setSelectedSearchIndex,
+    onSelectSearchResult: (product) => {
+      agregarProducto(product);
+      searchRef.current?.focus();
+    },
+    onShowShortcuts: () => setShortcutsOpen(true),
+  });
+
+  // Handle custom events from keyboard hook
+  useEffect(() => {
+    const handleClearSearch = () => setFiltro("");
+    const handleQuickSale = (e) => setQuickSaleMethod(e.detail?.metodo || null);
+    window.addEventListener("pos:clear-search", handleClearSearch);
+    window.addEventListener("pos:quick-sale", handleQuickSale);
+    return () => {
+      window.removeEventListener("pos:clear-search", handleClearSearch);
+      window.removeEventListener("pos:quick-sale", handleQuickSale);
+    };
+  }, []);
+
+  // Scroll selected cart item into view
+  useEffect(() => {
+    if (selectedCartIndex >= 0) {
+      const cartEl = document.querySelector(`[data-cart-index="${selectedCartIndex}"]`);
+      if (cartEl) cartEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedCartIndex]);
 
   const cambiarQty = (id, delta) => setTicket((prev) => prev.map((i) => { if (i.id !== id) return i; const newQty = i.qty + delta; if (newQty <= 0) return null; if (newQty > (i.stock ?? 0)) { showToast("Stock insuficiente", "warn"); return i; } return { ...i, qty: newQty }; }).filter(Boolean));
   const quitarItem = (id) => setTicket((prev) => prev.filter((i) => i.id !== id));
@@ -317,9 +404,23 @@ export default function PuntoDeVenta() {
 
   return (
     <div className={`pos-container pos-theme-${posTheme}`}>
-      {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
+      {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":toast.type==="info"?"#3b82f6":"#22c55e"}}>{toast.msg}</div>}
 
-      {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
+      {!isOnline && (
+        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:150,padding:"8px 16px",background:"#ef4444",color:"#fff",fontSize:"13px",fontWeight:600,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:"8px"}}>
+          <i className="fa-solid fa-wifi" style={{opacity:0.7}}></i>
+          Sin conexión — las ventas se guardarán localmente
+        </div>
+      )}
+
+      {queuedCount > 0 && isOnline && (
+        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:150,padding:"8px 16px",background:"#f59e0b",color:"#fff",fontSize:"13px",fontWeight:600,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:"8px"}}>
+          <i className="fa-solid fa-sync fa-spin"></i>
+          {queuedCount} venta(s) pendiente(s) de sincronización
+        </div>
+      )}
+
+      {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => { setModalCobro(false); setQuickSaleMethod(null); }} isSubmitting={isSubmitting} initialMetodoPago={quickSaleMethod} />}
 
       {calcProducto && (
         <CalculadoraPeso
@@ -328,6 +429,8 @@ export default function PuntoDeVenta() {
           onClose={() => setCalcProducto(null)}
         />
       )}
+
+      {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
 
       {scannerModalOpen && (
         <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}} onClick={() => setScannerModalOpen(false)}>
@@ -385,6 +488,9 @@ export default function PuntoDeVenta() {
                 📱 Escanear
               </span>
             </button>
+            <button onClick={() => setShortcutsOpen(true)} className="btn-secondary" style={{padding:"8px 10px",fontSize:"13px",fontFamily:"monospace",fontWeight:700}} title="Atajos de teclado (F1)">
+              ?
+            </button>
           </div>
           <div className="pos-categories">
             <button onClick={() => setCategoriaActiva("Todas")}
@@ -406,16 +512,18 @@ export default function PuntoDeVenta() {
             <div style={{display:"flex",flexDirection:"column",gap:"24px"}}>
               {conStock.length > 0 && (
                 <div className="pos-products">
-                  {conStock.map((p) => {
+                  {conStock.map((p, pIdx) => {
                     const stock = p.stock ?? 0;
                     const stockBajo = stock <= 5;
                     const enTicket = ticket.find((i) => i.id === p.id);
                     const esPesable = p.unidadMedida && /^(kg|kilo|kilogramo|litro|l|lt|g|gramo|ml)$/i.test(p.unidadMedida.trim());
+                    const isSearchSelected = searchRef.current === document.activeElement && pIdx === selectedSearchIndex;
                     let cardClass = "pos-product-card";
                     if (enTicket) cardClass += " en-carrito";
                     else if (stockBajo) cardClass += " stock-bajo";
                     return (
-                      <div key={p.id} className={cardClass} onClick={() => agregarProducto(p)}>
+                      <div key={p.id} className={cardClass} onClick={() => agregarProducto(p)}
+                        style={isSearchSelected ? { outline: "2px solid #3b82f6", outlineOffset: "-2px", background: "rgba(59,130,246,0.08)" } : undefined}>
                         {enTicket && <span className="badge-cart-qty">{enTicket.qty}</span>}
                         <div className="icon-product">
                           {p.imagen ? <img src={p.imagen} alt={p.nombre} /> : <i className="fa-solid fa-cube"></i>}
@@ -478,10 +586,12 @@ export default function PuntoDeVenta() {
               <p style={{fontSize:"14px"}}>Seleccioná productos del catálogo</p>
             </div>
           ) : (
-            ticket.map((item) => {
+            ticket.map((item, itemIdx) => {
               const subtotal = parseFloat(item.precio) * item.qty;
+              const isSelected = itemIdx === selectedCartIndex;
               return (
-                <div key={item.id} className="cart-item">
+                <div key={item.id} className="cart-item" data-cart-index={itemIdx}
+                  style={isSelected ? { borderLeft: "3px solid #3b82f6", background: "rgba(59,130,246,0.06)" } : { borderLeft: "3px solid transparent" }}>
                   <div className="item-info">
                     <div className="details">
                       <p className="name">{item.nombre}</p>

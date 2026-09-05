@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const {
   Venta,
   VentaDetalle,
@@ -33,6 +34,19 @@ const create = async (req, res) => {
     if (!items || !Array.isArray(items) || items.length === 0) {
       await transaction.rollback();
       return error(res, "La venta debe tener al menos un producto", 400);
+    }
+
+    // Generar idempotency key para prevenir duplicados
+    const idempotencyKey = req.body.idempotencyKey || crypto.randomUUID();
+
+    // Verificar si ya existe una venta con esta idempotency key
+    const existingVenta = await Venta.findOne({
+      where: { idempotencyKey },
+      transaction,
+    });
+    if (existingVenta) {
+      await transaction.rollback();
+      return success(res, existingVenta, "Venta ya registrada");
     }
 
     // Verificar stock y calcular totales
@@ -100,6 +114,8 @@ const create = async (req, res) => {
         // ✅ Guardar deudorId si es crédito
         deudorId:
           metodoPago === "credito" && clienteDeudorId ? clienteDeudorId : null,
+        // Key de idempotencia para prevenir duplicados
+        idempotencyKey,
       },
       { transaction },
     );
