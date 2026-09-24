@@ -10,7 +10,9 @@ const Venta = sequelize.define(
       autoIncrement: true,
     },
     folio: {
-      type: DataTypes.STRING(20),
+      // `V-${crypto.randomUUID()}` tiene 38 caracteres; 20 desborda en modo
+      // estricto (error 1406) en cada Venta.create
+      type: DataTypes.STRING(40),
       allowNull: false,
     },
     fecha: {
@@ -99,6 +101,11 @@ const Venta = sequelize.define(
       allowNull: true,
       field: "deudor_id",
     },
+    idempotencyKey: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      field: "idempotency_key",
+    },
   },
   {
     tableName: "ventas",
@@ -115,6 +122,10 @@ const Venta = sequelize.define(
         unique: true,
         fields: ["folio", "negocio_id"],
         where: { deletedAt: null },
+      },
+      {
+        unique: true,
+        fields: ["negocio_id", "idempotency_key"],
       },
     ],
   },

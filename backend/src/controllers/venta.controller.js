@@ -11,6 +11,32 @@ const { success, error, paginated } = require("../utils/response");
 const { todayArgentina } = require("../utils/date");
 const { Op } = require("sequelize");
 const sequelize = require("../config/database");
+const crypto = require("crypto");
+
+/**
+ * Detecta si un error de Sequelize corresponde a una violación del índice
+ * único de idempotencia (negocio_id + idempotency_key).
+ */
+const esDuplicadoIdempotencia = (err) => {
+  if (err.name === "SequelizeUniqueConstraintError") {
+    const fields = err.fields || {};
+    if ("idempotency_key" in fields || "idempotencyKey" in fields) return true;
+  }
+  if (err.parent && err.parent.code === "ER_DUP_ENTRY") {
+    // El nombre del índice único difiere según el origen: la migración lo llama
+    // `uq_ventas_negocio_idempotency` y un sync() fresco `ventas_negocio_id_idempotency_key`.
+    // Detectar por subcadenas que matcheen AMBOS nombres, no solo /idempotency_key/.
+    const sqlMessage = String(err.sqlMessage || err.parent.sqlMessage || "");
+    const fieldsJson = JSON.stringify(err.fields || err.parent.fields || {});
+    const sql = String(err.sql || err.parent.sql || "");
+    return (
+      /idempotency/i.test(sqlMessage) ||
+      /idempotency/i.test(fieldsJson) ||
+      /idempotency/i.test(sql)
+    );
+  }
+  return false;
+};
 
 /**
  * Registrar una nueva venta
@@ -27,6 +53,7 @@ const create = async (req, res) => {
       clienteDocumento,
       clienteDeudorId, // ✅ Agregado
       observaciones,
+      idempotencyKey,
     } = req.body;
 
     // Validaciones
@@ -35,24 +62,86 @@ const create = async (req, res) => {
       return error(res, "La venta debe tener al menos un producto", 400);
     }
 
+    // "Mixto" requiere un desglose efectivo/crédito que el POS aún no recolecta
+    if (metodoPago === "mixto") {
+      await transaction.rollback();
+      return error(
+        res,
+        "Método mixto requiere desglose efectivo/crédito, aún no soportado",
+        400,
+      );
+    }
+
+    // Crédito sin deudor: rechazar en vez de registrar una venta huérfana
+    // (sin deuda asociada ni movimiento de caja, agujero de ingresos)
+    if (metodoPago === "credito" && !clienteDeudorId) {
+      await transaction.rollback();
+      return error(res, "Venta a crédito requiere deudor", 400);
+    }
+
+    // El descuento no se aplica en ninguna parte del flujo: rechazarlo en vez
+    // de guardarlo sin aplicar (cobraría de más al cliente)
+    if (req.body.descuento != null && parseFloat(req.body.descuento) !== 0) {
+      await transaction.rollback();
+      return error(res, "Descuento aún no soportado", 400);
+    }
+
+    // Validación de items ANTES de tocar la base
+    for (const item of items) {
+      if (item.descuento != null && parseFloat(item.descuento) !== 0) {
+        await transaction.rollback();
+        return error(res, "Descuento aún no soportado", 400);
+      }
+      const cant = Number(item.cantidad);
+      if (!Number.isFinite(cant) || !Number.isInteger(cant) || cant < 1) {
+        await transaction.rollback();
+        return error(res, "Cantidad inválida", 400);
+      }
+    }
+
+    // Idempotencia: si esta composición de ticket ya se registró (reintento
+    // tras error de red), devolver la venta existente sin crear nada
+    if (idempotencyKey) {
+      const existente = await Venta.findOne({
+        where: {
+          negocioId: req.businessId || req.user?.negocioId,
+          idempotencyKey,
+        },
+        transaction,
+      });
+      if (existente) {
+        await transaction.rollback();
+        return success(res, { venta: existente, duplicado: true });
+      }
+    }
+
     // Verificar stock y calcular totales
     let subtotal = 0;
     const detalles = [];
 
     for (const item of items) {
-      const cantidad = parseInt(item.cantidad);
+      const cantidad = Number(item.cantidad);
       const precioUnitario = item.precioUnitario
         ? parseFloat(item.precioUnitario)
         : 0;
 
       let producto = null;
       if (item.productoId) {
-        producto = await Producto.findByPk(item.productoId, { transaction });
+        producto = await Producto.findOne({
+          where: {
+            id: item.productoId,
+            negocioId: req.businessId || req.user?.negocioId,
+          },
+          transaction,
+        });
         if (!producto) {
           await transaction.rollback();
-          return error(res, `Producto con ID ${item.productoId} no encontrado`, 404);
+          return error(
+            res,
+            `Producto con ID ${item.productoId} no encontrado`,
+            400,
+          );
         }
-
       }
 
       const precioFinal = item.precioUnitario
@@ -69,40 +158,77 @@ const create = async (req, res) => {
         nombreProducto: nombreItem,
         cantidad,
         precioUnitario: precioFinal,
-        descuento: item.descuento ? parseFloat(item.descuento) : 0,
+        // Costo real de la línea: ventas libres/enviadas desde el POS llevan
+        // costoUnitario propio; si no viene, se toma el costo del producto
+        costoUnitario:
+          item.costoUnitario != null
+            ? parseFloat(item.costoUnitario)
+            : producto
+              ? parseFloat(producto.precioCompra || 0)
+              : 0,
+        descuento: 0,
         subtotal: subtotalItem,
         ivaPorcentaje: producto ? parseFloat(producto.ivaPorcentaje) || 0 : 0,
       });
     }
 
-    const iva = detalles.reduce((sum, det) => {
-      return sum + (det.precioUnitario * det.cantidad * (det.ivaPorcentaje || 0)) / 100;
+    // IVA EXTRAÍDO del precio final: el cliente paga exactamente lo mostrado
+    // (subtotal), nunca se suma IVA encima. imp = base - base/(1 + pct/100)
+    // con base = precioUnitario × cantidad; pct <= 0 no aporta IVA.
+    const ivaBruto = detalles.reduce((sum, det) => {
+      const base = det.precioUnitario * det.cantidad;
+      const pct = parseFloat(det.ivaPorcentaje) || 0;
+      if (pct <= 0) return sum;
+      return sum + (base - base / (1 + pct / 100));
     }, 0);
-    const total = subtotal + iva;
-    const folio = `V-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const iva = Math.round((ivaBruto + Number.EPSILON) * 100) / 100;
+    const total = subtotal; // Monto cobrado = subtotal (el IVA es informativo)
+    const folio = `V-${crypto.randomUUID()}`;
 
     // Crear venta
-    const venta = await Venta.create(
-      {
-        folio,
-        fecha: todayArgentina(),
-        subtotal,
-        iva,
-        descuento: 0,
-        total,
-        metodoPago: metodoPago || "efectivo",
-        clienteNombre: clienteNombre || null,
-        clienteDocumento: clienteDocumento || null,
-        observaciones: observaciones || null,
-        estado: "completada",
-        negocioId: req.businessId || req.user?.negocioId,
-        userId: req.userId,
-        // ✅ Guardar deudorId si es crédito
-        deudorId:
-          metodoPago === "credito" && clienteDeudorId ? clienteDeudorId : null,
-      },
-      { transaction },
-    );
+    let venta;
+    try {
+      venta = await Venta.create(
+        {
+          folio,
+          fecha: todayArgentina(),
+          subtotal,
+          iva,
+          descuento: 0,
+          total,
+          metodoPago: metodoPago || "efectivo",
+          clienteNombre: clienteNombre || null,
+          clienteDocumento: clienteDocumento || null,
+          observaciones: observaciones || null,
+          estado: "completada",
+          negocioId: req.businessId || req.user?.negocioId,
+          userId: req.userId,
+          // ✅ Guardar deudorId si es crédito
+          deudorId:
+            metodoPago === "credito" && clienteDeudorId ? clienteDeudorId : null,
+          // Clave de idempotencia: el índice único (negocio_id, idempotency_key)
+          // es el backstop si dos solicitudes concurrentes usan la misma clave
+          idempotencyKey: idempotencyKey || null,
+        },
+        { transaction },
+      );
+    } catch (err) {
+      // Violación del índice único de idempotencia: otra solicitud con la misma
+      // clave ganó la carrera → devolver la venta existente en vez de un 500
+      if (esDuplicadoIdempotencia(err)) {
+        try { await transaction.rollback(); } catch (_) {}
+        const existente = await Venta.findOne({
+          where: {
+            negocioId: req.businessId || req.user?.negocioId,
+            idempotencyKey,
+          },
+        });
+        if (existente) {
+          return success(res, { venta: existente, duplicado: true });
+        }
+      }
+      throw err;
+    }
 
     // Crear detalles y descontar stock
     for (const detalle of detalles) {
@@ -117,11 +243,25 @@ const create = async (req, res) => {
       if (detalle.productoId) {
         const [affected] = await Producto.update(
           { stock: sequelize.literal(`stock - ${detalle.cantidad}`) },
-          { where: { id: detalle.productoId, stock: { [Op.gte]: detalle.cantidad } }, transaction }
+          {
+            where: {
+              id: detalle.productoId,
+              negocioId: req.businessId || req.user?.negocioId,
+              stock: { [Op.gte]: detalle.cantidad },
+            },
+            transaction,
+          }
         );
         if (affected === 0) {
+          // El producto SÍ se encontró antes (lookup previo); si el update con
+          // guarda `stock >= cantidad` afectó 0 filas la causa real es stock
+          // insuficiente (stale cache o venta concurrente), no un 404.
           await transaction.rollback();
-          return error(res, `Stock insuficiente para "${detalle.nombreProducto}"`, 400);
+          return error(
+            res,
+            `Stock insuficiente para ${detalle.nombreProducto || `ID ${detalle.productoId}`}`,
+            400,
+          );
         }
       }
     }
@@ -130,53 +270,68 @@ const create = async (req, res) => {
     if (metodoPago === "credito" && clienteDeudorId) {
       const deudor = await ClienteDeudor.findOne({
         where: { id: clienteDeudorId, negocioId: req.businessId || req.user?.negocioId },
+        // Lock de fila: dos ventas a crédito concurrentes al MISMO deudor
+        // leerían la misma deudaPendiente y la segunda pisaría a la primera
+        // (lost update). Con el lock el read→update queda serializado.
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
-      if (deudor) {
-        const totalVenta = total;
-        const nuevaDeuda = parseFloat(deudor.deudaPendiente) + totalVenta;
-        const advertenciaLimite =
-          deudor.limiteCredito && nuevaDeuda > parseFloat(deudor.limiteCredito)
-            ? `Atención: esta venta supera el límite de crédito ($${parseFloat(deudor.limiteCredito).toFixed(2)}). Deuda total: $${nuevaDeuda.toFixed(2)}`
-            : null;
+      // Crédito contra un deudor inexistente: rechazar en vez de registrar
+      // la venta sin registrar la deuda
+      if (!deudor) {
+        await transaction.rollback();
+        return error(res, "Deudor no encontrado", 400);
+      }
 
-        // Construir detalle de productos para la nota
-        const lineas = detalles.map(
-          (d) =>
-            `${d.cantidad}x ${d.nombreProducto} ($${parseFloat(d.precioUnitario).toFixed(2)} c/u) = $${d.subtotal.toFixed(2)}`,
-        );
-        const detalleTexto = [`[${new Date().toLocaleDateString("es-AR")}] Venta ${folio} - Total: $${totalVenta.toFixed(2)}`, ...lineas].join("\n");
-        const notasPrevias = deudor.notas ? deudor.notas + "\n\n" : "";
+      const totalVenta = total;
+      const nuevaDeuda = parseFloat(deudor.deudaPendiente) + totalVenta;
+      const advertenciaLimite =
+        deudor.limiteCredito && nuevaDeuda > parseFloat(deudor.limiteCredito)
+          ? `Atención: esta venta supera el límite de crédito ($${parseFloat(deudor.limiteCredito).toFixed(2)}). Deuda total: $${nuevaDeuda.toFixed(2)}`
+          : null;
 
-        await deudor.update(
-          {
-            deudaTotal: parseFloat(deudor.deudaTotal) + totalVenta,
-            deudaPendiente: nuevaDeuda,
-            notas: notasPrevias + detalleTexto,
-          },
-          { transaction },
-        );
+      // Construir detalle de productos para la nota
+      const lineas = detalles.map(
+        (d) =>
+          `${d.cantidad}x ${d.nombreProducto} ($${parseFloat(d.precioUnitario).toFixed(2)} c/u) = $${d.subtotal.toFixed(2)}`,
+      );
+      const detalleTexto = [`[${new Date().toLocaleDateString("es-AR")}] Venta ${folio} - Total: $${totalVenta.toFixed(2)}`, ...lineas].join("\n");
+      const notasPrevias = deudor.notas ? deudor.notas + "\n\n" : "";
 
-        // Adjuntar advertencia a la respuesta
-        if (advertenciaLimite) {
-          venta.dataValues.advertenciaLimite = advertenciaLimite;
-        }
+      await deudor.update(
+        {
+          deudaTotal: parseFloat(deudor.deudaTotal) + totalVenta,
+          deudaPendiente: nuevaDeuda,
+          notas: notasPrevias + detalleTexto,
+        },
+        { transaction },
+      );
+
+      // Adjuntar advertencia a la respuesta
+      if (advertenciaLimite) {
+        venta.dataValues.advertenciaLimite = advertenciaLimite;
       }
     }
 
     // Registrar en caja si está abierta (solo para pagos NO crédito)
     let ventaCajaId = null;
     if (metodoPago !== "credito") {
+      // Lock de fila sobre la caja abierta: un cierre de caja concurrente no
+      // puede completarse mientras esta venta incrementa totalIngresos (un
+      // SELECT sin lock en REPEATABLE READ vería la caja "abierta" y escribiría
+      // sobre una caja cerrada cuyo saldoFinal no la incluye). Tras el lock,
+      // re-chequear estado: si la caja se cerró, tratarla como "sin caja".
       const cajaAbierta = await Caja.findOne({
         where: {
           negocioId: req.businessId || req.user?.negocioId,
           estado: "abierta",
         },
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
-      if (cajaAbierta) {
+      if (cajaAbierta && cajaAbierta.estado === "abierta") {
         ventaCajaId = cajaAbierta.id;
         const saldoActual =
           parseFloat(cajaAbierta.saldoInicial) +
@@ -238,6 +393,13 @@ const create = async (req, res) => {
         },
       ],
     });
+
+    // La advertencia de límite de crédito se adjuntó a la instancia previa al
+    // refetch; la respuesta final es `ventaCompleta`, así que re-adjuntarla
+    // antes de devolverla (si no, el frontend siempre la ve undefined).
+    if (venta.dataValues.advertenciaLimite) {
+      ventaCompleta.dataValues.advertenciaLimite = venta.dataValues.advertenciaLimite;
+    }
 
     return success(res, ventaCompleta, "Venta registrada exitosamente", 201);
   } catch (err) {

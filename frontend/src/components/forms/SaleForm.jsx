@@ -2,12 +2,15 @@ import React, { useState } from "react";
 import { formatCurrency } from "../../utils/formatters";
 import { METODO_PAGO_LABELS, METODOS_PAGO } from "../../utils/constants";
 
+// El ENUM del modelo mantiene "mixto" y "credito" (compatibilidad con filas
+// legacy) pero el UI no debe ofrecerlos:
+// - "mixto" no tiene desglose efectivo/crédito y el backend lo rechaza 400.
+// - "credito" sin selector de deudor crearía una venta huérfana; el backend
+//   ahora rechaza con 400 ("Venta a crédito requiere deudor").
 const METODOS_PAGO_LIST = [
   METODOS_PAGO.EFECTIVO,
   METODOS_PAGO.TARJETA,
   METODOS_PAGO.TRANSFERENCIA,
-  METODOS_PAGO.CREDITO,
-  METODOS_PAGO.MIXTO,
 ];
 
 const SaleForm = ({ productos, onSave, onCancel }) => {

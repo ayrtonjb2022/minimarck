@@ -9,8 +9,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 
-const today = () => new Date().toISOString().slice(0, 10);
-const monthStart = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
+// Fechas por defecto en hora Argentina (UTC-3), no UTC: toISOString().slice(0,10)
+// devuelve el día UTC, que en Argentina suele ser el día anterior.
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+const monthStart = () => today().slice(0, 7) + "-01";
 
 const fmt = (n) => `$${(n ?? 0).toFixed(2)}`;
 
@@ -433,7 +435,13 @@ export default function Reportes() {
       for (const venta of data.detalle || []) {
         for (const det of venta.detalles || []) {
           const pv = parseFloat(det.precioUnitario) || 0;
-          const pc = parseFloat(det.producto?.precioCompra) || 0;
+          // Costo real de la línea: ventas libres/fraccionadas guardan su costo
+          // en costoUnitario; si es 0 (ventas viejas pre-migración), se cae al
+          // precio de compra actual del producto como respaldo.
+          const pc =
+            parseFloat(det.costoUnitario) > 0
+              ? parseFloat(det.costoUnitario)
+              : parseFloat(det.producto?.precioCompra) || 0;
           const cant = det.cantidad || 0;
           const totalVenta = pv * cant;
           const costoTotal = pc * cant;
@@ -579,7 +587,7 @@ export default function Reportes() {
 
   const formatXAxis = (dateStr) => {
     const d = new Date(dateStr + "T12:00:00");
-    return d.toLocaleDateString(import.meta.env.VITE_CURRENCY_LOCALE || "es-CL", { day: "2-digit", month: "2-digit" });
+    return d.toLocaleDateString(import.meta.env.VITE_CURRENCY_LOCALE || "es-AR", { day: "2-digit", month: "2-digit" });
   };
 
   return (

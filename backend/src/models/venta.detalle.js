@@ -24,6 +24,15 @@ const VentaDetalle = sequelize.define(
         min: 0,
       },
     },
+    costoUnitario: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      field: "costo_unitario", // ← Importante: nombre en DB
+      validate: {
+        min: 0,
+      },
+    },
     nombreProducto: {
       type: DataTypes.STRING(200),
       allowNull: true,

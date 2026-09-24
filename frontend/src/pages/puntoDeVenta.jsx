@@ -17,8 +17,24 @@ const METODOS_PAGO = [
   { value: "tarjeta", label: "Tarjeta" },
   { value: "transferencia", label: "Transferencia" },
   { value: "credito", label: "Crédito" },
-  { value: "mixto", label: "Mixto" },
+  // "mixto" se mantiene en el ENUM del modelo (compatibilidad), pero el UI no
+  // debe ofrecerlo: no hay desglose efectivo/crédito y el backend lo rechaza.
 ];
+
+const MARGENES_VENTA_LIBRE = [30, 35, 40];
+
+// Familias de unidades para fraccionar un producto pesable
+const FAMILIAS_UNIDAD_FRACCION = [
+  { base: /^(l|lt|litro|litros)$/i, opciones: ["ml", "L"] },
+  { base: /^(kg|kilo|kilos|kilogramo)$/i, opciones: ["g", "kg"] },
+  { base: /^(g|gramo)$/i, opciones: ["g", "kg"] },
+  { base: /^ml$/i, opciones: ["ml", "L"] },
+];
+
+// Escala a la unidad mínima (ml o g): L/kg → 1000, ml/g → 1
+const escalaUnidad = (u) => (/^(l|lt|litro|litros|kg|kilo|kilos|kilogramo)$/i.test(u.trim()) ? 1000 : 1);
+
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 function ModalCobro({ total, onConfirm, onClose, isSubmitting }) {
   const [metodoPago, setMetodoPago] = useState("efectivo");
@@ -176,6 +192,201 @@ function ModalCobro({ total, onConfirm, onClose, isSubmitting }) {
   );
 }
 
+function ModalVentaLibre({ onConfirm, onClose }) {
+  const [nombre, setNombre] = useState("");
+  const [precio, setPrecio] = useState("");
+  const [margen, setMargen] = useState(30);
+  const inputRef = useRef(null);
+  const idCounterRef = useRef(0); // evita colisiones de id en el mismo milisegundo
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const precioNum = parseFloat(precio);
+  const precioValido = precioNum > 0;
+  const costo = precioValido ? precioNum / (1 + margen / 100) : 0;
+  const ganancia = precioValido ? precioNum - costo : 0;
+  const valido = nombre.trim().length > 0 && precioValido;
+
+  const handleConfirm = () => {
+    if (!valido) return;
+    onConfirm({
+      id: `libre-${Date.now()}-${++idCounterRef.current}`,
+      nombre: nombre.trim(),
+      precio: precioNum,
+      costoUnitario: round2(costo),
+      qty: 1,
+      stock: 9999,
+      esVentaLibre: true,
+    });
+  };
+
+  return (
+    <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
+      <div className="card" style={{width:"100%",maxWidth:"420px",maxHeight:"90vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        <div className="card-header">
+          <div>
+            <h3 style={{margin:0,fontSize:"18px"}}>⚡ Venta libre</h3>
+            <span className="tag" style={{marginTop:"4px",display:"inline-block"}}>Vendé algo que no está en el inventario</span>
+          </div>
+          <button onClick={onClose} className="btn-secondary" style={{padding:"6px 10px"}}><i className="fa-solid fa-times"></i></button>
+        </div>
+        <div style={{padding:"0 22px 22px",overflowY:"auto",flex:1}}>
+          <div className="form-group">
+            <label>Nombre</label>
+            <input ref={inputRef} type="text" value={nombre} onChange={(e) => setNombre(e.target.value)}
+              placeholder="Ej: Queso medio kilo" onKeyDown={(e) => e.key === "Enter" && handleConfirm()} />
+          </div>
+          <div className="form-group">
+            <label>Precio de venta ($)</label>
+            <input type="number" min="0.01" step="0.01" value={precio} onChange={(e) => setPrecio(e.target.value)}
+              placeholder="Ej: 3500" onKeyDown={(e) => e.key === "Enter" && handleConfirm()} />
+          </div>
+          <div className="form-group">
+            <label>Margen</label>
+            <div style={{display:"flex",gap:"6px"}}>
+              {MARGENES_VENTA_LIBRE.map((m) => (
+                <button key={m} onClick={() => setMargen(m)}
+                  className={margen === m ? "btn-primary" : "btn-secondary"} style={{flex:1,fontSize:"12px",padding:"6px 10px"}}>{m}%</button>
+              ))}
+            </div>
+          </div>
+          {precioValido && (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
+              <div style={{background:"#eff6ff",border:"1px solid #dbeafe",borderRadius:"8px",padding:"10px 12px",textAlign:"center"}}>
+                <p style={{fontSize:"12px",color:"#64748b",margin:"0 0 2px"}}>Costo estimado</p>
+                <p style={{fontSize:"16px",fontWeight:700,color:"#1d4ed8",margin:0}}>${costo.toFixed(2)}</p>
+              </div>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:"8px",padding:"10px 12px",textAlign:"center"}}>
+                <p style={{fontSize:"12px",color:"#64748b",margin:"0 0 2px"}}>Ganancia estimada</p>
+                <p style={{fontSize:"16px",fontWeight:700,color:"#16a34a",margin:0}}>${ganancia.toFixed(2)}</p>
+              </div>
+            </div>
+          )}
+          <div style={{display:"flex",gap:"12px",marginTop:"16px",paddingTop:"16px",borderTop:"1px solid #e2e8f0"}}>
+            <button onClick={onClose} className="btn-secondary" style={{flex:1}}>Cancelar</button>
+            <button onClick={handleConfirm} disabled={!valido} className="btn-success" style={{flex:1}}>
+              <i className="fa-solid fa-check"></i> Agregar al ticket
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalFraccionar({ producto, onConfirm, onClose }) {
+  const [valor, setValor] = useState("");
+  const [creando, setCreando] = useState(false);
+  const unidadBase = (producto.unidadMedida || "").trim().toLowerCase();
+  // Guarda defensiva: solo unidades de masa/volumen escaladas x1000 (kg/L).
+  // Con escala 1 (g/ml) la fracción del producto base sale mal y el costo
+  // quedaría ×1000 inflado; el botón ✂️ ya no se muestra, pero si el modal se
+  // abre igual, se bloquea con un mensaje claro.
+  const bloqueado = escalaUnidad(unidadBase) !== 1000;
+  const familia = FAMILIAS_UNIDAD_FRACCION.find((f) => f.base.test(producto.unidadMedida || ""));
+  const opciones = familia ? familia.opciones : ["unidad"];
+  const [unidad, setUnidad] = useState(opciones[0]);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const valorNum = parseFloat(valor);
+  const fractionOfBase = !isNaN(valorNum) && valorNum > 0 ? (valorNum * escalaUnidad(unidad)) / (1 * escalaUnidad(unidadBase)) : 0;
+  // La fracción debe ser mayor a 0 y no superar la unidad base del producto
+  const valido = !bloqueado && fractionOfBase > 0 && fractionOfBase <= 1;
+  const precioBase = parseFloat(producto.precio || 0);
+  const costoBase = parseFloat(producto.precioCompra || 0);
+  const costoCrea = round2(costoBase * fractionOfBase);
+  const precioNuevo = round2(precioBase * fractionOfBase);
+  const margenBase = costoBase > 0 ? ((precioBase - costoBase) / costoBase) * 100 : 0;
+
+  const handleCrear = async () => {
+    if (bloqueado || !valido || creando) return;
+    setCreando(true);
+    try {
+      await onConfirm({
+        nombre: `${producto.nombre} ${valorNum}${unidad}`,
+        precio: precioNuevo,
+        precioCompra: costoCrea,
+        stock: 10,
+        stockMinimo: 5,
+        categoriaId: producto.categoriaId,
+        // Se envía en minúsculas para respetar el ENUM de unidad_medida en la base
+        unidadMedida: unidad.toLowerCase(),
+      });
+    } finally {
+      setCreando(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
+      <div className="card" style={{width:"100%",maxWidth:"420px",maxHeight:"90vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        <div className="card-header">
+          <div>
+            <h3 style={{margin:0,fontSize:"18px"}}>✂️ Fraccionar producto</h3>
+            <span className="tag" style={{marginTop:"4px",display:"inline-block"}}>Creá un nuevo producto desde una fracción</span>
+          </div>
+          <button onClick={onClose} className="btn-secondary" style={{padding:"6px 10px"}}><i className="fa-solid fa-times"></i></button>
+        </div>
+        <div style={{padding:"0 22px 22px",overflowY:"auto",flex:1}}>
+          <div style={{background:"#eff6ff",borderRadius:"12px",padding:"14px 16px",marginBottom:"16px",border:"1px solid #dbeafe"}}>
+            <p style={{fontSize:"14px",fontWeight:700,color:"#1e293b",margin:0}}>{producto.nombre}</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginTop:"8px",fontSize:"12px",color:"#475569"}}>
+              <span>Unidad base: <strong>{producto.unidadMedida || "unidad"}</strong></span>
+              <span>Precio: <strong>${precioBase.toFixed(2)}</strong></span>
+              <span>Costo: <strong>${costoBase.toFixed(2)}</strong></span>
+              <span>Margen: <strong>{margenBase.toFixed(1)}%</strong></span>
+            </div>
+          </div>
+          {bloqueado && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", color: "#dc2626", fontWeight: 500, marginBottom: "12px" }}>
+              <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: "4px" }}></i>
+              El fraccionado solo está disponible para productos cuya base es kg o litros (masa/volumen ×1000); las unidades tipo g/ml no se pueden fraccionar
+            </div>
+          )}
+          <div className="form-group">
+            <label>Valor de la fracción</label>
+            <input ref={inputRef} type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)}
+              placeholder={`Ej: 100 (${opciones[0] === "unidad" ? "unidad" : `en ${opciones[0]}`})`} />
+          </div>
+          <div className="form-group">
+            <label>Unidad de la fracción</label>
+            <select value={unidad} onChange={(e) => setUnidad(e.target.value)}>
+              {opciones.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+          {valor !== "" && !valido && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", color: "#dc2626", fontWeight: 500, marginBottom: "12px" }}>
+              <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: "4px" }}></i>
+              La fracción debe ser mayor a 0 y no superar la unidad base del producto
+            </div>
+          )}
+          {valido && (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
+              <div style={{background:"#eff6ff",border:"1px solid #dbeafe",borderRadius:"8px",padding:"10px 12px",textAlign:"center"}}>
+                <p style={{fontSize:"12px",color:"#64748b",margin:"0 0 2px"}}>Precio nuevo</p>
+                <p style={{fontSize:"16px",fontWeight:700,color:"#1d4ed8",margin:0}}>${precioNuevo.toFixed(2)}</p>
+              </div>
+              <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"8px",padding:"10px 12px",textAlign:"center"}}>
+                <p style={{fontSize:"12px",color:"#64748b",margin:"0 0 2px"}}>Costo estimado</p>
+                <p style={{fontSize:"16px",fontWeight:700,color:"#dc2626",margin:0}}>${costoCrea.toFixed(2)}</p>
+              </div>
+              <p style={{fontSize:"12px",color:"#64748b",margin:0,gridColumn:"1/-1",textAlign:"center"}}>
+                Fracción: {fractionOfBase.toFixed(4)} del producto base · Margen base: {margenBase.toFixed(1)}%
+              </p>
+            </div>
+          )}
+          <div style={{display:"flex",gap:"12px",marginTop:"16px",paddingTop:"16px",borderTop:"1px solid #e2e8f0"}}>
+            <button onClick={onClose} className="btn-secondary" style={{flex:1}} disabled={creando}>Cancelar</button>
+            <button onClick={handleCrear} disabled={!valido || creando} className="btn-primary" style={{flex:1}}>
+              {creando ? "Creando..." : "Crear producto"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PuntoDeVenta() {
   const { cajaActiva, loadingCaja } = useCaja();
   const { user } = useAuth();
@@ -205,9 +416,14 @@ export default function PuntoDeVenta() {
   const [procesando, setProcesando] = useState(false);
   const [scannerModalOpen, setScannerModalOpen] = useState(false);
   const [calcProducto, setCalcProducto] = useState(null);
+  const [modalVentaLibre, setModalVentaLibre] = useState(false);
+  const [modalFraccionar, setModalFraccionar] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const searchRef = useRef(null);
   const agregarProductoRef = useRef(null);
+  // Última venta enviada: { key, items }. Sobrevive a un error de red ambiguo
+  // para que el reintento deduplique en el servidor (ver ticketKey más abajo).
+  const ultimoEnvioRef = useRef(null);
 
   const { isSubmitting, withGuard } = useSubmitGuard();
   const [posTheme, setPosTheme] = useState(() => localStorage.getItem("pos-theme") || "light");
@@ -268,6 +484,29 @@ export default function PuntoDeVenta() {
   const sinStock = productosFiltrados.filter((p) => (p.stock ?? 0) <= 0);
   const total = ticket.reduce((s, i) => s + parseFloat(i.precio) * i.qty, 0);
 
+  // Vaciar el ticket también libera la key congelada: la próxima venta arranca
+  // con una key nueva. Es el único camino (junto al éxito de una venta) que
+  // regenera la clave de idempotencia.
+  const vaciarTicket = () => {
+    ultimoEnvioRef.current = null;
+    setTicket([]);
+  };
+
+  // Una clave de idempotencia por venta enviada. Mientras la ÚLTIMA venta no se
+  // confirme (éxito/clear), se reusa SIEMPRE la misma key — incluso si editan el
+  // ticket tras un fallo de red: si la venta ya se registró en el servidor pero
+  // la respuesta se perdió, una key nueva + ticket editado crearía una venta
+  // duplicada. El backend deduplica por (negocio_id, idempotency_key).
+  const ticketKey = useMemo(() => {
+    if (ultimoEnvioRef.current) {
+      return ultimoEnvioRef.current.key;
+    }
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `tk-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }, [ticket]);
+
   const agregarProducto = (p) => {
     const stock = p.stock ?? 0;
     setTicket((prev) => {
@@ -288,27 +527,69 @@ export default function PuntoDeVenta() {
     await withGuard(async () => {
       setProcesando(true);
       try {
+        // Fingerprint estable del ticket: solo los campos que el servidor
+        // persiste (excluye el `id` volátil de las líneas peso/venta libre).
+        const fingerprint = (items) =>
+          JSON.stringify(
+            items.map((i) => ({
+              productoId: i.productoId || (i.esVentaLibre ? null : i.id) || null,
+              cantidad: i.qty,
+              precioUnitario: i.precioUnitario ?? i.precio ?? null,
+              costoUnitario: i.costoUnitario ?? null,
+              esVentaLibre: !!i.esVentaLibre,
+              nombre: i.nombre ?? null,
+            })),
+          );
+        // Si tras un fallo de red el cajero EDITÓ el ticket, el reintento NO
+        // puede reusar la key congelada: el servidor deduplicaría contra la
+        // venta ORIGINAL y los items editados nunca se venderían. Se rota a
+        // una key nueva y el ticket editado se registra como venta nueva.
+        let key = ticketKey;
+        if (
+          ultimoEnvioRef.current &&
+          fingerprint(ticket) !== fingerprint(ultimoEnvioRef.current.items)
+        ) {
+          ultimoEnvioRef.current = null;
+          key =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `tk-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        }
         const body = {
-        items: ticket.map((i) => ({
-          productoId: i.productoId || i.id,
-          cantidad: i.qty,
-          ...(i.peso ? { precioUnitario: i.precio, nombre: i.nombre } : {}),
-        })),
+        items: ticket.map((i) => (
+          i.esVentaLibre
+            ? { nombre: i.nombre, cantidad: i.qty, precioUnitario: i.precio, costoUnitario: i.costoUnitario }
+            : { productoId: i.productoId || i.id, cantidad: i.qty, ...(i.peso ? { precioUnitario: i.precio, nombre: i.nombre, costoUnitario: i.costoUnitario } : {}) }
+        )),
         metodoPago,
+        idempotencyKey: key,
       };
         if (clienteDeudorId) body.clienteDeudorId = clienteDeudorId;
+        // Congelar key + snapshot del ticket al ENVIAR: si la respuesta se
+        // pierde, el reintento reusa esta MISMA key → el servidor deduplica.
+        ultimoEnvioRef.current = { key, items: ticket };
         const res = await ventasAPI.crear(body);
         const advertencia = res.data?.data?.advertenciaLimite;
-        const ventaId = res.data?.data?.id;
-        setTicket([]); setModalCobro(false);
-        const methodLabel = metodoPago === "efectivo" ? "Efectivo" : metodoPago === "tarjeta" ? "Tarjeta" : metodoPago === "transferencia" ? "Transferencia" : metodoPago === "credito" ? "Fiado" : "Mixto";
+        const duplicado = res.data?.data?.duplicado === true;
+        const ventaId = res.data?.data?.id || res.data?.data?.venta?.id;
+        // En el caso duplicado el servidor devuelve { venta, duplicado: true }
+        // con el folio y el total REALMENTE registrados: mostrarlos en el toast
+        // en vez del ticket actual (que tras un reintento puede no coincidir).
+        const ventaDuplicada = duplicado ? res.data?.data?.venta : null;
+        const totalMostrado = ventaDuplicada
+          ? parseFloat(ventaDuplicada.total ?? total)
+          : total;
+        const idMostradoVenta = ventaDuplicada?.folio || ventaId;
+        vaciarTicket(); setModalCobro(false);
+        const methodLabel = metodoPago === "efectivo" ? "Efectivo" : metodoPago === "tarjeta" ? "Tarjeta" : metodoPago === "transferencia" ? "Transferencia" : "Fiado";
+        const cabecera = duplicado ? `🔁 Venta #${idMostradoVenta} ya registrada` : `✅ Venta #${ventaId} registrada`;
         let saleMsg;
         if (metodoPago === "credito") {
-          saleMsg = `✅ Venta #${ventaId} registrada\nFiado a: ${deudorNombre || "cliente"}\nTotal: ${formatCurrency(total)}`;
+          saleMsg = `${cabecera}\nFiado a: ${deudorNombre || "cliente"}\nTotal: ${formatCurrency(totalMostrado)}`;
         } else if (cambio > 0) {
-          saleMsg = `✅ Venta #${ventaId} registrada\n${methodLabel}: ${formatCurrency(total)}\nCambio: ${formatCurrency(cambio)}`;
+          saleMsg = `${cabecera}\n${methodLabel}: ${formatCurrency(totalMostrado)}\nCambio: ${formatCurrency(cambio)}`;
         } else {
-          saleMsg = `✅ Venta #${ventaId} registrada\n${methodLabel}: ${formatCurrency(total)}\nTotal: ${formatCurrency(total)}`;
+          saleMsg = `${cabecera}\n${methodLabel}: ${formatCurrency(totalMostrado)}`;
         }
         showToast(saleMsg, "success", 5000);
         if (advertencia) setTimeout(() => showToast(advertencia, "warn"), 500);
@@ -321,7 +602,21 @@ export default function PuntoDeVenta() {
   const handleCalcularPeso = ({ productoId, nombre, peso, precio }) => {
     const producto = productos.find((p) => p.id === productoId);
     if (!producto) return;
+    const unidadBase = (producto.unidadMedida || "").trim().toLowerCase();
+    // Guarda defensiva (el botón ⚖️ solo se muestra para kg/L, pero si llega
+    // una unidad g/ml bloquear: el costo prorrateado saldría ×1000 inflado).
+    if (escalaUnidad(unidadBase) !== 1000) {
+      showToast("Este producto no admite cálculo por peso (solo unidades kg/L)", "warn");
+      setCalcProducto(null);
+      return;
+    }
     const uid = `peso-${productoId}-${Date.now()}`;
+    // Costo PRORRATEADO por la fracción vendida: peso viene en gramos y la
+    // escala de la unidad base (kg/L → 1000, g/ml → 1) da la fracción de la
+    // unidad base. stock es INT, así que cantidad queda en 1 (una unidad) y
+    // solo se corrige el costo, no el decremento.
+    const fraction = peso / escalaUnidad(unidadBase);
+    const costoUnitario = round2(parseFloat(producto.precioCompra || 0) * fraction);
     showToast(`⚖️ ${nombre} — $${precio.toFixed(2)}`);
     setTicket((prev) => [...prev, {
       id: uid,
@@ -329,11 +624,32 @@ export default function PuntoDeVenta() {
       nombre,
       precio,
       precioUnitario: precio,
+      costoUnitario,
       qty: 1,
       stock: 9999,
       peso,
     }]);
     setCalcProducto(null);
+  };
+
+  const handleAgregarVentaLibre = (item) => {
+    setTicket((prev) => [...prev, item]);
+    setModalVentaLibre(false);
+    showToast(`⚡ ${item.nombre} — $${item.precio.toFixed(2)}`);
+  };
+
+  const handleCrearFraccion = async (data) => {
+    try {
+      const res = await productosAPI.crear(data);
+      const nuevo = res.data?.data;
+      if (!nuevo) throw new Error("Respuesta inválida del servidor");
+      agregarProducto(nuevo);
+      setModalFraccionar(null);
+      showToast(`✅ Producto creado: ${nuevo.nombre}`, "success", 4000);
+      queryClient.invalidateQueries({ queryKey: ["productos", "all-for-pos"] });
+    } catch (err) {
+      showToast(err.response?.data?.message || "Error al crear el producto", "error");
+    }
   };
 
   if (loadingCaja) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div className="spinner" style={{width:"32px",height:"32px",border:"3px solid #e2e8f0",borderTopColor:"#3b82f6",borderRadius:"50%",animation:"spin 0.8s linear infinite"}} /></div>;
@@ -343,6 +659,14 @@ export default function PuntoDeVenta() {
       {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",whiteSpace:"pre-line",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
 
       {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
+
+      {modalVentaLibre && (
+        <ModalVentaLibre onConfirm={handleAgregarVentaLibre} onClose={() => setModalVentaLibre(false)} />
+      )}
+
+      {modalFraccionar && (
+        <ModalFraccionar producto={modalFraccionar} onConfirm={handleCrearFraccion} onClose={() => setModalFraccionar(null)} />
+      )}
 
       {calcProducto && (
         <CalculadoraPeso
@@ -408,6 +732,9 @@ export default function PuntoDeVenta() {
                 📱 Escanear
               </span>
             </button>
+            <button onClick={() => setModalVentaLibre(true)} className="btn-secondary" style={{whiteSpace:"nowrap",padding:"8px 12px",fontSize:"12px"}} title="Vender un producto que no está en el inventario">
+              ⚡ Venta libre
+            </button>
           </div>
           <div className="pos-categories">
             <button onClick={() => setCategoriaActiva("Todas")}
@@ -433,7 +760,7 @@ export default function PuntoDeVenta() {
                     const stock = p.stock ?? 0;
                     const stockBajo = stock <= 5;
                     const enTicket = ticket.find((i) => i.id === p.id);
-                    const esPesable = p.unidadMedida && /^(kg|kilo|kilogramo|litro|l|lt|g|gramo|ml)$/i.test(p.unidadMedida.trim());
+                    const esPesable = p.unidadMedida && escalaUnidad(p.unidadMedida) === 1000;
                     let cardClass = "pos-product-card";
                     if (enTicket) cardClass += " en-carrito";
                     else if (stockBajo) cardClass += " stock-bajo";
@@ -448,11 +775,18 @@ export default function PuntoDeVenta() {
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}}>
                           <div className="stock" style={{color:stockBajo?"var(--kanagawa-orange)":"var(--kanagawa-green)"}}>📦 {stock} {p.unidadMedida || "unidad"}</div>
                           {esPesable && (
-                            <div
-                              onClick={(e) => { e.stopPropagation(); setCalcProducto(p); }}
-                              style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
-                              title="Calcular por peso"
-                            >⚖️</div>
+                            <div style={{display:"flex",gap:"2px"}}>
+                              <div
+                                onClick={(e) => { e.stopPropagation(); setCalcProducto(p); }}
+                                style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
+                                title="Calcular por peso"
+                              >⚖️</div>
+                              <div
+                                onClick={(e) => { e.stopPropagation(); setModalFraccionar(p); }}
+                                style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
+                                title="Fraccionar"
+                              >✂️</div>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -552,7 +886,7 @@ export default function PuntoDeVenta() {
           </div>
           <div className="cart-actions">
             {ticket.length > 0 && (
-              <button onClick={() => setTicket([])} className="btn-secondary">
+              <button onClick={vaciarTicket} className="btn-secondary">
                 <i className="fa-solid fa-trash"></i> Vaciar
               </button>
             )}

@@ -7,7 +7,8 @@
         "start": "node src/app.js",
         "dev": "nodemon src/app.js",
         "db:sync": "node src/scripts/syncDb.js",
-        "db:seed": "node src/scripts/seedDb.js"
+        "db:seed": "node src/scripts/seedDb.js",
+        "db:migrate": "node src/scripts/runMigrations.js"
     },
     "keywords": [],
     "author": "",

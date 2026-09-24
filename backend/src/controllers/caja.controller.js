@@ -1,4 +1,4 @@
-const { Caja, MovimientoCaja, User, Venta } = require("../models/index");
+const { Caja, MovimientoCaja, User, Venta, Negocio } = require("../models/index");
 const sequelize = require("../config/database");
 const { success, error, paginated } = require("../utils/response");
 const { Op } = require("sequelize");
@@ -11,24 +11,31 @@ const abrirCaja = async (req, res) => {
   let t;
   try {
     const { saldoInicial, observaciones } = req.body;
+    const negocioId = req.businessId || req.user?.negocioId;
+
+    t = await sequelize.transaction();
+
+    // Lock del negocio como ancla estable: serializa aperturas concurrentes
+    // (dos solicitudes simultáneas no pueden ambas pasar el check de caja abierta)
+    await Negocio.findByPk(negocioId, { transaction: t, lock: t.LOCK.UPDATE });
 
     // Verificar si ya hay una caja abierta en el negocio
     const cajaAbierta = await Caja.findOne({
       where: {
-        negocioId: req.businessId || req.user?.negocioId,
+        negocioId,
         estado: "abierta",
       },
+      transaction: t,
     });
 
     if (cajaAbierta) {
+      await t.rollback();
       return error(
         res,
         "Ya existe una caja abierta. Debe cerrarla antes de abrir otra",
         400,
       );
     }
-
-    t = await sequelize.transaction();
 
     const caja = await Caja.create({
       fechaApertura: new Date(),
@@ -37,7 +44,7 @@ const abrirCaja = async (req, res) => {
       totalEgresos: 0,
       estado: "abierta",
       observaciones: observaciones || null,
-      negocioId: req.businessId || req.user?.negocioId,
+      negocioId,
       userId: req.userId,
       usuarioApertura: req.userId,
     }, { transaction: t });
@@ -49,7 +56,7 @@ const abrirCaja = async (req, res) => {
       monto: saldoInicial || 0,
       saldoAnterior: 0,
       saldoNuevo: saldoInicial || 0,
-      negocioId: req.businessId || req.user?.negocioId,
+      negocioId,
       cajaId: caja.id,
       userId: req.userId,
     }, { transaction: t });
@@ -58,7 +65,9 @@ const abrirCaja = async (req, res) => {
 
     return success(res, caja, "Caja abierta exitosamente", 201);
   } catch (err) {
-    if (t) await t.rollback();
+    // Guarda: si rollback() vuelve a fallar (p. ej. commit que lanzó), no
+    // enmascarar el error original con un 500 genérico
+    try { if (t) await t.rollback(); } catch (_) {}
     console.error("Error en abrirCaja:", err);
     return error(res, "Error al abrir caja: " + err.message, 500);
   }
@@ -69,18 +78,29 @@ const abrirCaja = async (req, res) => {
  * PUT /api/cajas/cierre/:id
  */
 const cerrarCaja = async (req, res) => {
+  let t;
   try {
-    const caja = await Caja.findByPk(req.params.id);
+    t = await sequelize.transaction();
+
+    // Lock de fila sobre la caja: un incremento concurrente de venta entre la
+    // lectura del saldo y el update no puede perderse
+    const caja = await Caja.findByPk(req.params.id, {
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
 
     if (!caja) {
+      await t.rollback();
       return error(res, "Caja no encontrada", 404);
     }
 
     if (caja.estado === "cerrada") {
+      await t.rollback();
       return error(res, "Esta caja ya está cerrada", 400);
     }
 
     if (caja.userId !== req.userId) {
+      await t.rollback();
       return error(res, "Solo quien abrió la caja puede cerrarla", 403);
     }
 
@@ -94,10 +114,15 @@ const cerrarCaja = async (req, res) => {
       saldoFinal: saldoActual,
       estado: "cerrada",
       usuarioCierre: req.userId,
-    });
+    }, { transaction: t });
+
+    await t.commit();
 
     return success(res, caja, "Caja cerrada exitosamente");
   } catch (err) {
+    // Guarda: si rollback() vuelve a fallar (p. ej. commit que lanzó), no
+    // enmascarar el error original con un 500 genérico
+    try { if (t) await t.rollback(); } catch (_) {}
     console.error("Error en cerrarCaja:", err);
     return error(res, "Error al cerrar caja: " + err.message, 500);
   }

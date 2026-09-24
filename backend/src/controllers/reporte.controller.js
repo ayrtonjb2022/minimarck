@@ -35,13 +35,15 @@ const reporteVentas = async (req, res) => {
   try {
     const { fechaInicio, fechaFin } = req.query;
 
-    if (!fechaInicio || !fechaFin) {
-      return error(res, "Debe proporcionar fechaInicio y fechaFin", 400);
+    const errorValidacion = validarPeriodo(fechaInicio, fechaFin);
+    if (errorValidacion) {
+      return error(res, errorValidacion, 400);
     }
 
     const where = {
       ...req.filterCondition,
       fecha: dateFilter(fechaInicio, fechaFin),
+      estado: "completada",
     };
 
     const ventas = await Venta.findAll({
@@ -111,9 +113,17 @@ const reporteProductosMasVendidos = async (req, res) => {
       }
     }
 
+    // Agrupación por COALESCE(producto_id, nombre_producto): las líneas de
+    // venta libre (productoId null) muestran su propio nombre y nunca se
+    // fusionan en una fila anónima con totales mezclados.
+    const grupoProducto = Sequelize.literal(
+      "COALESCE(`VentaDetalle`.`producto_id`, `VentaDetalle`.`nombre_producto`)",
+    );
+
     const productos = await VentaDetalle.findAll({
       attributes: [
         "productoId",
+        [grupoProducto, "grupo"],
         [
           Sequelize.fn("SUM", Sequelize.col("VentaDetalle.cantidad")),
           "totalVendido",
@@ -137,14 +147,26 @@ const reporteProductosMasVendidos = async (req, res) => {
         },
       ],
       where,
-      group: ["productoId", "producto.id"],
+      group: [grupoProducto, "productoId", "producto.id"],
       order: [
         [Sequelize.fn("SUM", Sequelize.col("VentaDetalle.cantidad")), "DESC"],
       ],
       limit: parseInt(limit),
     });
 
-    return success(res, productos);
+    return success(
+      res,
+      productos.map((p) => {
+        const fila = p.get({ plain: true });
+        delete fila.grupo;
+        if (!fila.producto) {
+          fila.producto = {
+            nombre: p.getDataValue("grupo") || "Venta libre",
+          };
+        }
+        return fila;
+      }),
+    );
   } catch (err) {
     console.error("Error en reporteProductosMasVendidos:", err);
     return error(
@@ -196,8 +218,10 @@ const reporteCaja = async (req, res) => {
 const reporteEstadoResultados = async (req, res) => {
   try {
     const { fechaInicio, fechaFin } = req.query;
-    if (!fechaInicio || !fechaFin) {
-      return error(res, "Debe proporcionar fechaInicio y fechaFin", 400);
+
+    const errorValidacion = validarPeriodo(fechaInicio, fechaFin);
+    if (errorValidacion) {
+      return error(res, errorValidacion, 400);
     }
 
     const negocioId = req.filterCondition?.negocioId || req.user?.negocioId;
@@ -386,8 +410,11 @@ const reporteGerencial = async (req, res) => {
         ventasTotales += parseFloat(v.total) || 0;
         for (const d of v.detalles || []) {
           unidadesVendidas += d.cantidad || 0;
-          costoMercaderia +=
-            (d.cantidad || 0) * (parseFloat(d.producto?.precioCompra) || 0);
+          const costoUni =
+            parseFloat(d.costoUnitario) > 0
+              ? parseFloat(d.costoUnitario)
+              : parseFloat(d.producto?.precioCompra) || 0;
+          costoMercaderia += (d.cantidad || 0) * costoUni;
         }
       }
 
@@ -483,9 +510,15 @@ const reporteGerencial = async (req, res) => {
       }
 
       // ---- Top productos: más unidades y más ingresos ----
+      // Mismo patrón que reporteProductosMasVendidos: las líneas de venta libre
+      // agrupan por su nombre propio y no en una fila anónima con totales mezclados.
+      const grupoProducto = Sequelize.literal(
+        "COALESCE(`VentaDetalle`.`producto_id`, `VentaDetalle`.`nombre_producto`)",
+      );
       const topProductos = await VentaDetalle.findAll({
         attributes: [
           "productoId",
+          [grupoProducto, "grupo"],
           [Sequelize.fn("SUM", Sequelize.col("VentaDetalle.cantidad")), "cantidad"],
           [Sequelize.fn("SUM", Sequelize.col("VentaDetalle.subtotal")), "ingresos"],
         ],
@@ -499,11 +532,11 @@ const reporteGerencial = async (req, res) => {
           },
         ],
         where: { "$venta.negocio_id$": negocioId },
-        group: ["productoId", "producto.id"],
+        group: [grupoProducto, "productoId", "producto.id"],
       });
 
       const rankeados = topProductos.map((p) => ({
-        producto: p.producto?.nombre || p.nombreProducto || "Producto",
+        producto: p.producto?.nombre || p.getDataValue("grupo") || "Venta libre",
         cantidad: parseFloat(p.getDataValue("cantidad")) || 0,
         ingresos: parseFloat(p.getDataValue("ingresos")) || 0,
       }));
@@ -674,8 +707,11 @@ const reporteAnalisisNegocio = async (req, res) => {
         ventasTotales += parseFloat(v.total) || 0;
         for (const d of v.detalles || []) {
           subtotalVentas += parseFloat(d.subtotal) || 0;
-          costoMercaderia +=
-            (d.cantidad || 0) * (parseFloat(d.producto?.precioCompra) || 0);
+          const costoUni =
+            parseFloat(d.costoUnitario) > 0
+              ? parseFloat(d.costoUnitario)
+              : parseFloat(d.producto?.precioCompra) || 0;
+          costoMercaderia += (d.cantidad || 0) * costoUni;
         }
       }
 
@@ -683,7 +719,8 @@ const reporteAnalisisNegocio = async (req, res) => {
       const ticketPromedio = cantidadVentas > 0 ? ventasTotales / cantidadVentas : 0;
       // Margen calculado sobre subtotal de detalles (sin IVA), misma base que
       // los márgenes por producto del semáforo (subtotal vs costo). `ventasTotales`
-      // (con IVA, desde venta.total) se mantiene solo para ventas/ticket.
+      // (desde venta.total === subtotal: el IVA ya viene EXTRAÍDO del precio
+      // final, nunca se suma encima; es informativo) se mantiene solo para ventas/ticket.
       const margenBrutoPct =
         subtotalVentas > 0
           ? ((subtotalVentas - costoMercaderia) / subtotalVentas) * 100
@@ -748,11 +785,16 @@ const reporteAnalisisNegocio = async (req, res) => {
             nombre: d.producto?.nombre || d.nombreProducto || "Producto",
             subtotal: 0,
             cantidad: 0,
-            precioCompra: parseFloat(d.producto?.precioCompra) || 0,
+            costoTotal: 0,
           };
         }
         porProducto[clave].subtotal += parseFloat(d.subtotal) || 0;
         porProducto[clave].cantidad += d.cantidad || 0;
+        const costoUniP =
+          parseFloat(d.costoUnitario) > 0
+            ? parseFloat(d.costoUnitario)
+            : parseFloat(d.producto?.precioCompra) || 0;
+        porProducto[clave].costoTotal += (d.cantidad || 0) * costoUniP;
       }
     }
 
@@ -760,8 +802,8 @@ const reporteAnalisisNegocio = async (req, res) => {
     const margenNoPositivo = [];
     for (const p of Object.values(porProducto)) {
       if (p.subtotal <= 0) continue; // sin venta real, no se puede evaluar
-      const sinCosto = p.precioCompra == null || p.precioCompra === 0;
-      const costo = p.cantidad * p.precioCompra;
+      const sinCosto = p.costoTotal == null || p.costoTotal === 0;
+      const costo = p.costoTotal;
       const ganancia = p.subtotal - costo;
       const margenPct = p.subtotal > 0 ? (ganancia / p.subtotal) * 100 : 0;
       const item = {
