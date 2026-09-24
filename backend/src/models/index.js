@@ -13,6 +13,11 @@ const Proveedor = require("./Proveedor");
 const Compra = require("./Compra");
 const CompraDetalle = require("./CompraDetalle");
 const Auditoria = require("./Auditoria");
+const CuentaContable = require("./cuentaContable");
+const AsientoContable = require("./asientoContable");
+const DetalleAsiento = require("./detalleAsiento");
+const CuentaCorrienteDeuda = require("./cuentaCorrienteDeuda");
+const PagoDeudaContabilidad = require("./pagoDeudaContabilidad");
 
 // ========== ASOCIACIONES NO CIRCULARES ==========
 
@@ -124,6 +129,61 @@ Producto.hasMany(CompraDetalle, { foreignKey: "productoId", as: "compraDetalles"
 Auditoria.belongsTo(User, { foreignKey: "userId", as: "usuario" });
 User.hasMany(Auditoria, { foreignKey: "userId", as: "auditorias", onDelete: "SET NULL" });
 
+// ========== CONTABILIDAD ==========
+
+// Negocio <-> CuentaContable
+CuentaContable.belongsTo(Negocio, { foreignKey: "negocioId", as: "negocio" });
+Negocio.hasMany(CuentaContable, { foreignKey: "negocioId", as: "cuentasContables", onDelete: "CASCADE" });
+
+// CuentaContable <-> User
+CuentaContable.belongsTo(User, { foreignKey: "userId", as: "usuario" });
+User.hasMany(CuentaContable, { foreignKey: "userId", as: "cuentasContables", onDelete: "CASCADE" });
+
+// CuentaContable self-referencing (parent → sub-cuentas)
+CuentaContable.hasMany(CuentaContable, { foreignKey: "parentId", as: "hijas", onDelete: "SET NULL" });
+CuentaContable.belongsTo(CuentaContable, { foreignKey: "parentId", as: "padre" });
+
+// Negocio <-> AsientoContable
+AsientoContable.belongsTo(Negocio, { foreignKey: "negocioId", as: "negocio" });
+Negocio.hasMany(AsientoContable, { foreignKey: "negocioId", as: "asientosContables", onDelete: "CASCADE" });
+
+// AsientoContable <-> User
+AsientoContable.belongsTo(User, { foreignKey: "userId", as: "usuario" });
+User.hasMany(AsientoContable, { foreignKey: "userId", as: "asientosContables", onDelete: "CASCADE" });
+
+// AsientoContable <-> DetalleAsiento
+DetalleAsiento.belongsTo(AsientoContable, { foreignKey: "asientoContableId", as: "asiento" });
+AsientoContable.hasMany(DetalleAsiento, { foreignKey: "asientoContableId", as: "detalles", onDelete: "CASCADE" });
+
+// DetalleAsiento <-> CuentaContable
+DetalleAsiento.belongsTo(CuentaContable, { foreignKey: "cuentaContableId", as: "cuenta" });
+CuentaContable.hasMany(DetalleAsiento, { foreignKey: "cuentaContableId", as: "detallesAsiento" });
+
+// DetalleAsiento <-> Negocio
+DetalleAsiento.belongsTo(Negocio, { foreignKey: "negocioId", as: "negocio" });
+
+// Negocio <-> CuentaCorrienteDeuda
+CuentaCorrienteDeuda.belongsTo(Negocio, { foreignKey: "negocioId", as: "negocio" });
+Negocio.hasMany(CuentaCorrienteDeuda, { foreignKey: "negocioId", as: "cuentasCorrientesDeudas", onDelete: "CASCADE" });
+
+// CuentaCorrienteDeuda <-> User
+CuentaCorrienteDeuda.belongsTo(User, { foreignKey: "userId", as: "usuario" });
+User.hasMany(CuentaCorrienteDeuda, { foreignKey: "userId", as: "cuentasCorrientesDeudas", onDelete: "CASCADE" });
+
+// CuentaCorrienteDeuda <-> Proveedor (optional)
+CuentaCorrienteDeuda.belongsTo(Proveedor, { foreignKey: "proveedorId", as: "proveedor" });
+
+// CuentaCorrienteDeuda <-> PagoDeudaContabilidad
+PagoDeudaContabilidad.belongsTo(CuentaCorrienteDeuda, { foreignKey: "cuentaCorrienteDeudaId", as: "deuda" });
+CuentaCorrienteDeuda.hasMany(PagoDeudaContabilidad, { foreignKey: "cuentaCorrienteDeudaId", as: "pagos", onDelete: "CASCADE" });
+
+// PagoDeudaContabilidad <-> User
+PagoDeudaContabilidad.belongsTo(User, { foreignKey: "userId", as: "usuario" });
+User.hasMany(PagoDeudaContabilidad, { foreignKey: "userId", as: "pagosDeudaContabilidad", onDelete: "CASCADE" });
+
+// PagoDeudaContabilidad <-> Negocio
+PagoDeudaContabilidad.belongsTo(Negocio, { foreignKey: "negocioId", as: "negocio" });
+
 module.exports = {
   User,
   Categoria,
@@ -140,4 +200,9 @@ module.exports = {
   Compra,
   CompraDetalle,
   Auditoria,
+  CuentaContable,
+  AsientoContable,
+  DetalleAsiento,
+  CuentaCorrienteDeuda,
+  PagoDeudaContabilidad,
 };

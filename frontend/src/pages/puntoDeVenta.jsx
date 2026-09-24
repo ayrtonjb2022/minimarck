@@ -10,6 +10,7 @@ import { useAuth } from "../context/AuthContext";
 import { connectSocket, disconnectSocket } from "../services/socket";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import CalculadoraPeso from "../components/common/CalculadoraPeso";
+import { formatCurrency } from "../utils/formatters";
 
 const METODOS_PAGO = [
   { value: "efectivo", label: "Efectivo" },
@@ -96,6 +97,21 @@ function ModalCobro({ total, onConfirm, onClose, isSubmitting }) {
           )}
           {metodoPago === "credito" && (
             <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+              {deudorSel && (
+                <div>
+                  <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"8px",padding:"12px 14px"}}>
+                    <p style={{margin:0,fontSize:"13px",color:"#1e293b",fontWeight:600}}>Cliente: {deudorSel.nombre}</p>
+                    <p style={{margin:"4px 0 0",fontSize:"12px",color:"#64748b"}}>Deuda actual: <strong style={{color:"#dc2626"}}>${parseFloat(deudorSel.deudaPendiente||0).toFixed(2)}</strong></p>
+                    <p style={{margin:"2px 0 0",fontSize:"12px",color:"#1e293b"}}>Nueva deuda: <strong>${(parseFloat(deudorSel.deudaPendiente||0)+total).toFixed(2)}</strong></p>
+                  </div>
+                  {parseFloat(deudorSel.deudaPendiente||0) > 0 && (
+                    <div style={{marginTop:"6px",background:"#fef9c3",border:"1px solid #fde047",borderRadius:"8px",padding:"8px 12px",fontSize:"12px",color:"#854d0e",fontWeight:500}}>
+                      <i className="fa-solid fa-exclamation-triangle" style={{marginRight:"4px"}}></i>
+                      Tiene deuda pendiente
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="form-group" style={{margin:0}}>
                 <label>Cliente (cuenta corriente)</label>
                 <div style={{position:"relative"}}>
@@ -203,7 +219,7 @@ export default function PuntoDeVenta() {
     });
   }, []);
 
-  const showToast = useCallback((msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
+  const showToast = useCallback((msg, type = "success", duration = 3500) => { setToast({ msg, type }); setTimeout(() => setToast(null), duration); }, []);
   useEffect(() => {
     const handler = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "f") { e.preventDefault(); searchRef.current?.focus(); } if (e.key === "Escape") setFiltro(""); };
     window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler);
@@ -267,7 +283,7 @@ export default function PuntoDeVenta() {
   const cambiarQty = (id, delta) => setTicket((prev) => prev.map((i) => { if (i.id !== id) return i; const newQty = i.qty + delta; if (newQty <= 0) return null; if (newQty > (i.stock ?? 0)) { showToast("Stock insuficiente", "warn"); return i; } return { ...i, qty: newQty }; }).filter(Boolean));
   const quitarItem = (id) => setTicket((prev) => prev.filter((i) => i.id !== id));
 
-  const handleConfirmarVenta = async ({ metodoPago, cambio, clienteDeudorId }) => {
+  const handleConfirmarVenta = async ({ metodoPago, cambio, clienteDeudorId, deudorNombre }) => {
     if (!cajaActiva) { showToast("No hay caja abierta. Abrí una caja antes de vender.", "error"); setModalCobro(false); return; }
     await withGuard(async () => {
       setProcesando(true);
@@ -283,11 +299,18 @@ export default function PuntoDeVenta() {
         if (clienteDeudorId) body.clienteDeudorId = clienteDeudorId;
         const res = await ventasAPI.crear(body);
         const advertencia = res.data?.data?.advertenciaLimite;
+        const ventaId = res.data?.data?.id;
         setTicket([]); setModalCobro(false);
-        const msg = metodoPago === "credito"
-          ? "Venta registrada · Cargada a la cuenta del cliente"
-          : cambio > 0 ? `Venta registrada · Cambio: $${cambio.toFixed(2)}` : "Venta registrada exitosamente";
-        showToast(msg);
+        const methodLabel = metodoPago === "efectivo" ? "Efectivo" : metodoPago === "tarjeta" ? "Tarjeta" : metodoPago === "transferencia" ? "Transferencia" : metodoPago === "credito" ? "Fiado" : "Mixto";
+        let saleMsg;
+        if (metodoPago === "credito") {
+          saleMsg = `✅ Venta #${ventaId} registrada\nFiado a: ${deudorNombre || "cliente"}\nTotal: ${formatCurrency(total)}`;
+        } else if (cambio > 0) {
+          saleMsg = `✅ Venta #${ventaId} registrada\n${methodLabel}: ${formatCurrency(total)}\nCambio: ${formatCurrency(cambio)}`;
+        } else {
+          saleMsg = `✅ Venta #${ventaId} registrada\n${methodLabel}: ${formatCurrency(total)}\nTotal: ${formatCurrency(total)}`;
+        }
+        showToast(saleMsg, "success", 5000);
         if (advertencia) setTimeout(() => showToast(advertencia, "warn"), 500);
         queryClient.invalidateQueries({ queryKey: ["productos", "all-for-pos"] });
       } catch (err) { showToast(err.response?.data?.message || "Error al registrar la venta", "error"); }
@@ -317,7 +340,7 @@ export default function PuntoDeVenta() {
 
   return (
     <div className={`pos-container pos-theme-${posTheme}`}>
-      {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
+      {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",whiteSpace:"pre-line",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
 
       {modalCobro && <ModalCobro total={total} ticket={ticket} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
 

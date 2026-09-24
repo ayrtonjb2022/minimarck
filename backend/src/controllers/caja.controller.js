@@ -1,4 +1,4 @@
-const { Caja, MovimientoCaja, User } = require("../models/index");
+const { Caja, MovimientoCaja, User, Venta } = require("../models/index");
 const sequelize = require("../config/database");
 const { success, error, paginated } = require("../utils/response");
 const { Op } = require("sequelize");
@@ -271,6 +271,67 @@ const calcularSaldoGeneral = async (negocioId) => {
   };
 };
 
+/**
+ * Obtener desglose de ventas por medio de pago para una caja
+ * GET /api/cajas/:id/desglose
+ */
+const getDesglose = async (req, res) => {
+  try {
+    const caja = await Caja.findOne({
+      where: { id: req.params.id, ...req.filterCondition },
+    });
+    if (!caja) return error(res, "Caja no encontrada", 404);
+
+    const negocioId = req.businessId || req.user?.negocioId;
+
+    // Buscar ventas por cajaId
+    const ventasPorCaja = await Venta.findAll({
+      where: { cajaId: caja.id, negocioId, estado: "completada" },
+      attributes: ["metodoPago", "total"],
+    });
+
+    // También buscar ventas de crédito del mismo día (sin cajaId)
+    const apertura = new Date(caja.fechaApertura);
+    const diaInicio = new Date(apertura.getFullYear(), apertura.getMonth(), apertura.getDate(), 0, 0, 0);
+    const diaFin = new Date(apertura.getFullYear(), apertura.getMonth(), apertura.getDate(), 23, 59, 59);
+
+    const ventasCreditoDia = await Venta.findAll({
+      where: {
+        negocioId,
+        estado: "completada",
+        metodoPago: "credito",
+        cajaId: null,
+        fecha: { [Op.gte]: diaInicio, [Op.lte]: diaFin },
+      },
+      attributes: ["metodoPago", "total"],
+    });
+
+    const ventas = [...ventasPorCaja, ...ventasCreditoDia];
+
+    const desglose = { efectivo: 0, tarjeta: 0, transferencia: 0, mercadopago: 0, credito: 0, mixto: 0 };
+    const cantidades = { efectivo: 0, tarjeta: 0, transferencia: 0, mercadopago: 0, credito: 0, mixto: 0 };
+    let totalVentas = 0;
+
+    for (const v of ventas) {
+      const metodo = v.metodoPago || "efectivo";
+      const total = parseFloat(v.total || 0);
+      if (desglose[metodo] !== undefined) {
+        desglose[metodo] += total;
+        cantidades[metodo] += 1;
+      } else {
+        desglose.otro = (desglose.otro || 0) + total;
+        cantidades.otro = (cantidades.otro || 0) + 1;
+      }
+      totalVentas += total;
+    }
+
+    return success(res, { cajaId: caja.id, fecha: caja.fechaApertura, desglose, cantidades, totalVentas }, "Desglose obtenido");
+  } catch (err) {
+    console.error("Error en getDesglose:", err);
+    return error(res, "Error al obtener desglose: " + err.message, 500);
+  }
+};
+
 module.exports = {
   abrirCaja,
   cerrarCaja,
@@ -278,6 +339,7 @@ module.exports = {
   getAll,
   getById,
   getSaldoGeneral,
+  getDesglose,
   calcularSaldoGeneral,
 };
 

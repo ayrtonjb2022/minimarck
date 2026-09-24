@@ -82,6 +82,7 @@ app.use("/api/compras", require("./routes/compra.routes"));
 app.use("/api/clientes", require("./routes/cliente.routes"));
 app.use("/api/negocio", require("./routes/negocio.routes"));
 app.use("/api/notificaciones", require("./routes/notificacion.routes"));
+app.use("/api/contabilidad", require("./routes/contabilidad.routes"));
 
 // ========== MANEJO DE ERRORES ==========
 

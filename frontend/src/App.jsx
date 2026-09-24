@@ -23,6 +23,7 @@ import Proveedores from "./pages/Proveedores";
 import Compras from "./pages/Compras";
 import Reportes from "./pages/Reportes";
 import Configuracion from "./pages/Configuracion";
+import Contabilidad from "./pages/Contabilidad";
 import NotFound from "./pages/NotFound";
 import ScannerSync from "./pages/ScannerSync";
 
@@ -30,8 +31,8 @@ const PAGE_ROUTES = {
   dashboard: "/dashboard", pos: "/pos", productos: "/productos",
   categorias: "/categorias", ventas: "/ventas", caja: "/caja",
   clientes: "/clientes", proveedores: "/proveedores",
-  compras: "/compras", reportes: "/reportes",
-  configuracion: "/configuracion",
+  compras: "/compras", contabilidad: "/contabilidad",
+  reportes: "/reportes", configuracion: "/configuracion",
 };
 
 const App = () => {
@@ -132,6 +133,7 @@ const App = () => {
         <Route path="/caja" element={<AppLayout><Caja /></AppLayout>} />
         <Route path="/clientes" element={<AppLayout><Deudores /></AppLayout>} />
         <Route path="/reportes" element={<AppLayout><Reportes /></AppLayout>} />
+        <Route path="/contabilidad" element={<AppLayout><Contabilidad /></AppLayout>} />
         <Route path="/configuracion" element={<AppLayout><Configuracion /></AppLayout>} />
         <Route path="/pos" element={<FullLayout><CajaGuard><PuntoDeVenta /></CajaGuard></FullLayout>} />
       </Route>

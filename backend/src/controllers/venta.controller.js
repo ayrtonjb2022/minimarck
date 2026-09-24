@@ -166,6 +166,7 @@ const create = async (req, res) => {
     }
 
     // Registrar en caja si está abierta (solo para pagos NO crédito)
+    let ventaCajaId = null;
     if (metodoPago !== "credito") {
       const cajaAbierta = await Caja.findOne({
         where: {
@@ -176,6 +177,7 @@ const create = async (req, res) => {
       });
 
       if (cajaAbierta) {
+        ventaCajaId = cajaAbierta.id;
         const saldoActual =
           parseFloat(cajaAbierta.saldoInicial) +
           parseFloat(cajaAbierta.totalIngresos) -
@@ -202,6 +204,11 @@ const create = async (req, res) => {
           transaction,
         });
       }
+    }
+
+    // Asociar cajaId a la venta
+    if (ventaCajaId) {
+      await venta.update({ cajaId: ventaCajaId }, { transaction });
     }
 
     await transaction.commit();

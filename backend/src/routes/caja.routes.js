@@ -8,6 +8,7 @@ const {
   getAll,
   getById,
   getSaldoGeneral,
+  getDesglose,
 } = require("../controllers/caja.controller");
 
 // Todas las rutas requieren autenticaciÃƒÆ’Ã‚Â³n
@@ -19,6 +20,7 @@ router.use(businessScope);
 // Rutas especÃƒÆ’Ã‚Â­ficas primero
 router.get("/saldo-general", getSaldoGeneral);
 router.get("/activa", getCajaActiva);
+router.get("/:id/desglose", getDesglose);
 router.post("/apertura", abrirCaja);
 router.put("/cierre/:id", cerrarCaja);
 

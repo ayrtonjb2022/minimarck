@@ -13,6 +13,7 @@ const ICONS = {
 
   proveedores: "fa-solid fa-truck",
   compras: "fa-solid fa-file-invoice",
+  contabilidad: "fa-solid fa-calculator",
   reportes: "fa-solid fa-chart-line",
   configuracion: "fa-solid fa-cog",
 };
@@ -33,6 +34,8 @@ const Sidebar = ({ isOpen, onClose, currentPage, onNavigate, collapsed, onToggle
     { page: "clientes", label: "Clientes / Deudores" },
     { page: "proveedores", label: "Proveedores" },
     { page: "compras", label: "Compras" },
+    { section: "FINANZAS" },
+    { page: "contabilidad", label: "Contabilidad" },
     { section: "REPORTES" },
     { page: "reportes", label: "Reportes" },
     { page: "configuracion", label: "Configuración" },

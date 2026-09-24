@@ -105,7 +105,7 @@ const Deudores = () => {
     : null;
 
   const totalDeudores = pagination?.total || deudores.length;
-  const sumDeudaTotal = deudores.reduce((s, d) => s + (d.deudaTotal || 0), 0);
+  const sumDeudaTotal = deudores.reduce((s, d) => s + parseFloat(d.deudaTotal || 0), 0);
   const promedio = deudores.length > 0 ? sumDeudaTotal / deudores.length : 0;
 
   return (

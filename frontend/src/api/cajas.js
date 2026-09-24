@@ -7,4 +7,5 @@ export const cajasAPI = {
   activa: () => apiClient.get("/cajas/activa"),
   obtener: (id) => apiClient.get(`/cajas/${id}`),
   saldoGeneral: () => apiClient.get("/cajas/saldo-general"),
+  desglose: (id) => apiClient.get(`/cajas/${id}/desglose`),
 };

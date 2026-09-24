@@ -13,6 +13,15 @@ const calcSaldoActual = (c) => {
   return parseFloat(c.saldoInicial ?? 0) + parseFloat(c.totalIngresos ?? 0) - parseFloat(c.totalEgresos ?? 0);
 };
 
+const PAYMENT_LABELS = {
+  efectivo: { label: "Efectivo", icon: "fa-money-bill-wave", color: "#16a34a" },
+  tarjeta: { label: "Tarjeta", icon: "fa-credit-card", color: "#2563eb" },
+  transferencia: { label: "Transferencia", icon: "fa-university", color: "#7c3aed" },
+  mercadopago: { label: "MercadoPago", icon: "fa-wallet", color: "#0ea5e9" },
+  credito: { label: "Crédito", icon: "fa-hand-holding-dollar", color: "#f59e0b" },
+  mixto: { label: "Mixto", icon: "fa-layer-group", color: "#6366f1" },
+};
+
 function BadgeEstado({ estado }) {
   return (
     <span className={`status ${estado === "abierta" ? "active-s" : "inactive-s"}`}>
@@ -68,7 +77,19 @@ function ModalMovimiento({ tipo, cajaId, onClose, onSubmit }) {
 }
 
 function ModalDetalle({ caja, onClose, onCerrar }) {
+  const [desglose, setDesglose] = useState(null);
+
+  useEffect(() => {
+    if (caja?.id) {
+      cajasAPI.desglose(caja.id).then((r) => setDesglose(r.data?.data)).catch(() => {});
+    }
+  }, [caja?.id]);
+
   if (!caja) return null;
+
+  const totalReal = desglose
+    ? desglose.efectivo + desglose.tarjeta + desglose.transferencia + desglose.mercadopago
+    : 0;
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
       <div className="card" style={{width:"100%",maxWidth:"500px",maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
@@ -100,6 +121,36 @@ function ModalDetalle({ caja, onClose, onCerrar }) {
               </div>
             </div>
           )}
+
+          {desglose && (
+            <div style={{marginTop:"16px"}}>
+              <h4 style={{fontSize:"14px",fontWeight:600,marginBottom:"8px"}}>Desglose por Medio de Pago</h4>
+              <div style={{border:"1px solid #f1f5f9",borderRadius:"8px",overflow:"hidden"}}>
+                {["efectivo","tarjeta","transferencia","mercadopago","credito","mixto"].map((metodo) => {
+                  const cfg = PAYMENT_LABELS[metodo];
+                  const monto = desglose[metodo] || 0;
+                  const cant = desglose.cantidades?.[metodo] || 0;
+                  if (monto === 0) return null;
+                  const isCredito = metodo === "credito";
+                  return (
+                    <div key={metodo} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid #f1f5f9",opacity:isCredito?0.6:1,background:isCredito?"#fefce8":"transparent",fontSize:"14px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <i className={`fa-solid ${cfg.icon}`} style={{color:cfg.color,fontSize:13}}></i>
+                        <span style={{fontWeight:isCredito?400:500}}>{cfg.label}</span>
+                        <span style={{fontSize:11,color:"#94a3b8"}}>({cant} venta{cant!==1?"s":""})</span>
+                        {isCredito && <span style={{fontSize:10,color:"#f59e0b",fontWeight:500}}>No ingresa a caja</span>}
+                      </div>
+                      <span style={{fontWeight:600,color:isCredito?"#94a3b8":cfg.color}}>{fmt(monto)}</span>
+                    </div>
+                  );
+                })}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#f8fafc",fontWeight:700,fontSize:"14px"}}>
+                  <span>Total real (sin crédito)</span>
+                  <span style={{color:"#16a34a"}}>{fmt(totalReal)}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div style={{display:"flex",gap:"10px",padding:"16px 22px",borderTop:"1px solid #e2e8f0"}}>
           <button onClick={onClose} className="btn-secondary" style={{flex:1}}>Cerrar</button>
@@ -124,6 +175,7 @@ export default function Caja() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [saldoGeneral, setSaldoGeneral] = useState(null);
+  const [desgloseActiva, setDesgloseActiva] = useState(null);
 
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -152,7 +204,7 @@ export default function Caja() {
   };
 
   useEffect(() => { verificarCaja(); cargar(); cargarSaldoGeneral(); }, []);
-  useEffect(() => { if (cajaActiva) cargarMovimientosHoy(); cargarSaldoGeneral(); }, [cajaActiva]);
+  useEffect(() => { if (cajaActiva) { cargarMovimientosHoy(); cargarSaldoGeneral(); cajasAPI.desglose(cajaActiva.id).then((r) => setDesgloseActiva(r.data?.data)).catch(() => {}); } }, [cajaActiva]);
 
   const handleCerrar = async (id) => {
     if (!confirm("¿Estás seguro de cerrar la caja?")) return;
@@ -213,6 +265,35 @@ export default function Caja() {
                   <span>Cajas cerradas: {fmt(saldoGeneral.saldoCerradas)}</span>
                   <span>Caja actual: {fmt(saldoGeneral.saldoAbierta)}</span>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {desgloseActiva && (
+            <div className="card" style={{marginBottom:"16px"}}>
+              <div className="card-header">
+                <h3 style={{margin:0,fontSize:"15px"}}><i className="fa-solid fa-chart-pie" style={{marginRight:8}}></i>Ventas por Medio de Pago</h3>
+                <span className="tag" style={{fontSize:"12px"}}>{desgloseActiva.totalVentas?.toFixed?.(0) || 0} vendidos</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))",gap:"8px",padding:"0 16px 16px"}}>
+                {["efectivo","tarjeta","transferencia","mercadopago","credito","mixto"].map((metodo) => {
+                  const cfg = PAYMENT_LABELS[metodo];
+                  const monto = desgloseActiva.desglose?.[metodo] || 0;
+                  const cant = desgloseActiva.cantidades?.[metodo] || 0;
+                  if (monto === 0) return null;
+                  const isCredito = metodo === "credito";
+                  return (
+                    <div key={metodo} style={{background:isCredito?"#fefce8":"#f8fafc",borderRadius:8,padding:"10px 12px",opacity:isCredito?0.7:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                        <i className={`fa-solid ${cfg.icon}`} style={{color:cfg.color,fontSize:12}}></i>
+                        <span style={{fontSize:12,fontWeight:500,color:"#64748b"}}>{cfg.label}</span>
+                      </div>
+                      <div style={{fontSize:16,fontWeight:700,color:isCredito?"#94a3b8":cfg.color}}>{fmt(monto)}</div>
+                      <div style={{fontSize:11,color:"#94a3b8"}}>{cant} venta{cant!==1?"s":""}</div>
+                      {isCredito && <div style={{fontSize:10,color:"#f59e0b",marginTop:2}}>No ingresa a caja</div>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
