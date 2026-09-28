@@ -6,7 +6,14 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "spike": "electron src/main/spike/node-sqlite.spike.js"
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "spike": "electron src/main/spike/node-sqlite.spike.js",
+    "probe:launch": "electron out/main/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify:offline": "node scripts/verify-offline.mjs",
+    "verify:s0": "npm run spike && npm test && npm run build && npm run verify:offline"
   },
   "devDependencies": {
     "electron": "44.4.5",
