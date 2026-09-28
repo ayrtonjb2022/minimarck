@@ -30,16 +30,52 @@ export function buildCsp(isPackaged) {
 }
 
 /**
+ * The canonical origin of a frame URL: `protocol + '//' + host`.
+ *
+ * This is NOT `new URL(u).origin`. `app:` is a non-special scheme, so the URL standard
+ * gives its origin as the OPAQUE origin, serialized as the string `"null"` — comparing
+ * `.origin` would make `BUNDLE_ORIGIN` unmatchable and silently trust nothing (or, if the
+ * `"null"` string were compared instead, trust every non-special scheme at once).
+ * `protocol` + `host` is the part of a URL that actually decides where the bytes come
+ * from, and `host` deliberately EXCLUDES userinfo, so `app://bundle@evil.com/x`
+ * canonicalises to `app://evil.com`.
+ *
+ * Returns `null` for an absent, empty or unparseable URL, so the caller fails closed
+ * instead of comparing against a string that happens to be absent.
+ */
+export function canonicalOrigin(frameUrl) {
+  if (typeof frameUrl !== 'string' || frameUrl === '') return null
+  try {
+    return `${new URL(frameUrl).protocol}//${new URL(frameUrl).host}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * SEC-4: is this frame's origin trusted?
+ *
+ * The check is on the PARSED origin, never on a string prefix. A prefix test is not an
+ * origin test: `http://localhost:5173@evil.com/x` starts with `http://localhost:5173` but
+ * its host is `evil.com`, and `http://localhost:5173.evil.com/` is a different site
+ * entirely. Both were accepted by the old prefix predicate in an unpackaged build, and the
+ * `will-navigate` guard shared that predicate, so a renderer could both CALL the 88-op
+ * contract and NAVIGATE to an origin it does not own.
+ */
+export function isTrustedOrigin(frameUrl, isPackaged) {
+  const origin = canonicalOrigin(frameUrl)
+  if (origin === null) return false
+  if (origin === BUNDLE_ORIGIN) return true
+  return !isPackaged && origin === DEV_ORIGIN
+}
+
+/**
  * SEC-4: every IPC message must come from a trusted origin. Packaged builds accept only
- * `app://bundle/`; dev additionally accepts the Vite dev server. Anything else is a 403.
+ * `app://bundle`; dev additionally accepts the Vite dev server. Anything else is a 403.
  * The check is on the FRAME URL (senderFrame), so a nested/child frame cannot spoof it.
  */
 export function assertTrustedSender(frameUrl, isPackaged) {
-  const url = String(frameUrl || '')
-  const trusted = isPackaged
-    ? url.startsWith(BUNDLE_ORIGIN + '/')
-    : url.startsWith(BUNDLE_ORIGIN + '/') || url.startsWith(DEV_ORIGIN)
-  if (!trusted) {
+  if (!isTrustedOrigin(frameUrl, isPackaged)) {
     const err = new Error('Untrusted IPC sender')
     err.code = 'FORBIDDEN'
     err.status = 403
@@ -58,20 +94,22 @@ export function assertTrustedSender(frameUrl, isPackaged) {
 export function applyWebContentsSecurity(contents, session, isPackaged) {
   // Deny every permission request except media from the bundle origin.
   contents.session.setPermissionRequestHandler((_wc, permission, callback) => {
-    const fromBundle = String(contents.getURL() || '').startsWith(BUNDLE_ORIGIN + '/')
+    const fromBundle = isTrustedOrigin(contents.getURL(), true)
     callback(permission === 'media' && fromBundle)
   })
   // No new windows: a renderer-initiated window.open is denied, always.
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
   // No off-origin navigation. This is also what replaces the web's
   // `window.location.href = '/login'` with a real in-app route change.
+  // It shares isTrustedOrigin with the IPC sender check on purpose: a prefix test here
+  // would let the same `http://localhost:5173@evil.com/x` shape walk away from the
+  // bundle while still holding a live IPC channel.
   contents.on('will-navigate', (event, url) => {
-    const ok = isPackaged
-      ? url.startsWith(BUNDLE_ORIGIN + '/')
-      : url.startsWith(BUNDLE_ORIGIN + '/') || url.startsWith(DEV_ORIGIN)
-    if (!ok) event.preventDefault()
+    if (!isTrustedOrigin(url, isPackaged)) event.preventDefault()
   })
-  // Inject the CSP on every response from the bundle origin (OFFL-2).
+  // Inject the CSP on EVERY response served in this session (OFFL-2). The header lands on
+  // the app:// responses and on any dev-server response alike, because this session is
+  // dedicated to the renderer and nothing else is loaded in it.
   if (session) {
     session.webRequest.onHeadersReceived((details, callback) => {
       callback({

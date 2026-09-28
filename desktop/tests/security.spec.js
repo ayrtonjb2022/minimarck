@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildWebPreferences, resolvePreloadPath } from '../src/main/window.js'
-import { buildCsp, assertTrustedSender } from '../src/main/security.js'
+import { buildCsp, assertTrustedSender, isTrustedOrigin, canonicalOrigin } from '../src/main/security.js'
 import { resolveBundlePath, rendererUrl } from '../src/main/protocol.js'
 import { resolveDataPaths } from '../src/main/dataDir.js'
 import path from 'node:path'
@@ -81,6 +81,119 @@ describe('SEC-4 sender validation', () => {
       code = e.status
     }
     expect(code).toBe(403) // rejected when packaged
+  })
+
+  /**
+   * REGRESSION — the prefix-collision shapes.
+   *
+   * The old predicate was `url.startsWith(DEV_ORIGIN)`. Every URL below starts with the
+   * literal text `http://localhost:5173` and every one of them is a DIFFERENT origin, so
+   * all three were ACCEPTED in an unpackaged build: the renderer could reach the 88-op IPC
+   * contract from `evil.com`, and the shared `will-navigate` guard let it navigate there.
+   * These are the three shapes a prefix test cannot distinguish from the real thing.
+   */
+  it('REGRESSION: a userinfo URL pointing at another host is NOT the dev origin', () => {
+    // new URL(...).host === 'evil.com' — the `localhost:5173` is only the userinfo.
+    expect(new URL('http://localhost:5173@evil.com/x').host).toBe('evil.com')
+    expect(canonicalOrigin('http://localhost:5173@evil.com/x')).toBe('http://evil.com')
+    expect(isTrustedOrigin('http://localhost:5173@evil.com/x', false)).toBe(false)
+    for (const mode of [false, true]) {
+      let code
+      try {
+        assertTrustedSender('http://localhost:5173@evil.com/x', mode)
+      } catch (e) {
+        code = e.status
+      }
+      expect(code, `packaged=${mode}`).toBe(403)
+    }
+  })
+
+  it('REGRESSION: a subdomain of the dev host is NOT the dev origin', () => {
+    // "localhost:5173.evil.com" starts with "localhost:5173" as raw text.
+    expect(isTrustedOrigin('http://localhost:5173.evil.com/', false)).toBe(false)
+    let code
+    try {
+      assertTrustedSender('http://localhost:5173.evil.com/', false)
+    } catch (e) {
+      code = e.status
+    }
+    expect(code).toBe(403)
+  })
+
+  it('REGRESSION: a port-suffixed host is NOT the dev origin', () => {
+    // "localhost:5173x" starts with "localhost:5173" as raw text.
+    expect(isTrustedOrigin('http://localhost:5173x/', false)).toBe(false)
+    let code
+    try {
+      assertTrustedSender('http://localhost:5173x/', false)
+    } catch (e) {
+      code = e.status
+    }
+    expect(code).toBe(403)
+  })
+
+  it('REGRESSION: the same shapes on the app:// scheme, where the prefix was tightest', () => {
+    // "app://bundle/" only ever matched a literal path, but "app://bundle@evil.com" is a
+    // different origin and must not be trusted with the same one-line check.
+    for (const bad of ['app://bundle@evil.com/x', 'app://evil/index.html', 'app://BUNDLE/x']) {
+      expect(isTrustedOrigin(bad, false), bad).toBe(false)
+      expect(isTrustedOrigin(bad, true), bad).toBe(false)
+    }
+  })
+
+  it('fails closed on an absent, empty or unparseable frame URL', () => {
+    // Unparseable or absent -> no origin at all, so there is nothing to compare.
+    for (const bad of ['', null, undefined, 0, {}, [], 'not a url', '://nope', 'http://']) {
+      expect(canonicalOrigin(bad), String(bad)).toBeNull()
+    }
+    // Parseable but NOT the trusted origin -> a real origin string that still fails closed.
+    for (const bad of [
+      'about:blank', 'app://', 'file:///c:/x', 'data:text/html,x', 'chrome://settings', 'javascript:alert(1)'
+    ]) {
+      expect(canonicalOrigin(bad), String(bad)).not.toBeNull()
+    }
+    // Every one of them, either way, is untrusted in BOTH modes.
+    for (const bad of [
+      '', null, undefined, 0, {}, [], 'not a url', '://nope', 'http://',
+      'about:blank', 'app://', 'file:///c:/x', 'data:text/html,x', 'chrome://settings', 'javascript:alert(1)'
+    ]) {
+      expect(isTrustedOrigin(bad, false), String(bad)).toBe(false)
+      expect(isTrustedOrigin(bad, true), String(bad)).toBe(false)
+      let code
+      try {
+        assertTrustedSender(bad, true)
+      } catch (e) {
+        code = e.status
+      }
+      expect(code, String(bad)).toBe(403)
+    }
+  })
+
+  it('requires the SCHEME to match, not just the host', () => {
+    // https://localhost:5173 is a different origin from http://localhost:5173.
+    expect(isTrustedOrigin('https://localhost:5173/', false)).toBe(false)
+    expect(isTrustedOrigin('wss://localhost:5173/', false)).toBe(false)
+  })
+
+  it('still accepts the dev origin through its legal spellings', () => {
+    for (const good of [
+      'http://localhost:5173/',
+      'http://localhost:5173',
+      'http://localhost:5173/reportes?a=1#b',
+      'http://LOCALHOST:5173/', // host is case-normalised by the URL parser
+      'http://localhost:5173#@evil.com' // the @ is in the FRAGMENT; the host is localhost
+    ]) {
+      expect(canonicalOrigin(good), good).toBe('http://localhost:5173')
+      expect(isTrustedOrigin(good, false), good).toBe(true)
+    }
+  })
+
+  it('canonicalises the bundle origin to app://bundle, NOT the opaque "null" origin', () => {
+    // This is why the check cannot use new URL(u).origin: `app:` is a non-special scheme,
+    // so the URL standard reports its origin as the string "null".
+    expect(new URL('app://bundle/index.html').origin).toBe('null')
+    expect(canonicalOrigin('app://bundle/index.html')).toBe('app://bundle')
+    expect(canonicalOrigin('app://bundle/../reportes')).toBe('app://bundle')
   })
 })
 
