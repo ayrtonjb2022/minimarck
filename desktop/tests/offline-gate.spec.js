@@ -7,6 +7,7 @@ import {
   auditRenderer,
   auditBuildOutputs,
   auditDependencies,
+  auditAllowlist,
   blockingManifests,
   vendorTreeExists
 } from '../scripts/verify-offline.mjs'
@@ -162,6 +163,22 @@ describe('offline build gate — the three verified bypasses', () => {
     ]) {
       expect(auditOnly('a.js', src), src).toEqual([])
     }
+  })
+
+  it('allows ONLY RFC 2606 .invalid hosts beyond the inert namespaces', () => {
+    // The launch probe's OFFL-1 self-check fires each transport at offline-selfcheck.invalid
+    // so the gate would otherwise flag its own test. The exemption is narrow by construction
+    // and auditAllowlist() fails the build if anyone widens it to a real host.
+    expect(auditOnly('a.js', 'const u = "https://offline-selfcheck.invalid/probe"')).toEqual([])
+    expect(auditOnly('a.js', 'const u = "wss://offline-selfcheck.invalid/ws"')).toEqual([])
+    expect(auditAllowlist()).toEqual([])
+  })
+
+  it('rejects a .invalid host that is NOT the declared self-check host', () => {
+    // Narrow means narrow: .invalid is reserved, but a typo'd or invented name is still a
+    // finding rather than a silent pass.
+    const findings = auditOnly('a.js', 'const u = "https://something-else.invalid/x"')
+    expect(findings.some((f) => f.rule === 'external-origin')).toBe(true)
   })
 
   it('does NOT flag an ordinary line comment as a protocol-relative URL', () => {

@@ -35,7 +35,20 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
   'opensource.org',
   'creativecommons.org',
   'localhost',
-  '127.0.0.1'
+  '127.0.0.1',
+  // The launch probe's OFFL-1 recorder self-check fires each instrumented transport at this
+  // host, so the string lands in the built renderer and the gate flags its own test. RFC 2606
+  // reserves `.invalid` precisely so it can never resolve, so nothing can be fetched from it
+  // — there is no payload an attacker could serve here. The alternative, assembling the
+  // string so the scanner cannot see it, is exactly the obfuscation this gate exists to
+  // detect, and it would make the gate's own test unreadable. Keep this one entry narrow.
+  'offline-selfcheck.invalid'
+])
+
+/** The only shape of exemption allowed beyond the inert namespaces: an RFC 2606 `.invalid`. */
+const ALLOWED_EXEMPT_SUFFIX = '.invalid'
+const NON_EXEMPT_ALLOWED_HOSTS = new Set([
+  'www.w3.org', 'purl.org', 'spdx.org', 'opensource.org', 'creativecommons.org', 'localhost', '127.0.0.1'
 ])
 
 /**
@@ -144,8 +157,7 @@ export function auditRenderer(rootDir) {
   return { findings, scanned: files.length }
 }
 
-/**
- * Every build output electron-vite emits, relative to the `out` dir. All three are
+/** Every build output electron-vite emits, relative to the `out` dir. All three are
  * scanned, not just the renderer — VENDORED.md used to claim "anywhere in the built
  * output" while `auditRenderer('out/main')` and `auditRenderer('out/preload')` were
  * never called.
@@ -164,6 +176,27 @@ export function auditBuildOutputs(outDir = 'out') {
     findings.push(...r.findings)
   }
   return { findings, scanned, byOutput }
+}
+
+/**
+ * The allowlist is an attack surface of its own, so it is checked, not trusted. Every entry
+ * beyond the inert namespaces must be an RFC 2606 `.invalid` host, which provably cannot
+ * resolve. A new allowlist entry that is not one of those is a finding.
+ */
+export function auditAllowlist() {
+  const findings = []
+  for (const host of ALLOWED_EXTERNAL_HOSTS) {
+    if (NON_EXEMPT_ALLOWED_HOSTS.has(host)) continue
+    if (!host.endsWith(ALLOWED_EXEMPT_SUFFIX)) {
+      findings.push({
+        rule: 'allowlist-entry-not-exempt',
+        file: 'scripts/verify-offline.mjs',
+        line: 0,
+        text: `${host} is allowlisted but is neither an inert namespace nor an RFC 2606 .invalid host`
+      })
+    }
+  }
+  return findings
 }
 
 /**
@@ -222,6 +255,7 @@ if (process.argv[1] && process.argv[1].endsWith('verify-offline.mjs')) {
   const desktopRoot = join(here, '..')
 
   const { findings, scanned, byOutput } = auditBuildOutputs(outDir)
+  findings.push(...auditAllowlist())
   const blocking = blockingManifests(desktopRoot)
   const vendored = vendorTreeExists(desktopRoot)
   // Once anything is vendored, the tree it was vendored FROM becomes a blocking manifest:

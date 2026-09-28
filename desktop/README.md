@@ -23,10 +23,33 @@ exists precisely to pin that runtime rather than drift with whatever the machine
 |-------|------------------|----------|
 | Electron 44.4.5 ships working `node:sqlite` | `npm run spike` — real DB file, table, insert, read, WAL, second handle, `backup()` | `9/9 passed` |
 | No native module, no rebuild, no ABI lock | The spike asserts the stack is `node:sqlite` only | `ABORT CRITERION CLEARED` |
-| The app makes **zero** network calls | `verify:offline` fails the build on any external origin; the renderer probe counts outbound fetches | `0 attempt(s)` |
+| The app makes **zero** network calls | `verify:offline` fails the build on any external origin in any build output; the renderer probe instruments fetch, XHR, WebSocket, EventSource, sendBeacon and off-origin elements | `0 outbound attempts to any real origin`, with the recorder proven live on all 6 |
 | The renderer gets a narrow bridge, not `ipcRenderer` | Preload exposes exactly `call`, `on`, `platform`, `env` and nothing else | `SEC-1 bridge exposes exactly 4 members` |
 | The renderer cannot reach SQL or the filesystem | `sandbox:true` + an 88-op allowlist registry; unknown group/op is rejected in main | `Unknown group: evil` |
 | The origin is real, so storage and routing work | `app://bundle` is privileged + standard, so `localStorage` and `BrowserRouter` behave | `origin is a real origin — app://bundle` |
+| Only the trusted origin can reach IPC | `SEC-4` compares the **parsed** origin, so `http://localhost:5173@evil.com/x` is rejected | `REJECT(403)` on all 4 prefix-collision shapes |
+
+### What "zero network calls" does and does not prove
+
+The probe counts outbound attempts on **six** transports, not just `fetch` — `XMLHttpRequest`,
+`WebSocket` and `EventSource` all leave the machine without ever touching `window.fetch`, and an
+app that only counted `fetch` would look clean while streaming telemetry over a socket.
+
+A counter that reports zero is worth nothing unless the counter works, so the probe fires a
+**self-check** first: it deliberately attempts each transport against `*.invalid` (RFC 2606,
+reserved, never resolvable, blocked by the CSP) and asserts the recorder caught it. A PASS
+therefore means *the counter is live AND saw nothing*.
+
+That distinction is not theoretical. Disabling the `WebSocket` wrapper leaves
+`0 outbound attempts to any real origin` still **PASSING** while the probe exits non-zero on
+`recorder is live on WebSocket` — a broken recorder and a clean app report the same zero. That
+is exactly why the self-check exists.
+
+**Remaining blind spot, stated rather than hidden:** a dynamic `import()` of a
+runtime-assembled URL cannot be wrapped in JavaScript at all. The CSP covers it
+(`script-src 'self'`, `connect-src 'self'`). `verify:offline` is likewise a *text scan* and
+cannot see string concatenation or base64; it makes the accidental case impossible, and the CSP
+plus `sandbox:true` is what blocks the deliberate one. See `VENDORED.md`.
 
 ## Runtime facts (measured, not assumed)
 
