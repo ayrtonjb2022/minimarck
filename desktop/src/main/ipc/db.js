@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs'
-import { resolveDataPaths } from '../dataDir.js'
+import { resolveDataPaths, ensureDataDirs } from '../dataDir.js'
 
 /**
  * S0 read-only `db.*` handlers — the CONTRACT ONLY; the data layer is S1+.
@@ -8,9 +8,13 @@ import { resolveDataPaths } from '../dataDir.js'
  * They report the resolved data paths and whether a file is present, so the Settings
  * > Diagnóstico panel and the S0 probe have something honest to show. `schemaVersion`
  * reports 0 / "not migrated" because no migration has run — it does not fake a version.
+ *
+ * The directories ARE created (PLAT-2): without that, `shell.openPath(dataDir)` on the
+ * "Abrir carpeta de datos" menu item has nothing to open and S1's first open() is an
+ * ENOENT on a path this function just reported as valid.
  */
 export function registerDbHandlers(registry, { userDataPath, env }) {
-  const paths = resolveDataPaths(userDataPath, env)
+  const paths = ensureDataDirs(resolveDataPaths(userDataPath, env))
   registry.register('db', {
     info: () => {
       let sizeBytes = null

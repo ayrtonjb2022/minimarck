@@ -6,8 +6,17 @@ import { assertTrustedSender, applyWebContentsSecurity } from './security.js'
 import { registerAppSchemePrivileges, registerAppProtocol, rendererUrl } from './protocol.js'
 import { createWindow } from './window.js'
 import { registerDbHandlers } from './ipc/db.js'
+import { APP_NAME } from './dataDir.js'
 
 const isPackaged = app.isPackaged
+
+// PLAT-2: name the Electron profile BEFORE anything reads userData. Unpackaged, Electron
+// derives the path from the package name, and an app run via `electron out/main/index.js`
+// resolved to the SHARED `…\AppData\Roaming\Electron\` profile — the same directory every
+// other Electron app on the machine uses, so two of them collide. This is what makes the
+// data land under `…\AppData\Roaming\MiniMarck\` instead. Set from the constant, not from
+// package.json, so a rename cannot silently move a user's database.
+app.setName(APP_NAME)
 
 // The `app` scheme must be declared privileged BEFORE the app is ready (design §B.1).
 registerAppSchemePrivileges()

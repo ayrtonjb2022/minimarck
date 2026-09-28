@@ -87,8 +87,28 @@ CommonJS output.
 
 ## Data location (PLAT-2)
 
-Data lives under Electron's `userData` by default. `MINIMARCK_DATA_DIR` relocates only the data
-base; the Electron profile path is left untouched. Useful for tests and for a portable install.
+Data lives under the app's own Electron profile, `%APPDATA%\MiniMarck\` (or
+`~/Library/Application Support/MiniMarck` on macOS):
+
+```
+…\AppData\Roaming\MiniMarck\data\minimarck.db     # the database
+…\AppData\Roaming\MiniMarck\backups\              # .db-backup archives
+```
+
+`app.setName('MiniMarck')` in `main` is what puts it there. Unpackaged, Electron derives
+`userData` from the package name, so the app was resolving to the **shared**
+`…\AppData\Roaming\Electron\` profile that every other Electron app on the machine also
+uses — two of them would have collided on the same `data\minimarck.db`. The name is set
+from a constant rather than from `package.json`, so a rename cannot silently relocate a
+user's database.
+
+The `data` and `backups` directories are **created on first run**, so the
+"Abrir carpeta de datos" menu item always has something to open and S1's first open is not
+an `ENOENT` on a path the app had just reported as valid.
+
+`MINIMARCK_DATA_DIR` relocates only the data base; the Electron profile path is left
+untouched. Useful for tests and for a portable install. `Settings > Diagnóstico` shows the
+resolved location and whether the override is active.
 
 ```bash
 MINIMARCK_DATA_DIR=/tmp/mm npx electron out/main/index.js

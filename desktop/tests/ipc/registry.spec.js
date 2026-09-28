@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createRegistry } from '../../src/main/bridge/registry.js'
 import { OPS, OPS_COUNT, TOPICS } from '../../src/shared/ipc-contract.js'
 import { registerDbHandlers } from '../../src/main/ipc/db.js'
@@ -79,31 +82,58 @@ describe('registry allowlist (SEC-2)', () => {
 describe('S0 registered surface', () => {
   it('registers ONLY the read-only db.* contract ops, nothing else', () => {
     const r = createRegistry()
-    registerDbHandlers(r, { userDataPath: '/tmp/u', env: {} })
-    for (const group of Object.keys(OPS)) {
-      for (const op of OPS[group]) {
-        const implemented = r.isImplemented(group, op)
-        // S0 implements db.info/schemaVersion/reconcile and nothing else. Every other
-        // contract op must be unimplemented so later slices own them honestly.
-        const shouldBeImplemented = group === 'db'
-        expect(implemented, `${group}.${op}`).toBe(shouldBeImplemented)
+    // A real temp base: registerDbHandlers creates the data directories (PLAT-2), so a
+    // hardcoded path here would have the suite writing outside the repo on every run.
+    const base = mkdtempSync(join(tmpdir(), 'mm-surface-'))
+    try {
+      registerDbHandlers(r, { userDataPath: base, env: {} })
+      for (const group of Object.keys(OPS)) {
+        for (const op of OPS[group]) {
+          const implemented = r.isImplemented(group, op)
+          // S0 implements db.info/schemaVersion/reconcile and nothing else. Every other
+          // contract op must be unimplemented so later slices own them honestly.
+          const shouldBeImplemented = group === 'db'
+          expect(implemented, `${group}.${op}`).toBe(shouldBeImplemented)
+        }
       }
+    } finally {
+      rmSync(base, { recursive: true, force: true })
     }
   })
 
   it('db.info reports resolved paths and the runtime versions, and opens no database', () => {
-    const r = createRegistry()
-    const paths = registerDbHandlers(r, { userDataPath: '/tmp/u', env: {} })
-    const info = r.resolve('db', 'info')({})
-    expect(info.dbFile).toContain('minimarck.db')
-    expect(info.exists).toBe(false) // S0 creates no DB
-    expect(typeof info.sqlite).toBe('string')
-    expect(paths.dataDir).toBeTruthy()
+    // A real temp base, because registerDbHandlers now CREATES the data directories (PLAT-2),
+    // and a test must not write to a hardcoded path outside the repo.
+    const base = mkdtempSync(join(tmpdir(), 'mm-registry-'))
+    try {
+      const r = createRegistry()
+      const paths = registerDbHandlers(r, { userDataPath: base, env: {} })
+      const info = r.resolve('db', 'info')({})
+      expect(info.dbFile).toContain('minimarck.db')
+      expect(info.exists).toBe(false) // S0 creates no DB
+      expect(typeof info.sqlite).toBe('string')
+      expect(paths.dataDir).toBe(join(base, 'data'))
+      expect(existsSync(paths.dataDir)).toBe(true) // …but it DOES create the directory
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
   })
 })
 
 describe('event topics (SEC-2)', () => {
   it('exposes exactly the four allowed topics', () => {
     expect(TOPICS).toEqual(['backup:progress', 'import:progress', 'db:changed', 'theme:changed'])
+  })
+})
+
+describe('registry encapsulation', () => {
+  it('does NOT expose the mutable handlers map', () => {
+    // The map is the one structure holding a callable reference to every business handler
+    // in the app. The allowlist check runs before dispatch so an entry could not be reached
+    // even if one were attached — but nothing needs the map, and a closure that cannot leak
+    // cannot leak.
+    const r = createRegistry()
+    expect(r.handlers).toBeUndefined()
+    expect(Object.keys(r).sort()).toEqual(['isImplemented', 'register', 'resolve'])
   })
 })

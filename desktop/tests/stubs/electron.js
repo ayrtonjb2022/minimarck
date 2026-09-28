@@ -24,8 +24,22 @@ export const BrowserWindow = function BrowserWindow() {}
 BrowserWindow.getAllWindows = () => []
 
 export const ipcMain = { handle: () => undefined }
-export const app = { isPackaged: false, getPath: () => '/tmp/minimarck-userdata', whenReady: async () => {}, on: () => undefined, quit: () => undefined, requestSingleInstanceLock: () => true }
-export const protocol = { registerSchemesAsPrivileged: () => undefined, handle: () => undefined }
+export const app = {
+  isPackaged: false,
+  name: 'electron',
+  setName: (n) => { app.name = n },
+  getPath: () => '/tmp/minimarck-userdata',
+  whenReady: async () => {},
+  on: () => undefined,
+  quit: () => undefined,
+  exit: () => undefined,
+  requestSingleInstanceLock: () => true
+}
+export const protocol = {
+  registered: [],
+  registerSchemesAsPrivileged: (schemes) => { protocol.registered.push(...schemes) },
+  handle: () => undefined
+}
 export const Menu = { setApplicationMenu: () => undefined, buildFromTemplate: () => ({}) }
 export const shell = { openPath: () => undefined }
 export const dialog = {}

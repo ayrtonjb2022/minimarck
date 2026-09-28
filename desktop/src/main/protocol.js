@@ -51,6 +51,22 @@ export function resolveBundlePath(root, pathname) {
   return { status: 200, file: abs }
 }
 
+/**
+ * Does a `app://bundle/...` request that matches no file want the SPA shell, or a 404?
+ *
+ * A deep link like `app://bundle/reportes` has no extension, and so does a refresh of
+ * `app://bundle/reportes.html` — both are the router asking for a document, so both get
+ * `index.html`. A missing `app://bundle/assets/app-DPCrIakP.js` is NOT a route: serving it
+ * `text/html` turns a wrong path into a MIME error deep in the module loader, which reads
+ * as a bundler bug rather than the 404 it is.
+ *
+ * PURE, so the boundary is unit-testable.
+ */
+export function isNavigationRequest(pathname) {
+  const ext = path.extname(String(pathname || '')).toLowerCase()
+  return ext === '' || ext === '.html'
+}
+
 /** Must run BEFORE app.whenReady(): mark `app` as a standard, secure scheme. */
 export function registerAppSchemePrivileges() {
   protocol.registerSchemesAsPrivileged([
@@ -60,7 +76,14 @@ export function registerAppSchemePrivileges() {
         standard: true,
         secure: true,
         supportFetchAPI: true,
-        corsEnabled: true,
+        // DELIBERATE: corsEnabled is false. With it true, `corsEnabled: true` +
+        // `supportFetchAPI: true` means any origin loaded in this app can read
+        // `fetch('app://bundle/…')` cross-origin. The impact is low — `frame-src 'none'`,
+        // `will-navigate` is blocked and window.open is denied, so the only origins that
+        // can exist are the bundle and the dev server — but the grant buys nothing: the
+        // renderer fetches its own origin same-origin, which never consults CORS. Removing
+        // an unneeded capability is cheaper than reasoning about whether it is needed.
+        corsEnabled: false,
         stream: true
       }
     }
@@ -87,10 +110,16 @@ export function registerAppProtocol(rendererRoot) {
     if (status === 403) return new Response('forbidden', { status: 403 })
 
     const info = await stat(file).catch(() => null)
-    const target = info && info.isFile() ? file : indexHtml // SPA fallback
-    const body = await readFile(target)
+    if (!info || !info.isFile()) {
+      // SPA fallback for a route; a 404 for a missing asset, so a wrong path is a wrong
+      // path and not a MIME error inside the module loader.
+      if (!isNavigationRequest(pathname)) return new Response('not found', { status: 404 })
+      const shell = await readFile(indexHtml)
+      return new Response(shell, { headers: { 'content-type': MIME['.html'] } })
+    }
+    const body = await readFile(file)
     return new Response(body, {
-      headers: { 'content-type': MIME[path.extname(target).toLowerCase()] || 'application/octet-stream' }
+      headers: { 'content-type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' }
     })
   })
   return root

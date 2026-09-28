@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config'
+import { fileURLToPath } from 'node:url'
 
 /**
  * Vitest runs under the SYSTEM Node, not Electron. Two consequences:
@@ -8,6 +9,11 @@ import { defineConfig } from 'vitest/config'
  *     so `electron` is aliased to a stub. Only the PURE parts of those modules (the
  *     webPreferences builder, the CSP builder, the sender check, the bundle-path resolver)
  *     are under test; the stub exists purely so those pure functions can be imported.
+ *
+ * The alias uses `fileURLToPath`, never `new URL(...).pathname`: on Windows pathname is
+ * `/C:/Users/...`, which is not a real path. That is the same anti-pattern
+ * `scripts/verify-offline.mjs` hit and fixed — it is not worth reintroducing in the harness
+ * that is supposed to catch such things.
  */
 export default defineConfig({
   test: {
@@ -19,7 +25,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      electron: new URL('./tests/stubs/electron.js', import.meta.url).pathname
+      electron: fileURLToPath(new URL('./tests/stubs/electron.js', import.meta.url))
     }
   }
 })

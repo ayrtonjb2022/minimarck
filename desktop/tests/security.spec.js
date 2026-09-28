@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { buildWebPreferences, resolvePreloadPath } from '../src/main/window.js'
 import { buildCsp, assertTrustedSender, isTrustedOrigin, canonicalOrigin } from '../src/main/security.js'
-import { resolveBundlePath, rendererUrl } from '../src/main/protocol.js'
-import { resolveDataPaths } from '../src/main/dataDir.js'
+import { resolveBundlePath, rendererUrl, isNavigationRequest, registerAppSchemePrivileges } from '../src/main/protocol.js'
+import { resolveDataPaths, ensureDataDirs, APP_NAME } from '../src/main/dataDir.js'
+import { protocol } from 'electron'
 import path from 'node:path'
 import { basename } from 'node:path'
 
@@ -268,6 +271,34 @@ describe('OFFL-3 app:// bundle path resolution', () => {
   it('refuses malformed percent-encoding rather than throwing', () => {
     expect(resolveBundlePath(root, '/%E0%A4%A').status).toBe(403)
   })
+
+  it('serves the SPA shell for a route, but 404s a missing asset', () => {
+    // A missing /assets/app.js used to be answered with index.html as text/html, which
+    // surfaces as a MIME error inside the module loader and reads as a bundler bug. A
+    // wrong path should be a wrong path.
+    expect(isNavigationRequest('/reportes')).toBe(true)
+    expect(isNavigationRequest('/reportes/')).toBe(true)
+    expect(isNavigationRequest('/ventas/123')).toBe(true)
+    expect(isNavigationRequest('/reportes.html')).toBe(true)
+    expect(isNavigationRequest('/')).toBe(true)
+    expect(isNavigationRequest('/assets/app-DPCrIakP.js')).toBe(false)
+    expect(isNavigationRequest('/assets/styles.css')).toBe(false)
+    expect(isNavigationRequest('/favicon.ico')).toBe(false)
+  })
+
+  it('registers app:// as a standard, secure scheme WITHOUT CORS', () => {
+    registerAppSchemePrivileges()
+    const scheme = protocol.registered.find((s) => s.scheme === 'app')
+    expect(scheme).toBeTruthy()
+    expect(scheme.privileges.standard).toBe(true)
+    expect(scheme.privileges.secure).toBe(true)
+    expect(scheme.privileges.supportFetchAPI).toBe(true)
+    expect(scheme.privileges.stream).toBe(true)
+    // DELIBERATE. corsEnabled:true + supportFetchAPI:true lets any origin loaded in this
+    // app read fetch('app://bundle/…') cross-origin. The renderer only ever fetches its
+    // own origin, which never consults CORS, so the grant bought nothing.
+    expect(scheme.privileges.corsEnabled).toBe(false)
+  })
 })
 
 describe('PLAT-2 data location', () => {
@@ -288,5 +319,34 @@ describe('PLAT-2 data location', () => {
     // The Electron profile path is NOT used for data, and is NOT mutated.
     expect(p.base).toBe('C:/tmp/mmtest')
     expect(p.dataDir).not.toContain('AppData')
+  })
+
+  it('names the Electron profile, so it does not resolve to the shared Electron folder', () => {
+    // Unpackaged, Electron derives userData from the package name, which put the data in
+    // …\AppData\Roaming\Electron\ — the same profile every other Electron app on the
+    // machine uses. app.setName(APP_NAME) in main is what fixes it; this asserts the
+    // constant main uses, so a rename cannot silently relocate a user's database.
+    expect(APP_NAME).toBe('MiniMarck')
+    const p = resolveDataPaths(`C:/Users/x/AppData/Roaming/${APP_NAME}`, {})
+    expect(p.dataDir).toBe(path.join('C:/Users/x/AppData/Roaming/MiniMarck', 'data'))
+    expect(p.dataDir).not.toContain(`${path.sep}Electron${path.sep}`)
+  })
+
+  it('CREATES the data directories and they are writable (PLAT-2 is not policy-only)', () => {
+    // resolveDataPaths never mkdir'd, so the "Abrir carpeta de datos" menu item had nothing
+    // to open and S1's first DatabaseSync() would have been an ENOENT on a path this module
+    // had just reported as valid. This writes a real file to prove it.
+    const base = mkdtempSync(join(tmpdir(), 'mm-data-'))
+    try {
+      const p = ensureDataDirs(resolveDataPaths(base, {}))
+      expect(existsSync(p.dataDir)).toBe(true)
+      expect(existsSync(p.backupDir)).toBe(true)
+      writeFileSync(p.dbFile, '')
+      expect(existsSync(p.dbFile)).toBe(true)
+      // Idempotent: a second call on an existing tree must not throw.
+      expect(() => ensureDataDirs(p)).not.toThrow()
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
   })
 })

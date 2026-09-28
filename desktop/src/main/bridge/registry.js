@@ -17,7 +17,8 @@ import { IpcError } from './errors.js'
  *
  * A handler is looked up as `handlers[group][op]`, built once via `register()`. The
  * allowlist check runs first, so a caller can never reach an unregistered function even
- * if one were somehow attached to the registry object.
+ * if one were somehow attached to the registry object — and the map itself is not exported,
+ * so there is nothing to attach to.
  */
 export function createRegistry() {
   /** group -> { op -> handler(payload, ctx) } */
@@ -53,5 +54,10 @@ export function createRegistry() {
     return Boolean(handlers[group] && handlers[group][op])
   }
 
-  return { register, resolve, isImplemented, handlers }
+  // The handlers map is deliberately NOT returned. It is the one mutable structure that
+  // holds a callable reference to every business handler in the app, and exporting it
+  // would hand any holder of the registry a way to swap a handler in after the allowlist
+  // check has run. The allowlist check does run first in resolve(), so the property would
+  // still hold — but nothing needs it, and a closure that cannot leak cannot leak.
+  return { register, resolve, isImplemented }
 }
