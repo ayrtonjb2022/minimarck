@@ -9,12 +9,13 @@ written without re-litigating them.
 
 ```bash
 npm install
-npm run verify:s0        # spike + tests + build + offline gate
-MINIMARCK_S0_PROBE=1 npm run probe:launch   # launches the real window, prints 18 checks
+npm run verify:s0        # spike + tests + build + preload-format gate + offline gate + launch probe
+npm run probe:launch     # just the launch probe (also runs inside verify:s0)
 ```
 
-Expected: `verify:s0` green, and `probe:launch` printing
-`=== 18/18 launch probe checks passed ===` with exit code 0.
+Expected: `verify:s0` green. The Node version is pinned in `package.json` `engines`
+(`>=24.18.0 <25`) because the app ships Electron 44.4.5's Node **24.21.0** and the S0 spike
+exists precisely to pin that runtime rather than drift with whatever the machine has.
 
 ## What S0 proves
 
@@ -55,7 +56,11 @@ is unchanged.
 **Why the preload is `.cjs`:** SEC-3 requires `sandbox: true`, and Electron only supports
 CommonJS sandboxed preloads. Because the package is `"type": "module"`, electron-vite's default
 preload output would be `index.mjs` — which would fail to load and leave the renderer with **no
-bridge and no error**. `tests/security.spec.js` and `npm run probe:launch` both guard this.
+bridge and no error**. `build` does **not** catch this: it emits `index.mjs` and exits 0. What
+catches it is `npm run verify:preload`, which reads the build config and the emitted file, and
+`npm run probe:launch`, which launches the real window and asserts the bridge at runtime. Both
+run inside `verify:s0`, and `tests/security.spec.js` fails if the config stops declaring the
+CommonJS output.
 
 ## Data location (PLAT-2)
 
@@ -71,14 +76,18 @@ MINIMARCK_DATA_DIR=/tmp/mm npx electron out/main/index.js
 | Command | Proves |
 |---------|--------|
 | `npm run spike` | The `node:sqlite` runtime claim, inside Electron |
-| `npm test` | 46 pure/unit tests: contract, registry, preload surface, security, offline gate |
-| `npm run build` | All three targets build (also the preload-format gate) |
-| `npm run verify:offline` | The built renderer has no external origin, CDN, socket.io or ScannerSync |
-| `MINIMARCK_S0_PROBE=1 npm run probe:launch` | The **real** window passes 18 in-window checks |
+| `npm test` | 69 pure/unit tests: contract, registry, preload surface, security, offline gate |
+| `npm run build` | All three targets **build** — it does not check the preload format |
+| `npm run verify:preload` | The preload is declared CommonJS **and** emitted as `index.cjs` |
+| `npm run verify:offline` | No external origin, CDN, raw-content host, socket.io or ScannerSync in **any** of the three build outputs |
+| `npm run probe:launch` | The **real** window passes its in-window checks, with the real preload |
+| `npm run verify:s0` | All of the above, in order. This is the gate that must be green |
 
 `probe:launch` is the one that matters most: it opens an actual window and asserts from inside
 the renderer. A preload that fails to load, a sandbox that leaks, or an opaque origin all turn
-into a non-zero exit code.
+into a non-zero exit code. It used to sit **outside** `verify:s0`, which meant the single command
+a developer was told to run could not catch a broken bridge — that gap is why it is in the gate
+now.
 
 ## Deliberately out of scope for S0
 

@@ -18,8 +18,12 @@ import { defineConfig } from 'electron-vite'
  * The preload is deliberately emitted as CommonJS `.cjs`. SEC-3 requires `sandbox: true`,
  * and a sandboxed preload is ALWAYS CommonJS: with the package `"type": "module"`,
  * electron-vite's default ESM output would be `index.mjs`, which a sandboxed preload
- * cannot load (the bridge would silently not exist). `build` also verifies this by
- * launching the real window and asserting the 4-member bridge on `window.minimarck`.
+ * cannot load (the bridge would silently not exist).
+ *
+ * `build` does NOT verify that. It will happily emit `index.mjs` and exit 0. What
+ * verifies it is `npm run verify:preload` (reads this file AND the emitted output) plus
+ * `npm run probe:launch` (launches the real window and asserts the 4-member bridge), and
+ * both run inside `npm run verify:s0`.
  */
 export default defineConfig({
   main: {

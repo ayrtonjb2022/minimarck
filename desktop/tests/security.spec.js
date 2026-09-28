@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { buildWebPreferences, resolvePreloadPath } from '../src/main/window.js'
 import { buildCsp, assertTrustedSender, isTrustedOrigin, canonicalOrigin } from '../src/main/security.js'
 import { resolveBundlePath, rendererUrl } from '../src/main/protocol.js'
 import { resolveDataPaths } from '../src/main/dataDir.js'
 import path from 'node:path'
+import { basename } from 'node:path'
 
 /**
  * The main-process trust boundary and offline policy, tested as PURE functions so the
@@ -39,11 +41,26 @@ describe('SEC-3 window hardening', () => {
 })
 
 describe('build layout contract (the preload must stay CommonJS)', () => {
-  it('resolves the preload as .cjs, because a sandboxed preload cannot be ESM', () => {
+  const configSrc = readFileSync(new URL('../electron.vite.config.js', import.meta.url), 'utf8')
+  const declared = configSrc.match(/entryFileNames:\s*['"]([^'"]+)['"]/)
+
+  it('declares a CommonJS preload output in the build config', () => {
+    // The old guard here was `resolvePreloadPath().endsWith('index.cjs')` — one hardcoded
+    // literal compared against another in window.js. Delete the whole `output` block from
+    // electron.vite.config.js and that test still passed green while the build emitted
+    // index.mjs. Reading the config is what makes this a guard instead of a tautology.
+    expect(declared, 'electron.vite.config.js must declare preload entryFileNames').toBeTruthy()
+    expect(configSrc).toMatch(/format:\s*['"]cjs['"]/)
+  })
+
+  it('resolves the preload to the name the build config actually emits', () => {
     // SEC-3 sets sandbox:true, and Electron only supports CommonJS sandboxed preloads.
     // With "type":"module", electron-vite's default output would be .mjs, which would
-    // silently yield NO bridge at runtime. `npm run probe:launch` proves it loads.
-    expect(resolvePreloadPath().endsWith('index.cjs')).toBe(true)
+    // silently yield NO bridge at runtime. `npm run verify:preload` proves the emitted
+    // file on disk and `npm run probe:launch` proves the bridge at runtime.
+    const expected = declared[1].replace('[name]', 'index')
+    expect(expected.endsWith('.cjs')).toBe(true)
+    expect(basename(resolvePreloadPath())).toBe(expected)
   })
 
   it('loads the packaged renderer over app://, and dev over the dev server', () => {

@@ -9,11 +9,15 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "spike": "electron src/main/spike/node-sqlite.spike.js",
-    "probe:launch": "electron out/main/index.js",
+    "probe:launch": "node scripts/probe-launch.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:offline": "node scripts/verify-offline.mjs",
-    "verify:s0": "npm run spike && npm test && npm run build && npm run verify:offline"
+    "verify:preload": "node scripts/assert-preload-format.mjs",
+    "verify:s0": "npm run spike && npm test && npm run build && npm run verify:preload && npm run verify:offline && npm run probe:launch"
+  },
+  "engines": {
+    "node": ">=24.18.0 <25"
   },
   "devDependencies": {
     "electron": "44.4.5",
