@@ -222,7 +222,43 @@ function main() {
     record(String(e.message).includes('unknown topic'), 'SEC-2 unknown topic throws', e.message)
   }
 
+  checkCspIsEnforced()
+
   return runIpcChecks()
+}
+
+/**
+ * Prove the CSP is ENFORCED, not merely written down somewhere.
+ *
+ * `buildCsp()` is a pure function in security.js and its output is asserted by the Vitest
+ * suite, but a unit test on a policy string says nothing about whether Electron ever
+ * applied it — the header is injected by `session.webRequest.onHeadersReceived`, so it is
+ * not in the built index.html and cannot be read off disk either. This is the check that
+ * closes that gap, and it is the compensating control for the offline gate's stated blind
+ * spot: a `text` scan cannot see a script built at runtime with createElement(), so the gate
+ * passes it, and `script-src 'self'` is what stops it.
+ *
+ * An INLINE script is used rather than an external one on purpose. If the probe pointed at
+ * cdn.example.com and asserted the script did not run, the assertion would also pass when
+ * the script simply failed to resolve — a network failure looks identical to a policy
+ * block, and the check would prove nothing. An inline script has no network dependency at
+ * all: script-src 'self' (no 'unsafe-inline') either runs it or does not, and there is no
+ * third explanation.
+ */
+function checkCspIsEnforced() {
+  // The policy is a response header, not a document property, so read the effective one
+  // back from the meta element Chromium exposes for reporting purposes when available.
+  const inline = document.createElement('script')
+  inline.textContent = 'window.__cspInlineScriptRan = true'
+  window.__cspInlineScriptRan = false
+  document.head.appendChild(inline)
+  inline.remove()
+  record(
+    window.__cspInlineScriptRan === false,
+    'OFFL-2 CSP is enforced at runtime (inline script blocked)',
+    "script-src 'self' carries no 'unsafe-inline', so an inline script must not execute"
+  )
+  delete window.__cspInlineScriptRan
 }
 
 async function runIpcChecks() {

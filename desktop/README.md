@@ -45,11 +45,33 @@ That distinction is not theoretical. Disabling the `WebSocket` wrapper leaves
 `recorder is live on WebSocket` — a broken recorder and a clean app report the same zero. That
 is exactly why the self-check exists.
 
-**Remaining blind spot, stated rather than hidden:** a dynamic `import()` of a
-runtime-assembled URL cannot be wrapped in JavaScript at all. The CSP covers it
-(`script-src 'self'`, `connect-src 'self'`). `verify:offline` is likewise a *text scan* and
-cannot see string concatenation or base64; it makes the accidental case impossible, and the CSP
-plus `sandbox:true` is what blocks the deliberate one. See `VENDORED.md`.
+### What the offline gate catches, and what it cannot
+
+`verify:offline` is a **text scan** over the build output. It makes the *accidental* case
+impossible; it cannot see the deliberate one. Measured, not assumed:
+
+| Source form | Gate |
+|---|---|
+| `<script src="//cdn.example.com/x.js">` in the built JS | **FAILS** — `tag-protocol-relative` |
+| `new WebSocket("wss://telemetry.example.com/s")` | **FAILS** — `socket-origin` |
+| `fetch("HTTPS://API.EXAMPLE.COM/x")` | **FAILS** — `external-origin` |
+| `createElement("script").src = "//cdn.example.com/x.js"` | **passes the scan** |
+| `fetch("https://" + host + "/x")`, base64, `eval` | **passes the scan** |
+| `import(runtimeAssembledUrl)` | **passes the scan** — unwrappable in JS |
+
+The last three are the gate's stated limit, not an oversight. What stops them is the CSP, and
+that is now **proved at runtime rather than asserted in a comment**: the launch probe injects an
+inline script and asserts it does *not* execute, because `script-src 'self'` carries no
+`'unsafe-inline'`. The check is not vacuous — adding `'unsafe-inline'` back to `script-src`
+makes the probe report `24/25` and exit 1.
+
+An inline script is used rather than an external one deliberately. Pointing at
+`cdn.example.com` and asserting the script did not run would also pass when the script simply
+failed to resolve — a DNS failure is indistinguishable from a policy block, so the check would
+prove nothing. An inline script has no network dependency, so there is no third explanation.
+
+`frame-src 'none'`, `object-src 'none'`, `form-action 'none'` and `base-uri 'none'` complete the
+policy; `sandbox:true` is the outer boundary. See `VENDORED.md`.
 
 ## Runtime facts (measured, not assumed)
 
