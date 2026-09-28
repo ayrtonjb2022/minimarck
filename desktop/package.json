@@ -1,0 +1,17 @@
+{
+  "name": "minimarck-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MiniMarck Desktop — offline Electron + SQLite desktop app for the POS",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "spike": "electron src/main/spike/node-sqlite.spike.js"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-vite": "^4.0.1",
+    "vite": "^7.1.14",
+    "vitest": "^3.2.4"
+  }
+}
