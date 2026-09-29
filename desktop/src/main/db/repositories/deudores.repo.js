@@ -180,3 +180,58 @@ export function crear(ctx, body) {
     )
   })
 }
+
+/**
+ * The payments recorded against one debtor's debt, newest first.
+ *
+ * READ-ONLY, and the reason it exists is the payment receipt. `BoletaPago` printed a hardcoded
+ * `$0.00` for the outstanding balance and a `✓ DEUDA PAGADA` banner that was rendered
+ * unconditionally, so a debtor who owed the shop money was handed a receipt saying the debt was
+ * settled. A receipt that says the wrong thing is worse than no receipt: it is a document people
+ * keep.
+ *
+ * WHY THE RENDERER STILL DOES NOT ADD UP THE COLUMN. The pending balance on the receipt is
+ * `deudor.deudaPendienteCentavos`, which comes from `v_clientes_deudores` — the single copy of
+ * that invariant. This list is the human-readable history next to it, not a second source for
+ * the number. An earlier version of the component summed these rows with `parseFloat` and
+ * compared the total against the debt; over pesos that sum drifts, and a receipt that computes
+ * its own balance can disagree with the ledger while looking perfectly normal. The view is the
+ * balance; this is the story of how it got there.
+ *
+ * `addPayment` is still a 501. Nothing in this build can record a payment from the screen, which
+ * means a real shop can only ever see a fully-outstanding debt here. That is reported rather
+ * than faked: writing payments is an accounting feature with its own ledger and drawer entries,
+ * not a wiring change.
+ */
+export function pagos(ctx, deudorId) {
+  requireTenant(ctx.negocioId)
+  const id = Number(deudorId)
+  if (!Number.isSafeInteger(id) || id < 1) {
+    throw new IpcError('DEUDOR_ID_INVALIDO', 400, `Id de deudor inválido: ${deudorId}`)
+  }
+
+  // Scoped by `negocio_id` as well as `deudor_id`. The debtor id alone is enough to find the row
+  // (it is a global autoincrement), but a payment list that could be read across tenants is a
+  // data leak, and the fix costs one predicate.
+  const filas = ctx.db
+    .prepare(
+      `SELECT id, monto_centavos, fecha, metodo_pago, referencia, observaciones, venta_id
+         FROM pagos_deuda
+        WHERE deudor_id = ? AND negocio_id = ?
+        ORDER BY fecha DESC, id DESC`
+    )
+    .all(id, ctx.negocioId)
+
+  return {
+    deudorId: id,
+    pagos: filas.map((p) => ({
+      id: p.id,
+      montoCentavos: p.monto_centavos,
+      fecha: p.fecha,
+      metodoPago: p.metodo_pago,
+      referencia: p.referencia,
+      observaciones: p.observaciones,
+      ventaId: p.venta_id
+    }))
+  }
+}
