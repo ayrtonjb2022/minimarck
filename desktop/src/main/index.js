@@ -6,6 +6,8 @@ import { assertTrustedSender, applyWebContentsSecurity } from './security.js'
 import { registerAppSchemePrivileges, registerAppProtocol, rendererUrl } from './protocol.js'
 import { createWindow } from './window.js'
 import { registerDbHandlers } from './ipc/db.js'
+import { bootstrapDatabase } from './db/bootstrap.js'
+import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
 
 const isPackaged = app.isPackaged
@@ -28,11 +30,9 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    const [win] = BrowserWindow.getAllWindows()
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-    }
+    // PLAT-4: focus, never open a second window. Two windows on one SQLite file is the
+    // corruption path; `BEGIN IMMEDIATE` would only turn it into a BUSY error.
+    handleSecondInstance({ getWindows: () => BrowserWindow.getAllWindows() })
   })
 }
 
@@ -127,25 +127,44 @@ async function main() {
   const url = rendererUrl(isPackaged, devUrl)
 
   const registry = createRegistry()
-  // S0 registers the read-only db.* contract only. Every other contract op resolves to
-  // NOT_IMPLEMENTED (501) until its owning slice lands — honest, never a silent no-op.
-  const dataPaths = registerDbHandlers(registry, {
+  // S1 opens the REAL database: resolve paths once, open with WAL + FKs + the table
+  // allowlist, run pending migrations, then the first-run seed. S1 ships no `001_init.sql`
+  // (S2 owns the 22-table schema), so on a fresh profile this lands at version 0 with an
+  // empty allowlist — which means no production code can write yet, correctly.
+  const db = bootstrapDatabase({
     userDataPath: app.getPath('userData'),
     env: process.env
   })
+  // db.info / db.schemaVersion are real now. db.reconcile stays 501 (S17).
+  registerDbHandlers(registry, db)
   installIpc(registry)
 
   const win = createWindow({ isPackaged, rendererUrl: url })
+
+  // PLAT-5: a crashed renderer is an UNKNOWN outcome, not a failed call. Re-read state, do
+  // NOT re-invoke the request that died mid-flight — see lifecycle.js for why replaying it
+  // would duplicate a committed sale until S4's idempotency key exists.
+  win.webContents.on('render-process-gone', (_e, details) => {
+    const plan = planRendererRecovery({ reason: details?.reason, exitCode: details?.exitCode })
+    console.error('[lifecycle] renderer gone:', JSON.stringify(plan))
+  })
+
   win.webContents.on('did-finish-load', () => {
-    installMenu(() => shell.openPath(dataPaths.dataDir))
+    installMenu(() => shell.openPath(db.paths.dataDir))
     if (process.env.MINIMARCK_S0_PROBE) runLaunchProbe(win)
   })
 
-  // PLAT-6: checkpoint the WAL so the on-disk .db is self-contained before close. S0 opens
-  // no database, so there is nothing to checkpoint yet; S1 replaces this with the real
-  // `PRAGMA wal_checkpoint(TRUNCATE)` then `db.close()` (and warns on an open register).
+  // PLAT-6: checkpoint the WAL so the on-disk .db is self-contained before close. S0 opened
+  // no database and this handler was an empty comment; S1 runs the real
+  // `PRAGMA wal_checkpoint(TRUNCATE)` then `db.close()` through the tested path in
+  // lifecycle.js, and warns if a cash register is still open (S4 supplies the predicate).
   app.on('before-quit', () => {
-    // S1: warn if a register is open, then checkpoint + close.
+    runBeforeQuit({
+      conn: db.conn,
+      hasOpenRegister: () => false, // S4 owns the caja
+      log: (m) => console.log(m),
+      warn: (m) => console.warn(m)
+    })
   })
 
   app.on('window-all-closed', () => {
@@ -158,4 +177,29 @@ async function main() {
   })
 }
 
-if (gotLock) main()
+/**
+ * `main()` is async, so a throw anywhere in it — a migration that refuses to run, a database
+ * that cannot be opened, a path that cannot be resolved — used to become an UNHANDLED
+ * REJECTION. Electron had already reached `whenReady`, so its event loop stayed alive with no
+ * window and nothing scheduled to quit: the process hung, silently, forever.
+ *
+ * That is the worst possible failure mode in two directions at once. `probe:launch` could not
+ * report a failure, it could only hang until something killed it, so the gate proved nothing.
+ * And a real user whose database would not open got an invisible, windowless process instead
+ * of an error — no dialog, no log, no exit code, just a task that refuses to die.
+ *
+ * A startup that cannot complete must TERMINATE and say why. `app.exit` is used once the app is
+ * ready, because it skips the `before-quit` handlers, which is what is wanted here: the
+ * lifecycle checkpoint is written for a database that opened cleanly, and running it against a
+ * half-initialised one could obscure the real failure. Before readiness `app.exit` is not
+ * reliable, so that path falls back to `process.exit`.
+ */
+function onStartupFailure(err) {
+  const message = err?.stack || err?.message || String(err)
+  console.error('[startup] fatal — the app could not start:')
+  console.error(message)
+  if (app.isReady()) app.exit(1)
+  else process.exit(1)
+}
+
+if (gotLock) main().catch(onStartupFailure)
