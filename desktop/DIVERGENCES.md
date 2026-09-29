@@ -141,6 +141,49 @@ change history, which the desktop refuses.
 
 ---
 
+## 9. The desktop adds `db:demo`; the web has no equivalent
+
+**Web**: the app is served for a shop that already has its data, and its demo fixtures live in
+seeding scripts that no production install runs.
+
+**Desktop**: the first-run seed is the default business and one `admin` operator, nothing else
+(PLAT-1), because a startup routine that invented stock would put fictitious kilos on a real
+shelf. That is the right call and it is unchanged here. It also means a fresh profile opens the
+POS onto «No se encontraron productos», where the sale flow cannot be evaluated by hand at all.
+
+So the catalog is a separate, opt-in command (`npm run db:demo`) instead of a second seed. It
+goes in through `productos.crear` — the same function the app calls — so a demo product cannot
+differ from a real one in a column a hand-written INSERT would have forgotten. It is idempotent
+by barcode, and `db:reset` removes it. The weighed product in the catalog is deliberate: the
+scale is where the two silent bugs lived (see Internal notes), and a catalog without one would let
+them come straight back.
+
+**Status**: willed. Deliberate action installs fictitious data; a first launch must not.
+
+---
+
+## 10. `verify:offline` allows three hosts, but only where it can prove they are inert
+
+**Web**: the offline guarantee is "the bundle contains no reference to a CDN" — a property of how
+the assets were produced, checked by a human reading the build output.
+
+**Desktop**: it is a gate, and a gate that cannot tell a comment from a `fetch()` is either
+useless or a blanket allowlist. The vendored renderer is minified `react-dom` and `tailwindcss`,
+which carry three absolute URLs that are text rather than requests: the Tailwind MIT banner, a
+React `error-decoder` message the runtime throws, and a `// TODO` copied from React DOM source.
+
+**Status**: willed, and narrower than it looks. These three hosts are exempt only at an occurrence
+where `isFetchableUse()` finds no `url()`, `@import`, tag `src`/`href` or transport call within
+reach of the match. Putting `reactjs.org` in the flat `ALLOWED_EXTERNAL_HOSTS` set would have been
+the shortcut, and it would have let a future `fetch("https://reactjs.org/...")` pass — the exact
+bug the gate exists to catch. That was checked rather than assumed: injecting a real
+`fetch("https://reactjs.org/malicious.js")` into the built bundle still fails the gate with
+`external-origin`. The runtime half of the claim is the launch probe's OFFL-1 check, which arms
+fetch, XHR, WebSocket, EventSource, sendBeacon and `img` on the real app and requires zero
+attempts at any real origin.
+
+---
+
 ## Internal notes (not user-visible, kept for the reviewer)
 
 - **Timestamps** are ISO-8601 UTC strings (`2026-01-01T00:00:00.000Z`), lexicographically
@@ -154,3 +197,17 @@ change history, which the desktop refuses.
   desktop computes the line total first (gross) and extracts the exact IVA
   (`base * pct / (100 + pct)`, half-away rounding). The user-visible numbers are identical;
   only the arithmetic order differs.
+- **Two weighed-sale bugs, and what they cost.** The vendored `CalculadoraPeso` read
+  `producto.precio`, a field the desktop does not have (it stores `precio_centavos`), so the
+  confirm button was permanently disabled; and the handler multiplied the base quantity by 1000
+  a second time before `toMilli`, so 500 g was stored as 500 **kg** and a $1.000,00 cheese
+  became $1.000.000,00. Both were silent — no error, no crash, a wrong number on screen — and
+  both survived the port because the vendored component had never been exercised against the
+  desktop's own money and quantity contracts. The fix is asserted twice: `tests/ui/` now drives
+  500 g / $1.000,00 / −500 milli through the real component, and that test was mutation-checked
+  (SHA-256 `BA9E8233…` → `1AC8C58A…` → reverted) so it is known to fail when the conversion
+  breaks, rather than merely passing.
+- **`productos.crear` takes PESOS, the store keeps CENTAVOS.** Anything that calls the repository
+  from outside the IPC layer has to convert, and forgetting it is a factor-of-100 bug that no
+  type system here catches. The demo script above is the second caller; it is the reason the unit
+  is stated in the function's own documentation.

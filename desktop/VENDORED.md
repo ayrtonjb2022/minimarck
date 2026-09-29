@@ -74,11 +74,45 @@ Run it: `npm run verify:offline`.
 | `electron-vite` | `^4.0.1` | npm | MIT | Build tooling |
 | `vite` | `^7.1.14` | npm | MIT | Build tooling |
 | `vitest` | `^3.2.4` | npm | MIT | Test runner |
+| `react` / `react-dom` | `^18.3.1` | npm | MIT | The real POS is React; it is mounted, not re-implemented |
+| `react-router-dom` | `^6.30.6` | npm | MIT | `/pos` and `/ventas` under the `app://` scheme |
+| `react-toastify` | `^10.0.6` | npm | MIT | Vendored POS toasts |
+| `@tanstack/react-query` | `^5.104.0` | npm | MIT | The vendored screens already depend on it |
+| `framer-motion` | `^11.18.2` | npm | MIT | Vendored POS animations |
+| `tailwindcss` + `@tailwindcss/vite` | `^4.3.3` | npm | MIT | Utility classes, compiled into the bundle at build time |
+| `@vitejs/plugin-react` | `^4.7.0` | npm | MIT | JSX transform in dev and build |
+| `jsdom` | `^26.1.0` | npm | MIT | **dev only** - the DOM the React POS tests run in |
+| `@testing-library/react` | `^16.3.3` | npm | MIT | **dev only** - drives the real component, the way a person would |
+| `@testing-library/user-event` | `^14.6.7` | npm | MIT | **dev only** - typing barcodes and pressing Enter |
+| `@testing-library/dom` | `^10.4.2` | npm | MIT | **dev only** - peer of the two above |
 
-**No vendored font or icon assets at S0.** The S0 renderer is a plain HTML/JS probe with no icon
-font and no webfont, which is why the offline gate passes on an empty dependency surface. The
-icon set is a **later** decision and must be vendored when it lands — a CDN icon font is exactly
-the regression this gate exists to catch, because it would fail *silently*.
+All of these are `dependencies` or `devDependencies` of `desktop/package.json` and are locked in
+`package-lock.json`; none of them is fetched at runtime. The last four exist only so the sale
+flow can be driven through the real UI in a test - they are never in the packaged output.
+
+**Icons are local CSS masks, not a font and not a CDN.** `styles/icons.css` draws the POS icon set
+from inline SVG data URIs in the stylesheet, so there is nothing to download and nothing to fail
+offline. A CDN icon font is exactly the regression this gate exists to catch, because it would
+fail *silently*.
+
+**No webfonts.** The UI uses the system UI stack. A `fonts.googleapis.com` reference would be
+rejected by the gate as a banned CDN host, and would be a silent failure in a shop with no
+connectivity.
+
+## What the gate now finds in a minified vendor bundle, and how it stays strict
+
+Vendoring `react-dom` and `tailwindcss` means the built bundle is no longer only our own source,
+and it carries three absolute URLs that are text rather than requests: the Tailwind MIT banner
+(`https://tailwindcss.com`), a React `error-decoder` message the runtime throws
+(`https://reactjs.org/...`), and a `// TODO` copied from React DOM source
+(`https://issues.chromium.org/...`).
+
+They are allowed **only** at occurrences where `isFetchableUse()` finds no `url()`, `@import`,
+tag `src`/`href` or transport call within reach — the same line, inspected, not a blanket host
+allowlist. This was verified rather than assumed: a real `fetch("https://reactjs.org/malicious.js")`
+injected into the built bundle still fails the gate as `external-origin`. Adding those hosts to
+the flat allowlist set instead would have been one line, and would have silently permitted
+exactly the bug the gate exists to find.
 
 ## Why offline is enforced rather than documented
 

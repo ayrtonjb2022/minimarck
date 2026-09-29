@@ -18,7 +18,10 @@ import { fileURLToPath } from 'node:url'
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['tests/**/*.spec.js'],
+    // `.jsx` is here for `tests/ui/`, which mounts the real React POS with JSX. The DOM specs
+    // opt into jsdom with a `@vitest-environment` docblock so the rest of the suite keeps
+    // running in plain Node against `node:sqlite`.
+    include: ['tests/**/*.spec.js', 'tests/**/*.spec.jsx'],
     // The S0 probe/glue modules are not themselves under test; the specs import the
     // pure functions they contain.
     exclude: ['node_modules/**', 'out/**', 'dist/**'],
@@ -42,6 +45,13 @@ export default defineConfig({
      */
     testTimeout: 20000,
     hookTimeout: 20000
+  },
+  esbuild: {
+    // The automatic JSX runtime, matching what @vitejs/plugin-react does for the app build.
+    // Without it, esbuild's default `jsx: 'transform'` emits `React.createElement` into
+    // `tests/ui/*.jsx` and every spec there dies with `React is not defined` — a failure about
+    // the harness, not about the POS, which is the worst kind to read.
+    jsx: 'automatic'
   },
   resolve: {
     alias: {

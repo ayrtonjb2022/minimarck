@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Tailwind v4 ships `dark:` bound to the OS `prefers-color-scheme` media query.
+   That is the wrong trigger for a till: the operator picks a theme with the
+   button, and the app must not disagree with itself just because the shop's
+   monitor happens to report a light OS. Rebinding the variant to the SAME class
+   the CSS-variable palette uses is what keeps `dark:bg-*` utilities and the
+   hand-written Kanagawa rules in step — one source of truth, one class. */
+@custom-variant dark (&:where(.mm-theme-dark, .mm-theme-dark *));
+
 @theme {
   --color-primary-50: #eef0f5;
   --color-primary-100: #d4d8e3;
@@ -1007,12 +1015,85 @@ select.input-field { cursor: pointer; }
 .Toastify__toast--error { border-left: 4px solid var(--kanagawa-red) !important; }
 .Toastify__toast--warning { border-left: 4px solid var(--kanagawa-orange) !important; }
 
-/* ===== POS THEMES (solo afecta al POS) ===== */
-.pos-theme-light {
+/* ==================================================================
+   THEMES — app-wide, one class on <html>, not scoped to the POS.
+
+   The web app hung the light palette on `.pos-theme-light`, a class the POS
+   applied to its own container, so switching to light repainted the till and
+   left the navbar, the sales list and the tables dark. The palette is now two
+   classes on the document element, so it moves the whole app at once and the
+   same class drives Tailwind's `dark:` variant above.
+   ================================================================== */
+
+/* Dark is also the unclassed default in :root, so a first paint before this
+   stylesheet's classes land is Kanagawa rather than a flash of white glass. */
+.mm-theme-dark {
+  color-scheme: dark;
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+  --ctp-surface0: #313244;
+  --ctp-surface1: #45475a;
+  --ctp-surface2: #585b70;
+  --ctp-overlay0: #6c7086;
+  --ctp-overlay1: #7f849c;
+  --ctp-overlay2: #9399b2;
+  --ctp-subtext0: #a6adc8;
+  --ctp-subtext1: #bac2de;
+  --ctp-text: #cdd6f4;
+  --ctp-lavender: #b4befe;
+  --ctp-blue: #89b4fa;
+  --ctp-sapphire: #74c7ec;
+  --ctp-sky: #89dceb;
+  --ctp-teal: #94e2d5;
+  --ctp-green: #a6e3a1;
+  --ctp-yellow: #f9e2af;
+  --ctp-peach: #fab387;
+  --ctp-maroon: #eba0ac;
+  --ctp-red: #f38ba8;
+  --ctp-mauve: #cba6f7;
+  --ctp-pink: #f5c2e7;
+  --ctp-flamingo: #f2cdcd;
+  --ctp-rosewater: #f5e0dc;
+
+  --kanagawa-bg: var(--ctp-base);
+  --kanagawa-bg-alt: var(--ctp-mantle);
+  --kanagawa-bg-dim: var(--ctp-crust);
+  --kanagawa-fg: var(--ctp-text);
+  --kanagawa-fg-muted: var(--ctp-subtext0);
+  --kanagawa-comment: var(--ctp-overlay0);
+  --kanagawa-border: var(--ctp-surface0);
+  --kanagawa-blue: var(--ctp-blue);
+  --kanagawa-green: var(--ctp-green);
+  --kanagawa-red: var(--ctp-red);
+  --kanagawa-orange: var(--ctp-peach);
+  --kanagawa-yellow: var(--ctp-yellow);
+  --kanagawa-purple: var(--ctp-mauve);
+  --kanagawa-cyan: var(--ctp-sky);
+  --kanagawa-sage: var(--ctp-teal);
+}
+
+.mm-theme-light {
+  color-scheme: light;
   --ctp-base: #ffffff;
+  --ctp-mantle: #f8fafc;
   --ctp-crust: #f1f5f9;
   --ctp-surface0: #e2e8f0;
   --ctp-surface1: #cbd5e1;
+  --ctp-surface2: #94a3b8;
+  --ctp-overlay0: #64748b;
+  --ctp-overlay1: #475569;
+  --ctp-overlay2: #334155;
+  --ctp-subtext0: #475569;
+  --ctp-subtext1: #334155;
+  --ctp-text: #0f172a;
+  --ctp-blue: #3b82f6;
+  --ctp-sapphire: #2563eb;
+  --ctp-teal: #0d9488;
+  --ctp-green: #22c55e;
+  --ctp-peach: #f97316;
+  --ctp-red: #ef4444;
+  --ctp-mauve: #a855f7;
 
   --kanagawa-bg: #ffffff;
   --kanagawa-bg-alt: #f8fafc;
@@ -1027,8 +1108,149 @@ select.input-field { cursor: pointer; }
   --kanagawa-orange: #f97316;
 }
 
-/* Toggle button */
-.pos-theme-toggle {
+/* Body painted from the active palette. `color-scheme` on <html> above makes
+   the native scrollbars and form controls follow too, instead of leaving a
+   dark-on-light scrollbar track. */
+body {
+  background: var(--kanagawa-bg-dim);
+  color: var(--kanagawa-fg);
+}
+
+/* ===== APP SHELL: top bar, pager, detail grid, missing-screen list ===== */
+
+/* The web Navbar carried a shop switcher, a notification bell polling an op that answers
+   501, and a logout for a session that does not exist. This is the strip that is actually
+   true of a single-operator desktop: who is selling, where you are, and a way back. */
+.mm-topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  background: var(--kanagawa-bg);
+  border: 1px solid var(--kanagawa-border);
+  border-radius: 14px;
+  padding: 10px 16px;
+  margin-bottom: 18px;
+}
+
+.mm-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.mm-topbar-brand i { color: var(--kanagawa-blue); font-size: 18px; }
+
+.mm-topbar-shop {
+  color: var(--kanagawa-fg-muted);
+  font-size: 13px;
+  padding-left: 8px;
+  border-left: 1px solid var(--kanagawa-border);
+}
+
+.mm-topbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--kanagawa-fg);
+}
+
+.mm-topbar-nav {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.mm-topbar-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kanagawa-fg-muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.mm-topbar-nav a:hover { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+
+.mm-topbar-nav a.active {
+  background: var(--kanagawa-blue);
+  color: var(--kanagawa-crust);
+  border-color: var(--kanagawa-blue);
+}
+
+.mm-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mm-topbar-user {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kanagawa-fg);
+}
+
+.mm-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 22px;
+  border-top: 1px solid var(--kanagawa-border);
+  font-size: 13px;
+  color: var(--kanagawa-fg-muted);
+}
+
+.mm-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mm-detail-grid span {
+  display: block;
+  font-size: 12px;
+  color: var(--kanagawa-fg-muted);
+  margin-bottom: 2px;
+}
+
+.mm-detail-grid div { font-weight: 500; }
+
+.mm-missing-list {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.mm-missing-list li {
+  display: grid;
+  grid-template-columns: 130px 110px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--kanagawa-bg);
+}
+
+.mm-missing-list code { color: var(--kanagawa-blue); }
+.mm-missing-list strong { font-weight: 600; }
+.mm-missing-list span { color: var(--kanagawa-fg-muted); }
+
+@media (max-width: 640px) {
+  .mm-topbar { gap: 10px; }
+  .mm-topbar-nav { margin-left: 0; width: 100%; }
+  .mm-missing-list li { grid-template-columns: 1fr; }
+}
+
+/* Theme toggle button. Named without the "pos-" prefix: the control is in the
+   app shell now, and a name that says "pos" is a lie in every other screen. */
+.theme-toggle {
   border: 1px solid var(--kanagawa-border);
   background: var(--kanagawa-bg);
   color: var(--kanagawa-fg-muted);
@@ -1043,7 +1265,7 @@ select.input-field { cursor: pointer; }
   transition: 0.2s;
   flex-shrink: 0;
 }
-.pos-theme-toggle:hover {
+.theme-toggle:hover {
   border-color: var(--kanagawa-fg-muted);
   color: var(--kanagawa-fg);
 }

@@ -52,6 +52,93 @@ const NON_EXEMPT_ALLOWED_HOSTS = new Set([
 ])
 
 /**
+ * Hosts that appear inside a MINIFIED VENDOR BUNDLE and are exempt ONLY where the scan can
+ * prove the occurrence is not fetchable.
+ *
+ * The vendored UI is no longer a handful of our own files: `react-dom` and `tailwindcss` are
+ * minified into the renderer bundle, and they carry three absolute URLs that are text, not
+ * requests:
+ *
+ *   - `https://tailwindcss.com` in the CSS, inside the `/*! tailwindcss v4 | MIT License *\/`
+ *     banner the minifier keeps.
+ *   - `https://reactjs.org/docs/error-decoder.html?invariant=` in React, concatenated into the
+ *     message of an Error the runtime THROWS. It is only reachable when React has already
+ *     failed, and it is only ever text in `err.message`.
+ *   - `https://issues.chromium.org/issues/41491098` in a `// TODO` comment copied from the
+ *     react-dom source.
+ *
+ * Two honest ways to handle those exist, and the wrong one is invisible. The wrong one is to
+ * drop `reactjs.org` and `issues.chromium.org` into `ALLOWED_EXTERNAL_HOSTS`: that host is then
+ * allowed ANYWHERE, so a future `fetch("https://reactjs.org/whatever")` passes this gate, and the
+ * gate's whole job is to catch that. The right one is what is here — the host is exempt at this
+ * occurrence only, and `isFetchableUse()` below re-checks the surrounding line. If the same host
+ * ever shows up inside a `url()`, an `@import`, a tag `src`/`href`, or a transport call, it is a
+ * finding again and the build fails.
+ *
+ * The runtime half of the claim is not this file's job either: the launch probe's OFFL-1 check
+ * arms fetch, XHR, WebSocket, EventSource, sendBeacon and `img` on the real built app and
+ * requires zero attempts at any real origin. These three hosts are the static scan's
+ * counterpart of that measurement, and the two agree.
+ */
+const INERT_BUNDLE_HOSTS = new Set(['tailwindcss.com', 'reactjs.org', 'issues.chromium.org'])
+
+/** A construct that would actually FETCH the URL, as opposed to one that merely names it. */
+const FETCHABLE_USE = /(?:url\(\s*['"]?|@import\s|@(?:font-face|namespace)\b[^;]*\burl\(|\b(?:href|src|data|action|poster)\s*=\s*["']?|\b(?:fetch|open|send|WebSocket|EventSource|importScripts|import|require)\s*\(?\s*["']?)/i
+
+/**
+ * Is the text before this match a comment, or is it code?
+ *
+ * A first version of this asked two separate questions with two `lastIndexOf` calls and an early
+ * `return false`, and that was a hole: in `var a = "//x"; fetch("https://reactjs.org/y")` the
+ * FIRST `//` is inside a string literal, so the early return declared the whole tail of the line
+ * commented and the real `fetch` was exempted. The fix is to not guess from a single index but to
+ * WALK the text, tracking block comments and string literals together — a `//` only opens a
+ * comment when no string is open at that point, which is precisely the case the old version got
+ * backwards.
+ *
+ * Returns 'comment' or 'code'. A `//` returns 'comment' at once, because a line comment runs to
+ * the end of the text and nothing after it can change that.
+ */
+function commentStateBefore(text) {
+  let inBlock = false
+  let quote = null
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (inBlock) {
+      if (c === '*' && text[i + 1] === '/') {
+        inBlock = false
+        i++
+      }
+      continue
+    }
+    if (quote) {
+      if (c === '\\') i++
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      inBlock = true
+      i++
+      continue
+    }
+    if (c === '/' && text[i + 1] === '/') return 'comment'
+    if (c === "'" || c === '"' || c === '`') quote = c
+  }
+  return inBlock ? 'comment' : 'code'
+}
+
+/**
+ * True when this occurrence sits somewhere a runtime could dereference.
+ *
+ * Conservative by design: a URL in CODE is only exempt when nothing fetchable is in reach, so an
+ * unrecognised shape fails the build instead of passing it.
+ */
+function isFetchableUse(line, matchIndex) {
+  if (commentStateBefore(line.slice(0, matchIndex)) === 'comment') return false
+  return FETCHABLE_USE.test(line.slice(Math.max(0, matchIndex - 160), matchIndex))
+}
+
+/**
  * Content hosts that must NEVER appear, whatever the path. github.com is here and NOT in
  * the allowlist because `https://github.com/u/r/raw/main/x.js` is a raw-content endpoint
  * that 302s to raw.githubusercontent.com, and `import()` of it is real remote code. An
@@ -126,6 +213,7 @@ export function auditRenderer(rootDir) {
         const host = hostnameOf(m[0])
         if (!host) continue
         if (BANNED_RAW_HOSTS.has(host)) at('raw-content-host', m[0])
+        else if (INERT_BUNDLE_HOSTS.has(host) && !isFetchableUse(line, m.index)) continue
         else if (!ALLOWED_EXTERNAL_HOSTS.has(host)) at(/^wss?:/i.test(m[0]) ? 'socket-origin' : 'external-origin', m[0])
       }
       // Rule: the four specific CDN hosts, wherever they appear, in any case.

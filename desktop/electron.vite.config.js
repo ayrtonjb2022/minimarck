@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // This package is `"type": "module"`, so `__dirname` is not defined here. The config already
 // leans on `path.resolve('...')` (which resolves against process.cwd) for the migrations dir;
@@ -100,7 +101,11 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
-    plugins: [react()],
+    // `tailwindcss()` is what turns `@import "tailwindcss"` in styles/index.css into real
+    // utility CSS. Without it that import resolves to nothing and every `dark:` utility in
+    // the vendored pages silently becomes an unknown class — the pages still render, they
+    // just never get their dark variants.
+    plugins: [react(), tailwindcss()],
     resolve: {
       // `@shared/*` is `src/shared/*`, the money/quantity/contract modules main and the renderer
       // BOTH import. It is the whole point of that directory: a total computed by `lineTotalCentavos`

@@ -1,7 +1,6 @@
-import { mkdtempSync, rmSync, copyFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, copyFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { bootstrapDatabase } from '../../../src/main/db/bootstrap.js'
 import { openDatabase } from '../../../src/main/db/connection.js'
 import { tablesCreatedBy } from '../../../src/main/db/migrate.js'
@@ -19,8 +18,33 @@ import { abrir } from '../../../src/main/db/repositories/cajas.repo.js'
  * anywhere in the fixture.
  */
 
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../../src/main/db/migrations', import.meta.url))
-const INIT_SQL = fileURLToPath(new URL('../../../src/main/db/migrations/001_init.sql', import.meta.url))
+/**
+ * Resolve a path inside this package, from the process CWD.
+ *
+ * This used to be a `fileURLToPath(new URL('../../..', import.meta.url))` walk, which is the
+ * usual way and which still works under `environment: 'node'`. It stopped working the moment
+ * `tests/ui/` arrived: under the jsdom environment Vite rewrites the module's URL machinery and
+ * the walk produced `tests/db/fixtures/undefined` — a path that is at least honest about being
+ * wrong, which is more than `The URL must be of scheme file` was.
+ *
+ * The CWD is the better anchor anyway. Vitest roots every run at the package directory, that
+ * directory is the one that holds `src/main/db/migrations`, and `existsSync` below turns any
+ * future mistake into a sentence that says which file was looked for and where, instead of an
+ * ENOENT with a path nobody can interpret.
+ */
+function enPaquete(...partes) {
+  return path.resolve(process.cwd(), ...partes)
+}
+
+const MIGRATIONS_DIR = enPaquete('src', 'main', 'db', 'migrations')
+const INIT_SQL = enPaquete('src', 'main', 'db', 'migrations', '001_init.sql')
+
+if (!existsSync(INIT_SQL)) {
+  throw new Error(
+    `No se encuentra la migración inicial en ${INIT_SQL}. ` +
+      `La fixture se ancla en el CWD (${process.cwd()}); corré los tests desde desktop/.`
+  )
+}
 
 /**
  * The same 20-table census `schema.spec.js` carries, derived from the ACTUAL migration file

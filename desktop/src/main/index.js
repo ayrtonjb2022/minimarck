@@ -109,8 +109,119 @@ function installMenu(onOpenDataDir) {
  * here is a mock and nothing is asserted in the abstract: if the preload failed to load, or
  * the sandbox leaked, or the origin were opaque, the probe fails and the exit code is 1.
  */
+/**
+ * SPA DEEP LINK, PROVED AT RUNTIME — after the base checks pass.
+ *
+ * `main.jsx` uses `BrowserRouter`, deliberately, on the argument that `isNavigationRequest()`
+ * serves index.html for an extensionless path so `app://bundle/ventas` reaches the app instead
+ * of a 404. That argument was, until this step, a comment. Every probe run before this loaded
+ * `app://bundle/index.html` and never asked the origin for a route.
+ *
+ * So the probe navigates for real and asks the resulting page three questions:
+ *
+ *   NAV-1  Does the deep link LOAD? `did-finish-load` with no `did-fail-load` is the difference
+ *          between "the fallback served index.html" and "the fallback 404d and the window is a
+ *          Chromium error page that happens to be silent".
+ *   NAV-2  Did the ROUTE match, or did the app render its own 404? Only the `/ventas` route
+ *          passes `titulo="Ventas"` to the top bar, so the top bar's own text is the assertion.
+ *          Asserting the URL alone would pass for an error page.
+ *   NAV-3  Is the deep-linked page as safe as the index? The renderer probe is a module, so it
+ *          re-runs on the new document and republishes `window.__S0_PROBE__`. Requiring the same
+ *          zero outbound attempts and the same four-member bridge on THIS page is what stops
+ *          "it rendered" from quietly meaning "it rendered without the preload".
+ */
+function runDeepLinkProbe(win, baseResult) {
+  const deepUrl = 'app://bundle/ventas'
+  return new Promise((resolve) => {
+    const checks = []
+    const record = (label, ok, detail) => {
+      checks.push({ label, ok, detail })
+      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? '  — ' + detail : ''}`)
+    }
+
+    let failedToLoad = null
+    const onFail = (_e, code, desc, url) => {
+      failedToLoad = `ERR_${code} ${desc} (${url})`
+    }
+    win.webContents.on('did-fail-load', onFail)
+    win.webContents.once('did-finish-load', async () => {
+      win.webContents.removeListener('did-fail-load', onFail)
+      // Let React mount and the route render before asking the page about itself.
+      await new Promise((r) => setTimeout(r, 1200))
+
+      record(
+        'NAV-1 deep link app://bundle/ventas loads through the SPA fallback',
+        !failedToLoad,
+        failedToLoad || `url=${win.webContents.getURL()}`
+      )
+
+      let nav2 = { ok: false, detail: 'la pagina no respondio' }
+      try {
+        const r = await win.webContents.executeJavaScript(`(() => {
+          const titulo = document.querySelector('.mm-topbar-title');
+          return {
+            path: location.pathname,
+            titulo: titulo ? titulo.textContent.trim() : null,
+            montado: document.getElementById('root').children.length > 0
+          };
+        })()`)
+        nav2 = {
+          ok: r.path === '/ventas' && r.titulo === 'Ventas' && r.montado,
+          detail: `path=${r.path} titulo=${JSON.stringify(r.titulo)} rootMontado=${r.montado}`
+        }
+      } catch (err) {
+        nav2 = { ok: false, detail: String(err && err.message) }
+      }
+      record('NAV-2 the /ventas ROUTE rendered, not an error page', nav2.ok, nav2.detail)
+
+      let nav3 = { ok: false, detail: 'el probe no volvio a publicar en la pagina nueva' }
+      // The probe is a MODULE, so the new document re-executes it — but its checks are async
+      // (it arms a recorder, then sweeps element tags), so reading `window.__S0_PROBE__` once at
+      // a fixed delay is a race. Poll it, with a deadline, exactly like the base probe does.
+      const navDeadline = Date.now() + 15_000
+      let after = null
+      while (Date.now() < navDeadline) {
+        try {
+          after = await win.webContents.executeJavaScript('window.__S0_PROBE__ || null')
+        } catch {
+          after = null
+        }
+        if (after) break
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      if (after) {
+        const zero = after.results.filter((r) => r.id === 'OFFL-1').every((r) => r.ok)
+        const sec = after.results.filter((r) => String(r.id).startsWith('SEC-1')).every((r) => r.ok)
+        nav3 = {
+          ok: after.failed === 0 && zero && sec,
+          detail: `checks=${after.total - after.failed}/${after.total} en app://bundle/ventas (las mismas ${baseResult.total} que en index.html)`
+        }
+      } else {
+        nav3 = { ok: false, detail: 'el probe no volvio a publicar en la pagina nueva en 15s' }
+      }
+      record('NAV-3 the deep-linked page is as safe offline as the index', nav3.ok, nav3.detail)
+
+      const passed = checks.filter((c) => c.ok).length
+      console.log(`=== ${passed}/${checks.length} deep-link checks passed ===`)
+      resolve({ ok: passed === checks.length, total: checks.length, passed })
+    })
+
+    win.loadURL(deepUrl).catch((err) => {
+      win.webContents.removeListener('did-fail-load', onFail)
+      record('NAV-1 deep link app://bundle/ventas loads through the SPA fallback', false, String(err))
+      console.log('=== 0/1 deep-link checks passed ===')
+      resolve({ ok: false, total: 1, passed: 0 })
+    })
+  })
+}
+
 function runLaunchProbe(win) {
   const deadline = Date.now() + 20_000
+  // `settled` exists because the poll below reschedules ITSELF. Every tick that found no result
+  // left another tick pending, so the moment the result appeared, N of them printed the same 25
+  // lines and N deep-link probes started on the same window. The first run of this probe printed
+  // its report five times. One report, one deep link, one exit code.
+  let settled = false
   const poll = async () => {
     let result
     try {
@@ -119,16 +230,29 @@ function runLaunchProbe(win) {
       result = null
     }
     if (result) {
+      if (settled) return
+      settled = true
       for (const r of result.results) {
         console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.label}${r.detail ? '  — ' + r.detail : ''}`)
       }
-      const ok = result.failed === 0
-      console.log(`=== ${result.total - result.failed}/${result.total} launch probe checks passed ===`)
-      console.log(`S0 LAUNCH PROBE ${ok ? 'PASSED' : 'FAILED'}: url=${win.webContents.getURL()}`)
-      app.exit(ok ? 0 : 1)
+      const baseOk = result.failed === 0
+      console.log(
+        `=== ${result.total - result.failed}/${result.total} launch probe checks passed ===`
+      )
+      // The base origin is only half the claim. `app://bundle/ventas` is the other half, and it
+      // is asked of the SAME window, over the SAME origin, with the SAME preload.
+      runDeepLinkProbe(win, result).then((nav) => {
+        const ok = baseOk && nav.ok
+        console.log(
+          `S0 LAUNCH PROBE ${ok ? 'PASSED' : 'FAILED'}: ${nav.passed}/${nav.total} deep-link checks; url=${win.webContents.getURL()}`
+        )
+        app.exit(ok ? 0 : 1)
+      })
       return
     }
     if (Date.now() > deadline) {
+      if (settled) return
+      settled = true
       console.error('S0 LAUNCH PROBE FAILED: renderer probe never reported within 20s')
       app.exit(1)
       return
@@ -204,9 +328,24 @@ async function main() {
     console.error('[lifecycle] renderer gone:', JSON.stringify(plan))
   })
 
+  // The launch probe is a GATE, and a gate runs once. `did-finish-load` is not a once-event
+  // here: this window loaded five times on a single probe run, and every one of them re-armed
+  // `runLaunchProbe` with its own private `settled` flag — so the same 25 checks printed five
+  // times and five deep-link probes queued on one window.
+  //
+  // The guard lives in `main()`'s scope, not at module level, and that is deliberate: the
+  // listener below is created once per window and closes over THIS binding, so every
+  // `did-finish-load` shares one flag. `runLaunchProbe` keeps its own `settled` for a different
+  // job — that one guards its self-rescheduling poll, which is a per-invocation problem. Two
+  // different repeats, two different flags, and neither one is a module-level global that a
+  // second window would have to contend for.
+  let probeStarted = false
   win.webContents.on('did-finish-load', () => {
     installMenu(() => shell.openPath(db.paths.dataDir))
-    if (process.env.MINIMARCK_S0_PROBE) runLaunchProbe(win)
+    if (process.env.MINIMARCK_S0_PROBE && !probeStarted) {
+      probeStarted = true
+      runLaunchProbe(win)
+    }
   })
 
   // PLAT-6: checkpoint the WAL so the on-disk .db is self-contained before close. S0 opened

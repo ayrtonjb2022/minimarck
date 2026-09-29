@@ -23,9 +23,23 @@ const etiquetaUnidad = (unidad) => {
 
 export default function CalculadoraPeso({ producto, onConfirm, onClose }) {
   const unidad = producto.unidadMedida || "";
-  const base = parseFloat(producto.precio) || 0;
   const factor = factorKg(unidad);
-  const precioKg = base * factor;
+  /**
+   * THE FIX. The web read `producto.precio`, a float of pesos that the HTTP API sent. The
+   * desktop sends `precioCentavos` — an INTEGER, because money is integer centavos everywhere
+   * in this app — so `parseFloat(producto.precio)` was `parseFloat(undefined)`, i.e. `0`.
+   *
+   * A `precioKg` of zero does not throw. It does something much worse: `handlePesoChange` sees
+   * `precioKg > 0` false, clears `monto`, and `valido` (`montoNum > 0 && pesoNum > 0`) can never
+   * be true, so «Agregar al ticket» stayed disabled forever. The scale was a decoration. The
+   * weighed path looked right in the grid, and 25/25 launch-probe checks passed, because the
+   * probe proves IPC and the preload and never weighs anything.
+   *
+   * The two fields stay in the units the operator reads them in — PESOS in «El cliente paga»,
+   * GRAMS in «El cliente lleva» — and only the stored price is converted, once, here.
+   */
+  const precioUnitPesos = (producto.precioCentavos ?? 0) / 100;
+  const precioKg = precioUnitPesos * factor;
   const labelUnidad = etiquetaUnidad(unidad);
   const [modo, setModo] = useState("monto"); // "monto" | "peso"
   const [monto, setMonto] = useState("");
@@ -74,6 +88,9 @@ export default function CalculadoraPeso({ producto, onConfirm, onClose }) {
       productoId: producto.id,
       nombre: `${producto.nombre} (${formatPeso(pesoNum)})`,
       peso: pesoNum,
+      // PESOS, as the two fields above. The parent does not trust this and recomputes the line
+      // from `precioCentavos` with `lineTotalCentavos`; the value travels for the caller's
+      // benefit, and a caller that prefers to read it must know which unit it is in.
       precio: montoNum,
       precioUnitario: montoNum,
     });
@@ -114,7 +131,7 @@ export default function CalculadoraPeso({ producto, onConfirm, onClose }) {
               Precio por {labelUnidad === "g" ? "gramo" : "kg"}
             </p>
             <p style={{ fontSize: "26px", fontWeight: 700, color: "#1d4ed8", margin: 0 }}>
-              {(base).toFixed(2)}
+              {precioUnitPesos.toFixed(2)}
             </p>
             {labelUnidad === "g" && (
               <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>
@@ -182,7 +199,7 @@ export default function CalculadoraPeso({ producto, onConfirm, onClose }) {
               <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 6px", fontWeight: 500 }}>
                 {modo === "monto"
                   ? `Con $${montoNum.toFixed(2)} le corresponden`
-                  : `${formatPeso(pesoNum)} a $${(base).toFixed(2)}/${labelUnidad === "g" ? "g" : "kg"} son`}
+                  : `${formatPeso(pesoNum)} a $${precioUnitPesos.toFixed(2)}/${labelUnidad === "g" ? "g" : "kg"} son`}
               </p>
               <div style={{ display: "flex", justifyContent: "center", gap: "24px" }}>
                 <div>

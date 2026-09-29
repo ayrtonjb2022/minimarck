@@ -6,6 +6,7 @@ import { ventasAPI } from "../api/ventas";
 import { deudoresAPI } from "../api/deudores";
 import { mensajeDeError } from "../api/ipc";
 import { useCaja } from "../context/CajaContext";
+import { useTheme } from "../context/ThemeContext";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import CalculadoraPeso from "../components/common/CalculadoraPeso";
 import { formatCentavos, formatCantidad } from "../utils/formatters";
@@ -548,14 +549,12 @@ export default function PuntoDeVenta() {
   const ultimoEnvioRef = useRef(null);
 
   const { isSubmitting, withGuard } = useSubmitGuard();
-  const [posTheme, setPosTheme] = useState(() => localStorage.getItem("pos-theme") || "light");
-  const toggleTheme = useCallback(() => {
-    setPosTheme((prev) => {
-      const next = prev === "light" ? "dark" : "light";
-      localStorage.setItem("pos-theme", next);
-      return next;
-    });
-  }, []);
+  // The theme is the APP's, not the POS panel's: `useTheme` owns the class on <html> so the
+  // sales list, the tables and the top bar move with it. The old local state set
+  // `pos-theme-light` on this one container, which meant the operator flipped the till to
+  // light and the rest of the app stayed dark. The toggle below now calls the same
+  // `toggleTheme` the top bar does, so the two controls can never disagree.
+  const { theme: posTheme, toggleTheme } = useTheme();
 
   const showToast = useCallback((msg, type = "success", duration = 3500) => { setToast({ msg, type }); setTimeout(() => setToast(null), duration); }, []);
   useEffect(() => {
@@ -814,7 +813,17 @@ export default function PuntoDeVenta() {
       return;
     }
     const uid = `peso-${productoId}-${Date.now()}`;
-    const pesoMilli = toMilli(peso, `peso de ${nombre}`);
+    // THE SCALE REPORTS GRAMS; `toMilli` PARSES BASE UNITS. Handing it 500 meant `toMilli(500)`
+    // read "five hundred kilos" and returned 500000, so half a kilo of a $2.000/kg product was
+    // written as 500 kg and billed $1.000.000,00. Nothing threw: 500000 is a perfectly valid
+    // number of milli. The ticket said "500 kg" and the till charged a million pesos, and the
+    // only reason this is fixed is that a test weighed a kilo.
+    //
+    // Grams -> base units -> milli is the one conversion this line is allowed to make, and it
+    // goes through the shared parser so the three-decimal rule and the error messages stay in
+    // one place. `toFixed(3)` is not a rounding choice: it is the scale's resolution, and a
+    // product cannot be sold by a fraction of a gram.
+    const pesoMilli = toMilli((peso / QTY_SCALE).toFixed(3), `peso de ${nombre}`);
     if (pesoMilli < 1) {
       showToast("El peso tiene que ser mayor a 0", "warn");
       setCalcProducto(null);
@@ -853,8 +862,12 @@ export default function PuntoDeVenta() {
   const handleCrearFraccion = async (data) => {
     try {
       const res = await productosAPI.crear(data);
-      const nuevo = res.data?.data;
-      if (!nuevo) throw new Error("Respuesta inválida del servidor");
+      // Respuesta DIRECTA: el handler devuelve el producto. El `res.data?.data` era el sobre de
+      // axios, así que «Fraccionar» creaba el producto en la base y después fallaba con
+      // «Respuesta inválida del servidor» sin llegar a agregarlo al ticket: la venta se perdía
+      // con el producto ya creado. Mismo error que la línea 760.
+      const nuevo = res;
+      if (!nuevo?.id) throw new Error("Respuesta inválida del servidor");
       agregarProducto(nuevo);
       setModalFraccionar(null);
       showToast(`✅ Producto creado: ${nuevo.nombre}`, "success", 4000);
@@ -880,7 +893,7 @@ export default function PuntoDeVenta() {
    */
   if (!cajaActiva) {
     return (
-      <div className="pos-container pos-theme-light" style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",padding:"24px"}}>
+      <div className="pos-container" style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",padding:"24px"}}>
         <div className="card" style={{maxWidth:"420px",width:"100%",textAlign:"center",padding:"32px"}}>
           <h2 style={{margin:"0 0 8px",fontSize:"20px"}}>No hay caja abierta</h2>
           <p style={{margin:"0 0 20px",fontSize:"14px",color:"#64748b",lineHeight:1.5}}>
@@ -895,7 +908,7 @@ export default function PuntoDeVenta() {
   }
 
   return (
-    <div className={`pos-container pos-theme-${posTheme}`}>
+    <div className="pos-container">
       {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",whiteSpace:"pre-line",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
 
       {modalCobro && <ModalCobro totalCentavos={totalCentavos} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
@@ -942,8 +955,8 @@ export default function PuntoDeVenta() {
                 onKeyDown={manejarEnterBusqueda} placeholder="Buscar o escanear código de barras... (Ctrl+F)" className="pos-search-input" autoFocus />
               {filtro && <button onClick={() => setFiltro("")} style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",color:"var(--kanagawa-comment)"}}><i className="fa-solid fa-times"></i></button>}
             </div>
-            <button onClick={toggleTheme} className="pos-theme-toggle" title={posTheme === "light" ? "Modo oscuro" : "Modo claro"}>
-              <i className={`fa-solid ${posTheme === "light" ? "fa-moon" : "fa-sun"}`}></i>
+            <button onClick={toggleTheme} className="theme-toggle" title={posTheme === "light" ? "Modo oscuro" : "Modo claro"} aria-label={posTheme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}>
+              <i className={`fa-solid ${posTheme === "light" ? "fa-moon" : "fa-sun"}`} aria-hidden="true"></i>
             </button>
             {/* El botón de «escanear desde el celular» y su punto rojo/verde se fueron con el
                 socket: no hay servidor al que conectarse, y un punto rojo fijo en la barra del POS
