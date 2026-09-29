@@ -6,6 +6,8 @@ import { assertTrustedSender, applyWebContentsSecurity } from './security.js'
 import { registerAppSchemePrivileges, registerAppProtocol, rendererUrl } from './protocol.js'
 import { createWindow } from './window.js'
 import { registerDbHandlers } from './ipc/db.js'
+import { registerCajasHandlers } from './ipc/cajas.js'
+import { registerVentasHandlers } from './ipc/ventas.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
 import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
@@ -137,6 +139,11 @@ async function main() {
   })
   // db.info / db.schemaVersion are real now. db.reconcile stays 501 (S17).
   registerDbHandlers(registry, db)
+  // Sales and the till. Both are one transaction each, both scope every statement to the
+  // business S4's marker resolves, and neither widens `OPS` — `ventas` (3), `cajas` (7) and
+  // `cajaMovimientos` (3) are the operations the contract already named.
+  registerVentasHandlers(registry, { conn: db.conn })
+  registerCajasHandlers(registry, { conn: db.conn })
   installIpc(registry)
 
   const win = createWindow({ isPackaged, rendererUrl: url })
@@ -161,7 +168,13 @@ async function main() {
   app.on('before-quit', () => {
     runBeforeQuit({
       conn: db.conn,
-      hasOpenRegister: () => false, // S4 owns the caja
+      // Real now, and deliberately tenant-less: this is a warning about the FILE, not about one
+      // business, and the desktop seeds exactly one. Closing a database with a drawer still open
+      // is an accounting problem, so the predicate is a query rather than a placeholder.
+      hasOpenRegister: () =>
+        db.conn.db
+          .prepare(`SELECT COUNT(*) AS n FROM cajas WHERE estado = 'abierta' AND deleted_at IS NULL`)
+          .get().n > 0,
       log: (m) => console.log(m),
       warn: (m) => console.warn(m)
     })
