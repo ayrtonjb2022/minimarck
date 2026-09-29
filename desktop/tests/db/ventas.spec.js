@@ -172,21 +172,58 @@ describe('crear — the sale', () => {
     expect(despues.stock_milli).toBe(3000 - 1003)
   })
 
-  it('is recorded even with no open till, and writes no drawer event — same as the web', () => {
+  it('REFUSES a cash sale with no open till, in words, and writes nothing at all', () => {
+    // This test used to assert the opposite, and the comment said "same as the web". It was
+    // faithful and it was wrong: the sale was written, the stock came off the shelf, the journal
+    // was posted, `caja_id` was left NULL and no `movimientos_caja` row existed. The goods were
+    // gone and the cash was in nobody's drawer, with no error anywhere to say so. Matching the
+    // web is the right instinct; copying a defect because the original had it is not, and a till
+    // is the one place where "close enough" costs real money.
     const { t, ctx, producto } = escenario({ conCaja: false })
+
+    let err = null
+    try {
+      crear(ctx, {
+        items: [{ productoId: producto.id, cantidad: '1' }],
+        metodoPago: 'efectivo',
+        montoRecibido: 200
+      })
+    } catch (e) {
+      err = e
+    }
+
+    // A refusal a human can act on, and no leaked constraint name.
+    expect(err?.code).toBe('CAJA_ABIERTA_REQUERIDA')
+    expect(err?.status).toBe(409)
+    expect(err?.message).toMatch(/caja/i)
+    expect(String(err?.message ?? '')).not.toMatch(/SQLITE/)
+
+    // And the half that matters: the transaction rolled back. No sale, no stock gone, no
+    // journal, no drawer row. Not "corrected later" — none of it happened.
+    expect(contar(t, 'ventas', t.negocioId)).toBe(0)
+    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(0)
+    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(0)
+    const stock = t.conn.db.prepare('SELECT stock_milli FROM productos WHERE id = ?').get(producto.id)
+    expect(stock.stock_milli).toBe(3000)
+  })
+
+  it('still allows a CREDIT sale with no open till, because credit moves no cash', () => {
+    // The guard is scoped to the methods that touch the drawer. A credit sale posts a receivable
+    // and no money, so refusing it for want of a cash drawer would block the one sale a shop can
+    // still make after the register is closed for the night.
+    const { t, ctx, producto } = escenario({ conCaja: false })
+    const deudor = insertarDeudor(t, { negocioId: t.negocioId, usuarioId: t.usuarioId })
 
     const r = crear(ctx, {
       items: [{ productoId: producto.id, cantidad: '1' }],
-      metodoPago: 'efectivo',
-      montoRecibido: 200
+      metodoPago: 'credito',
+      clienteDeudorId: deudor.id
     })
 
     expect(r.venta.cajaId).toBeNull()
     expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(0)
-    // but the sale, the stock and the ledger are all real
     expect(r.venta.totalCentavos).toBe(20000)
     expect(contar(t, 'ventas', t.negocioId)).toBe(1)
-    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(2)
   })
 
   it('refuses to oversell, and the refusal writes NOTHING', () => {

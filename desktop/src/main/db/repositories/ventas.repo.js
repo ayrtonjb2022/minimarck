@@ -448,6 +448,24 @@ export function crear(ctx, body) {
     // ---- the till -----------------------------------------------------------------------
     // A credit sale moves no cash, so it gets no till movement and no till total. Same as the web.
     const caja = metodoPago === 'credito' ? null : cajaActiva(ctx.db, ctx.negocioId)
+
+    // A CASH sale with no till open has to be refused, and it has to be refused HERE. It used to
+    // fall through the `if (caja)` below: the header, the lines, the stock decrements and the
+    // ledger all committed, `ventas.caja_id` stayed NULL, and no `movimientos_caja` row was ever
+    // written. Nothing threw. The sale existed, the goods were gone, and the money was in
+    // nobody's drawer — the exact balance the till is supposed to prove. The cashier's own
+    // check on the POS screen is a courtesy, not a lock: the window between "checked" and
+    // "committed" is where a closed till becomes a hole in the cash count, and anything that
+    // can be reached by another caller would walk straight through a renderer-only guard.
+    // 409, not 400: the request is well-formed, the STATE it needs is the thing that is wrong.
+    if (metodoPago !== 'credito' && !caja) {
+      throw new IpcError(
+        'CAJA_ABIERTA_REQUERIDA',
+        409,
+        'No hay caja abierta. Abrí una caja antes de vender.'
+      )
+    }
+
     if (caja) {
       registrarMovimiento(ctx, {
         caja,
@@ -576,11 +594,12 @@ function asentarVenta(ctx, { id, folio, total, costoTotal, metodoPago, fecha, cu
 /**
  * Cancel a sale and put the stock back.
  *
- * NOT REACHABLE FROM THE RENDERER. The frozen contract has `ventas: [list, get, create]` and no
- * cancellation — not in `OPS`, not in the web's `ventasAPI`, not in the web's controller, which
- * has exactly `create`, `getAll` and `getById`. Adding `ventas.cancel` to `OPS` would take the
- * contract from 88 to 89 and every other count in the design, so it is not done here. The
- * capability lives in the data layer, is covered by tests, and the ledger gap is reported.
+ * REACHABLE FROM THE RENDERER, through `ventas.cancel`. The web's API did not have it — the web
+ * `ventasAPI` and its controller stop at `create`, `getAll` and `getById` — so this contract is
+ * one operation ahead of the API it mirrors. It was written and tested first as a data-layer
+ * capability and stayed unreachable until the sales list grew a button that needed it; counting
+ * operations in the design as more important than a cashier being able to undo a mistake was the
+ * wrong call, and the count moved rather than the capability.
  *
  * WHAT IT DOES, in one transaction:
  *
