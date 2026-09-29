@@ -9,6 +9,7 @@ import { useCaja } from "../context/CajaContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import CalculadoraPeso from "../components/common/CalculadoraPeso";
+import BoletaPago from "../components/common/BoletaPago";
 import { formatCentavos, formatCantidad } from "../utils/formatters";
 // `src/shared/` es el módulo que main y el renderer comparten para no discrepar sobre plata y
 // cantidades. Desde `src/renderer/app/pages/` son tres niveles arriba, NO cuatro: un `..` de más
@@ -72,8 +73,26 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
   const [deudores, setDeudores] = useState([]);
   const [deudorSel, setDeudorSel] = useState(null);
   const [buscando, setBuscando] = useState(false);
+  // The payment receipt, when the operator asks for it. Null means closed. It is loaded here
+  // rather than in a route because this is the only place a shop is looking at a debtor while
+  // deciding how much cash to hand over.
+  const [boleta, setBoleta] = useState(null);
   const inputRef = useRef(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const abrirBoleta = async () => {
+    if (!deudorSel) return;
+    try {
+      // The balance rides along on the debtor row (`deudaPendienteCentavos`, from the view);
+      // only the history needs a second call. A failure here shows a receipt with the balance
+      // and no history rather than nothing at all, because the balance is the number people
+      // actually came for.
+      const res = await deudoresAPI.pagos(deudorSel.id);
+      setBoleta({ deudor: deudorSel, pagos: res?.pagos ?? [] });
+    } catch {
+      setBoleta({ deudor: deudorSel, pagos: [] });
+    }
+  };
 
   // `toCents` LANZA con cualquier cosa no parseable, y un "2." a medio teclear es exactamente
   // eso. Un cajero escribiendo "20" tiene que ver todavía sin cambio y sin error, así que un
@@ -118,10 +137,15 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
       onConfirm({ metodoPago, clienteDeudorId: deudorSel.id, deudorNombre: deudorSel.nombre });
     } else {
       if (!montoValido) return;
+      // The change is SHOWN to the cashier, never SENT to the repository. `cambioCentavos` is
+      // what this screen believes the change is; the value that gets persisted is the one
+      // `ventas.repo.js` subtracts inside the sale transaction from the tender and the total
+      // IT computed. Handing this number over would let a tampered payload name the change, so
+      // the payload carries the tender alone and the handler reads the change back off the
+      // response (`venta.montoCambioCentavos`) to show the operator what was actually stored.
       onConfirm({
         metodoPago,
         montoEntregadoCentavos: entregadoCentavos || totalCentavos,
-        cambioCentavos,
       });
     }
   };
@@ -179,6 +203,15 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
                       Tiene deuda pendiente
                     </div>
                   )}
+                  <button
+                    type="button"
+                    onClick={abrirBoleta}
+                    className="btn-secondary"
+                    style={{marginTop:"8px",width:"100%"}}
+                  >
+                    <i className="fa-solid fa-receipt" style={{marginRight:"6px"}}></i>
+                    Ver boleta de pago
+                  </button>
                 </div>
               )}
               <div className="form-group" style={{margin:0}}>
@@ -241,6 +274,24 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
           </div>
         </div>
       </div>
+
+      {/* The receipt, over the payment screen. Its own overlay (z-index 210) so it sits above the
+          modal underneath it, and it is rendered LAST so a later sibling wins the paint order. */}
+      {boleta && (
+        <div
+          role="dialog"
+          aria-label="Boleta de pago"
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(4px)",zIndex:210,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px",overflowY:"auto"}}
+        >
+          <div style={{background:"#fff",borderRadius:"12px",padding:"18px",width:"100%",maxWidth:"460px"}}>
+            <BoletaPago
+              deudor={boleta.deudor}
+              pagos={boleta.pagos}
+              onClose={() => setBoleta(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -547,6 +598,18 @@ export default function PuntoDeVenta() {
   // Última venta enviada: { key, items }. Sobrevive a un error de red ambiguo
   // para que el reintento deduplique en el servidor (ver ticketKey más abajo).
   const ultimoEnvioRef = useRef(null);
+  // F2 is the key a till actually gets pressed, and the payment screen used to be reachable only
+  // by clicking a button with the mouse, so a cashier working the scanner had to break the flow to
+  // go take the money. The keydown listener is registered ONCE (empty deps, below) so that F2
+  // does not tear down and rebuild on every keystroke in the ticket — which also means it cannot
+  // close over `ticket`/`procesando`, or the guard it reads would be the one from mount time. The
+  // live condition therefore lives in a ref that each render refreshes, and the handler reads it
+  // at the instant the key arrives. Same rule as `ultimoEnvioRef`: write during render, read in
+  // the event.
+  const cobroListoRef = useRef(false);
+  // Same one-shot-listener problem as above, for Escape: the modal's open state has to be readable
+  // at the moment the key arrives.
+  const modalCobroRef = useRef(false);
 
   const { isSubmitting, withGuard } = useSubmitGuard();
   // The theme is the APP's, not the POS panel's: `useTheme` owns the class on <html> so the
@@ -557,8 +620,34 @@ export default function PuntoDeVenta() {
   const { theme: posTheme, toggleTheme } = useTheme();
 
   const showToast = useCallback((msg, type = "success", duration = 3500) => { setToast({ msg, type }); setTimeout(() => setToast(null), duration); }, []);
+
+  // Written on every render, read by the F2 handler below. The button's own guard is
+  // `ticket.length > 0 && !procesando && !isSubmitting`, and F2 must obey the SAME rule: a key
+  // that opens a screen the button would refuse to open is a worse bug than a key that does
+  // nothing, because the cashier finds out after typing the tender.
+  cobroListoRef.current = ticket.length > 0 && !procesando && !isSubmitting;
+  modalCobroRef.current = modalCobro;
+
   useEffect(() => {
-    const handler = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "f") { e.preventDefault(); searchRef.current?.focus(); } if (e.key === "Escape") setFiltro(""); };
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") { e.preventDefault(); searchRef.current?.focus(); }
+      // Escape backs out of whatever is in front of the operator, nearest first: the payment
+      // screen if it is up, otherwise the product filter. Before this, Escape cleared the filter
+      // from BEHIND an open modal, which meant the fastest way out of a mistaken tender was to
+      // find the small X with the mouse.
+      if (e.key === "Escape") {
+        if (modalCobroRef.current) setModalCobro(false);
+        else setFiltro("");
+      }
+      // F2 opens the payment screen. `preventDefault` because F2 is a system key on some
+      // Windows layouts (it renames the window in Explorer) and letting it through would fight
+      // the cashier mid-sale. Held keys are ignored: pressing F2 and holding it should open the
+      // screen once, not re-fire on auto-repeat.
+      if (e.key === "F2" && !e.repeat) {
+        e.preventDefault();
+        if (cobroListoRef.current) setModalCobro(true);
+      }
+    };
     window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler);
   }, []);
 
@@ -1139,6 +1228,15 @@ export default function PuntoDeVenta() {
               <i className="fa-solid fa-cash-register"></i> {procesando || isSubmitting ? "Procesando..." : `Cobrar ${formatCentavos(totalCentavos)}`}
             </button>
           </div>
+          {/* The hint a cashier actually needs. The shortcut existed nowhere in the UI before this,
+              so the only way to learn it was to read the source. */}
+          {ticket.length > 0 && !procesando && !isSubmitting && (
+            <div className="cart-hint" style={{textAlign:"center",fontSize:"11px",color:"var(--kanagawa-fg-muted)",marginTop:"6px"}}>
+              <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>F2</kbd>
+              {" "}para cobrar · <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>Esc</kbd>
+              {" "}para cerrar
+            </div>
+          )}
         </div>
       </div>
     </div>
