@@ -447,7 +447,7 @@ export default function Reportes() {
   const [comprasResult, setComprasResult] = useState(null);
   const [deudoresResult, setDeudoresResult] = useState(null);
   const [cajaResult, setCajaResult] = useState(null);
-  // Búsqueda por producto, independiente por pestaña: cada una tiene su propio
+  // Búsqueda por producto, independiente por pestaña: cada una tiene su propio c
   // conjunto de datos (líneas de venta vs. productos agregados).
   const [busqueda, setBusqueda] = useState({ ganancias: "", productos: "" });
 
