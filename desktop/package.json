@@ -14,7 +14,10 @@
     "test:watch": "vitest",
     "verify:offline": "node scripts/verify-offline.mjs",
     "verify:preload": "node scripts/assert-preload-format.mjs",
-    "verify:s0": "npm run spike && npm test && npm run build && npm run verify:preload && npm run verify:offline && npm run probe:launch"
+    "verify:migrations": "node scripts/assert-migrations-packaged.mjs",
+    "db:reset": "node scripts/db-reset.mjs",
+    "db:reset:force": "node scripts/db-reset.mjs --force",
+    "verify:s0": "npm run spike && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:offline && npm run probe:launch"
   },
   "engines": {
     "node": ">=24.18.0 <25"
