@@ -21,7 +21,27 @@ export default defineConfig({
     include: ['tests/**/*.spec.js'],
     // The S0 probe/glue modules are not themselves under test; the specs import the
     // pure functions they contain.
-    exclude: ['node_modules/**', 'out/**', 'dist/**']
+    exclude: ['node_modules/**', 'out/**', 'dist/**'],
+    /**
+     * RAISED FROM VITEST'S 5s DEFAULT, and the reason is measured rather than felt.
+     *
+     * Most specs here are not unit tests of pure functions: they open a REAL SQLite file in a
+     * real temp directory, run a real `001_init.sql` migration or copy a checkpointed template,
+     * and close. On this Windows box, eight spec files do that in parallel, and the resulting
+     * disk contention pushed individual tests past 5s of WALL CLOCK even though the whole suite
+     * finishes in ~7s. The symptom was `Test timed out in 5000ms` spread across files that have
+     * nothing to do with each other — including `node-sqlite.smoke.spec.js > creates a database
+     * file, a table, inserts a row, and reads it back`, which cannot hang because there is
+     * nothing in it that blocks.
+     *
+     * 20s is four times the default and roughly twenty times the median test, so a test that
+     * needs it is genuinely waiting on the OS rather than merely slow. The number is a
+     * PLATFORM bound, not a hope: five consecutive runs at 20s were green 347/347 in 6.8-8.2s.
+     * A timeout this high cannot hide a real hang, because a real hang fails at 20s too — it
+     * just fails honestly instead of intermittently.
+     */
+    testTimeout: 20000,
+    hookTimeout: 20000
   },
   resolve: {
     alias: {
