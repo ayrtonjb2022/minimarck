@@ -7,6 +7,7 @@ import {
   toRate,
   formatRate,
   applyRate,
+  extractRate,
   MoneyError,
   MAX_CENTS
 } from '../../src/shared/money.js'
@@ -324,6 +325,37 @@ describe('applyRate — the only bridge between centavos and a rate', () => {
   it('refuses a non-integer input instead of coercing it', () => {
     expect(() => applyRate(10.5, 21)).toThrow(MoneyError)
     expect(() => applyRate(105050, 2100)).toThrow(/entre 0 y 100/)
+  })
+})
+
+describe('extractRate — taking the tax OUT of a price that already contains it', () => {
+  it('returns the tax inside a shelf price: 21% of 100,00 is 17,36, not 21,00', () => {
+    // The whole point of the function. A label that says $100.00 with IVA included does NOT
+    // collect $21.00 of tax — the customer pays the label, so the tax is 100*21/121 = 17.355…
+    expect(extractRate(10000, 21)).toBe(1736)
+  })
+
+  it('is not applyRate: same operands, opposite meaning', () => {
+    // applyRate computes the tax a base would add (100 → 21); extractRate computes the tax
+    // already inside a shelf price (100 → 17.36). If they ever agree, one of them is wrong.
+    expect(applyRate(10000, 21)).toBe(2100)
+    expect(extractRate(10000, 21)).toBe(1736)
+    // ...yet they invert each other exactly: a price formed by ADDING the tax, when read by
+    // extractRate, yields the very tax that formed it. A POS that prices with one and displays
+    // with the other never loses the centavo.
+    const base = 10000
+    expect(extractRate(base + applyRate(base, 21), 21)).toBe(applyRate(base, 21))
+  })
+
+  it('a zero rate extracts nothing, and zero money extracts nothing', () => {
+    expect(extractRate(0, 21)).toBe(0)
+    expect(extractRate(10000, 0)).toBe(0)
+    expect(extractRate(0, 0)).toBe(0)
+  })
+
+  it('refuses the same inputs applyRate refuses', () => {
+    expect(() => extractRate(10.5, 21)).toThrow(MoneyError)
+    expect(() => extractRate(10000, 2100)).toThrow(/entre 0 y 100/)
   })
 })
 

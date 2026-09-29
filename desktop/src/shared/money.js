@@ -246,3 +246,26 @@ export function applyRate(cents, rate, { label = 'monto' } = {}) {
   const exact = (cents * value) / 100
   return assertCents(roundHalfAway(exact), `${label} (aplicado)`)
 }
+
+/**
+ * The tax ALREADY CONTAINED in a price. The counterpart to `applyRate`, and the one a point of
+ * sale needs: 21% of a $10.000 price is not $2.100 of extra money, it is $1.735,54 already
+ * inside the ten thousand. `applyRate` adds, `extractRate` takes out, and which one is correct
+ * depends entirely on the law and the display — so both exist, both are named, and a caller
+ * cannot pick "the rounding function" by accident.
+ *
+ * `imp = base * pct / (100 + pct)`, derived rather than written as `base - base / (1 + pct/100)`
+ * because those two are the same number and the second one accumulates the error of two
+ * subtractions. One multiply, one divide, one rounding.
+ *
+ * The consequence for a sale is the whole point: the customer pays the price on the shelf, so
+ * the extracted tax is INFORMATION and is never added to the total. A sale that adds it is
+ * charging 21% more than the label says.
+ */
+export function extractRate(cents, rate, { label = 'monto' } = {}) {
+  assertCents(cents, label)
+  const value = toRate(rate, `${label} (tasa)`)
+  if (value === 0) return 0
+  const imp = (cents * value) / (100 + value)
+  return assertCents(roundHalfAway(imp), `${label} (extraído)`)
+}
