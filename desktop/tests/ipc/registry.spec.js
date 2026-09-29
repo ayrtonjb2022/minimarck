@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { createRegistry } from '../../src/main/bridge/registry.js'
 import { OPS, OPS_COUNT, TOPICS } from '../../src/shared/ipc-contract.js'
 import { registerDbHandlers } from '../../src/main/ipc/db.js'
+import { bootstrapDatabase } from '../../src/main/db/bootstrap.js'
 
 /**
  * The IPC allowlist (SEC-2). The security claim is that the renderer cannot express SQL,
@@ -79,42 +80,89 @@ describe('registry allowlist (SEC-2)', () => {
   })
 })
 
-describe('S0 registered surface', () => {
-  it('registers ONLY the read-only db.* contract ops, nothing else', () => {
+describe('S1 registered surface', () => {
+  // These two tests were S0-era and asserted things S1 deliberately changed. Both are rewritten
+  // here against the REAL production wiring — `bootstrapDatabase()` — rather than a hand-built
+  // stub of the handler's inputs, because the S0 version of this file passed for two slices
+  // while never exercising the composition that actually runs at startup.
+  const IMPLEMENTED = new Set(['db.info', 'db.schemaVersion'])
+
+  it('registers ONLY db.info and db.schemaVersion — db.reconcile stays unregistered on purpose', () => {
     const r = createRegistry()
-    // A real temp base: registerDbHandlers creates the data directories (PLAT-2), so a
-    // hardcoded path here would have the suite writing outside the repo on every run.
     const base = mkdtempSync(join(tmpdir(), 'mm-surface-'))
+    const db = bootstrapDatabase({ userDataPath: base, env: {}, tables: [] })
     try {
-      registerDbHandlers(r, { userDataPath: base, env: {} })
+      registerDbHandlers(r, db)
       for (const group of Object.keys(OPS)) {
         for (const op of OPS[group]) {
-          const implemented = r.isImplemented(group, op)
-          // S0 implements db.info/schemaVersion/reconcile and nothing else. Every other
-          // contract op must be unimplemented so later slices own them honestly.
-          const shouldBeImplemented = group === 'db'
-          expect(implemented, `${group}.${op}`).toBe(shouldBeImplemented)
+          // Every other contract op must be unimplemented so later slices own them honestly.
+          // `db.reconcile` is in this set on purpose: S1 now has a REAL database open, so a
+          // synthetic "nothing to reconcile" answer would be worse than a 501.
+          expect(r.isImplemented(group, op), `${group}.${op}`).toBe(IMPLEMENTED.has(`${group}.${op}`))
         }
       }
+      // And the consequence, which is the honest part: it resolves, then 501s.
+      expect(r.isImplemented('db', 'reconcile')).toBe(false)
     } finally {
+      db.conn.checkpointAndClose()
       rmSync(base, { recursive: true, force: true })
     }
   })
 
-  it('db.info reports resolved paths and the runtime versions, and opens no database', () => {
-    // A real temp base, because registerDbHandlers now CREATES the data directories (PLAT-2),
-    // and a test must not write to a hardcoded path outside the repo.
+  it('db.info reports the REAL open database, not synthetic placeholders', () => {
     const base = mkdtempSync(join(tmpdir(), 'mm-registry-'))
+    const db = bootstrapDatabase({ userDataPath: base, env: {}, tables: [] })
     try {
       const r = createRegistry()
-      const paths = registerDbHandlers(r, { userDataPath: base, env: {} })
+      registerDbHandlers(r, db)
       const info = r.resolve('db', 'info')({})
+
       expect(info.dbFile).toContain('minimarck.db')
-      expect(info.exists).toBe(false) // S0 creates no DB
+      expect(info.dataDir).toBe(join(base, 'data'))
+      expect(info.exists).toBe(true) // S1 opens it; S0 reported false
+      expect(info.sizeBytes).toBeGreaterThan(0) // a real file, not null
+      // Read from the live connection now, not hardcoded.
+      expect(info.journalMode).toBe('wal')
+      // Real migrations ship now, so the version is 1 — read from the live connection, which
+      // is the point of the test. S1 asserted 0 here for a month before S2 landed.
+      expect(info.schemaVersion).toBe(1)
+      expect(info.schemaVersion).toBe(db.conn.userVersion())
       expect(typeof info.sqlite).toBe('string')
-      expect(paths.dataDir).toBe(join(base, 'data'))
-      expect(existsSync(paths.dataDir)).toBe(true) // …but it DOES create the directory
+      // `tables: []` was passed and the caller still cannot write a business table directly:
+      // the 20 that are writable were allowlisted by `tablesCreatedBy` walking 001_init.sql,
+      // not by the caller's empty array.
+      expect(db.conn.allowedTables()).not.toEqual(['schema_migrations'])
+      expect(db.conn.allowedTables()).toContain('ventas')
+      expect(info.writableTables).toBe(db.conn.allowedTables().length)
+      // A table the schema does not declare stays refused.
+      expect(() => db.conn.db.exec('CREATE TABLE sneaky (id INTEGER)')).toThrow()
     } finally {
+      db.conn.checkpointAndClose()
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('db.schemaVersion reports the real PRAGMA user_version and an empty pending list', () => {
+    const base = mkdtempSync(join(tmpdir(), 'mm-version-'))
+    const db = bootstrapDatabase({ userDataPath: base, env: {}, tables: [] })
+    try {
+      const r = createRegistry()
+      registerDbHandlers(r, db)
+      const v = r.resolve('db', 'schemaVersion')({})
+      expect(v.userVersion).toBe(1)
+      expect(v.userVersion).toBe(db.conn.userVersion())
+      // `migrated` must agree with the real version, and `available` with the real file count.
+      expect(v.migrated).toBe(true)
+      expect(v.available).toBe(1)
+      expect(v.pending).toBe(0)
+      // `lastRun` is what THIS launch applied. It is `[1]`, not `[]`: this is the first
+      // bootstrap, so 001_init.sql ran now. S1 asserted `[]` back when no migration existed,
+      // and the value flipped the moment one did — which is the correct behaviour, and worth
+      // asserting from the real connection rather than trusting the number.
+      expect(v.lastRun.applied).toEqual([1])
+      expect(v.lastRun.applied).toEqual(db.migration.applied)
+    } finally {
+      db.conn.checkpointAndClose()
       rmSync(base, { recursive: true, force: true })
     }
   })

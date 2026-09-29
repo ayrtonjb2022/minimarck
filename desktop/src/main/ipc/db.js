@@ -1,20 +1,20 @@
 import { existsSync, statSync } from 'node:fs'
-import { resolveDataPaths, ensureDataDirs } from '../dataDir.js'
 
 /**
- * S0 read-only `db.*` handlers — the CONTRACT ONLY; the data layer is S1+.
+ * The `db.*` handlers, now backed by a REAL open connection.
  *
- * These deliberately open NO database (that is S1's job, and S0 has no migrations yet).
- * They report the resolved data paths and whether a file is present, so the Settings
- * > Diagnóstico panel and the S0 probe have something honest to show. `schemaVersion`
- * reports 0 / "not migrated" because no migration has run — it does not fake a version.
+ * S0 registered these as honest placeholders that opened no database: it had no migration
+ * runner and no schema, so `schemaVersion` reported 0 and `db.info` reported
+ * `journalMode: null`. S1 owns the data layer, so both of those are now read from SQLite.
  *
- * The directories ARE created (PLAT-2): without that, `shell.openPath(dataDir)` on the
- * "Abrir carpeta de datos" menu item has nothing to open and S1's first open() is an
- * ENOENT on a path this function just reported as valid.
+ * What deliberately did NOT change: `db.reconcile` is NOT implemented here. It is a frozen
+ * contract member owned by S17, and now that a real database is open, S0's synthetic
+ * `{ status: 'not_migrated' }` would be worse than useless — the Settings > Diagnóstico panel
+ * would report "nothing to reconcile" about a database that may well need reconciling. It is
+ * left unregistered so the registry's own gate answers `NOT_IMPLEMENTED` 501, which is the
+ * truthful answer and the same envelope every other future-slice op already gets.
  */
-export function registerDbHandlers(registry, { userDataPath, env }) {
-  const paths = ensureDataDirs(resolveDataPaths(userDataPath, env))
+export function registerDbHandlers(registry, { paths, conn, migration, seeded }) {
   registry.register('db', {
     info: () => {
       let sizeBytes = null
@@ -24,24 +24,44 @@ export function registerDbHandlers(registry, { userDataPath, env }) {
         dataDir: paths.dataDir,
         backupDir: paths.backupDir,
         overridden: paths.overridden,
-        exists: existsSync(paths.dbFile),
+        exists: true,
         sizeBytes,
-        journalMode: null, // unknown until S1 opens the file and reads the pragma
+        // Real now, read from the open connection rather than hardcoded.
+        journalMode: conn.pragma('journal_mode').journal_mode,
+        schemaVersion: conn.userVersion(),
+        writableTables: conn.allowedTables().length,
         electron: process.versions.electron,
         node: process.versions.node,
         sqlite: process.versions.sqlite
       }
     },
-    schemaVersion: () => ({
-      userVersion: 0,
-      migrated: false,
-      note: 'S0 ships no migrations; the schema arrives in S1/S2.'
-    }),
-    reconcile: () => ({
-      status: 'not_migrated',
-      findings: [],
-      note: 'db.reconcile is implemented in S17; nothing to reconcile before S1.'
-    })
+
+    /**
+     * The REAL schema version, from `PRAGMA user_version` — the single source of truth the
+     * migration runner moves atomically with each DDL change.
+     *
+     * `migrated` is `userVersion > 0`, not "a migrations directory exists". A database whose
+     * version is 0 genuinely has no schema, and reporting otherwise is the sort of optimistic
+     * read that turns into a confusing runtime error three slices later.
+     */
+    schemaVersion: () => {
+      const userVersion = conn.userVersion()
+      return {
+        userVersion,
+        migrated: userVersion > 0,
+        available: migration?.available ?? 0,
+        pending: Math.max(0, (migration?.available ?? 0) - userVersion),
+        lastRun: { applied: migration?.applied ?? [], userVersion: migration?.userVersion ?? userVersion }
+      }
+    }
+
+    // `db.reconcile` is intentionally ABSENT — see the file header. It resolves (it is a
+    // frozen contract member) and then 501s through registry.resolve(), which is the honest
+    // answer until S17 implements it.
   })
+
+  if (seeded?.seeded) {
+    console.log(`[db] seeded negocio=${seeded.negocioId} user=${seeded.userId}`)
+  }
   return paths
 }
