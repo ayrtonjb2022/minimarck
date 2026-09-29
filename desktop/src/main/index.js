@@ -8,7 +8,12 @@ import { createWindow } from './window.js'
 import { registerDbHandlers } from './ipc/db.js'
 import { registerCajasHandlers } from './ipc/cajas.js'
 import { registerVentasHandlers } from './ipc/ventas.js'
+import { registerAuthHandlers } from './ipc/auth.js'
+import { registerProductosHandlers } from './ipc/productos.js'
+import { registerCategoriasHandlers } from './ipc/categorias.js'
+import { registerDeudoresHandlers } from './ipc/deudores.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
+import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
 
@@ -42,8 +47,16 @@ if (!gotLock) {
  * The ONE IPC endpoint. Every renderer request funnels through here and must pass, in
  * order: envelope version, trusted sender, then the allowlisted (group, op). Nothing
  * reaches business code without clearing all three (SEC-2, SEC-4).
+ *
+ * `identity` is the LOCAL IDENTITY — the business this file belongs to and the operator on duty
+ * (design #275: no login, no session, no token). It is resolved ONCE at startup and closed over
+ * here, which is the whole reason `installIpc` takes it as an argument rather than reading it
+ * per request: a per-request read would be a per-request guess, and the one time the file has two
+ * businesses in it is exactly when a guess is worst. With no resolvable identity the object
+ * carries `negocioId: null` and every business operation answers the existing, already-tested
+ * `TENANT_REQUIRED` — a refusal, not a silent default to some other shop's data.
  */
-function installIpc(registry) {
+function installIpc(registry, identity) {
   ipcMain.handle(CHANNEL, async (event, envelope) => {
     try {
       if (!envelope || envelope.v !== ENVELOPE_VERSION) {
@@ -56,9 +69,19 @@ function installIpc(registry) {
       // so a child frame cannot spoof the parent.
       assertTrustedSender(event.senderFrame?.url, isPackaged)
       const handler = registry.resolve(envelope.group, envelope.op)
-      // ctx is threaded explicitly (design §C.3); negocioId/actorId are filled in by S4's
-      // local auth marker and are the tenant boundary every repository must scope by (SEC-6).
-      const ctx = { negocioId: null, actorId: null }
+      // ctx is threaded explicitly (design §C.3). negocioId/actorId are the tenant boundary every
+      // repository must scope by (SEC-6) and they come from the resolved local identity, not
+      // from the renderer: a frame that named its own tenant would be a frame with admin rights.
+      // `createCtx` destructures only these two, so the extra display fields below never reach a
+      // repository — `auth.me` reads them from the request context instead.
+      const ctx = {
+        negocioId: identity.negocioId,
+        actorId: identity.actorId,
+        negocioNombre: identity.negocioNombre,
+        operadorNombre: identity.operadorNombre,
+        rol: identity.rol,
+        motivo: identity.motivo
+      }
       return await handler(envelope.payload ?? {}, ctx)
     } catch (err) {
       throw toIpcError(err)
@@ -140,11 +163,34 @@ async function main() {
   // db.info / db.schemaVersion are real now. db.reconcile stays 501 (S17).
   registerDbHandlers(registry, db)
   // Sales and the till. Both are one transaction each, both scope every statement to the
-  // business S4's marker resolves, and neither widens `OPS` — `ventas` (3), `cajas` (7) and
-  // `cajaMovimientos` (3) are the operations the contract already named.
+  // business the local identity resolved, and neither widens `OPS` — `ventas` (3), `cajas` (7)
+  // and `cajaMovimientos` (3) are the operations the contract already named.
   registerVentasHandlers(registry, { conn: db.conn })
   registerCajasHandlers(registry, { conn: db.conn })
-  installIpc(registry)
+
+  // WHO IS SELLING, AND WHAT IS FOR SALE.
+  //
+  // Before this, every business operation in the app answered TENANT_REQUIRED: `installIpc`
+  // passed `{negocioId: null}` and every repository calls `requireTenant` on the way in. The
+  // handlers were right and the schema was right; the missing piece was the answer to "which
+  // shop is this file?", which is a fact about the FILE and not about the request.
+  //
+  // Resolved once, after the seed has run, so it sees the business and operator the seed just
+  // created. Every group below is a group the FROZEN contract already named — no `OPS` edit, so
+  // the count is still 88. `auth.me` answers for the operator (there is no login on this
+  // platform); `productos`/`categorias` are what a point of sale reads to show its grid and look
+  // up a barcode; `deudores` is what makes a credit sale possible, since a credit sale with no
+  // named debtor is income nobody can collect.
+  const identity = resolveLocalIdentity(db.conn)
+  const avisoIdentidad = identityWarning(identity)
+  if (avisoIdentidad) console.warn(avisoIdentidad)
+  else console.log(`[identity] ${identity.negocioNombre} · ${identity.operadorNombre} (${identity.rol})`)
+
+  registerAuthHandlers(registry, { conn: db.conn })
+  registerProductosHandlers(registry, { conn: db.conn })
+  registerCategoriasHandlers(registry, { conn: db.conn })
+  registerDeudoresHandlers(registry, { conn: db.conn })
+  installIpc(registry, identity)
 
   const win = createWindow({ isPackaged, rendererUrl: url })
 
