@@ -14,8 +14,11 @@ import { bootstrapDatabase } from '../../src/main/db/bootstrap.js'
  */
 
 describe('frozen OPS contract', () => {
-  it('contains exactly 88 operations', () => {
-    expect(OPS_COUNT).toBe(88)
+  it('contains exactly 89 operations', () => {
+    // 88, until `ventas.cancel`. The literal is the point: `OPS_COUNT` is derived from `OPS`, so
+    // asserting it against itself would pass no matter what the contract said. This test is the
+    // place where growing the contract has to be noticed.
+    expect(OPS_COUNT).toBe(89)
   })
 
   it('exposes NO channel that could carry SQL, a table name, or a file path', () => {

@@ -22,7 +22,7 @@ import { formatCentavos, formatDate, formatCantidad } from "../utils/formatters"
  *    could display as a column of zeroes and look like a till that took no money.
  *
  * 3. `row.usuario.nombre`. There is no joined user object; a sale carries `userId`, and
- *    resolving it would need an operation the frozen 88-op contract does not have. So the
+ *    resolving it would need an operation the frozen contract does not have. So the
  *    column is gone instead of showing a blank cell forever. The operator on duty is in the
  *    top bar, which is the truth about who is selling.
  *
@@ -229,7 +229,19 @@ const Ventas = () => {
         title={seleccionada ? `Venta #${seleccionada.folio}` : ""}
         size="lg"
       >
-        {seleccionada ? <DetalleVenta venta={seleccionada} /> : null}
+        {seleccionada ? (
+          <DetalleVenta
+            venta={seleccionada}
+            onCancelada={() => {
+              // Close, then reload: leaving the modal open over a row the operator just voided
+              // would show a detail of a cancelled sale next to a list that still claims it is
+              // live, and the operator has no way to tell which of the two is current.
+              setSeleccionada(null);
+              toast.success(`Venta #${seleccionada.folio} cancelada`);
+              cargar();
+            }}
+          />
+        ) : null}
       </Modal>
     </div>
   );
@@ -241,9 +253,29 @@ const Ventas = () => {
  * list row that never had it. Without that call the product table would render empty on
  * every sale, which looks like a till that sold nothing.
  */
-const DetalleVenta = ({ venta }) => {
+const DetalleVenta = ({ venta, onCancelada }) => {
   const [detalle, setDetalle] = useState(null);
   const [error, setError] = useState("");
+  // Cancelling moves stock, reverses the drawer entry and posts a mirror journal row, so the
+  // button is two-step: the first click arms it and asks for a reason, the second one sends it.
+  // One click on a button that undoes a sale is one misclick away from an unrecorded refund.
+  const [armado, setArmado] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [anulando, setAnulando] = useState(false);
+  const cancelable = venta.estado !== "cancelada";
+
+  const anular = async () => {
+    setAnulando(true);
+    try {
+      await ventasAPI.cancelar(venta.id, motivo.trim() || null);
+      onCancelada?.();
+    } catch (err) {
+      setError(err?.message || "No se pudo cancelar la venta");
+      setArmado(false);
+    } finally {
+      setAnulando(false);
+    }
+  };
 
   useEffect(() => {
     let vigente = true;
@@ -359,6 +391,66 @@ const DetalleVenta = ({ venta }) => {
               </tr>
             </tfoot>
           </table>
+        </div>
+      )}
+
+      {cancelable && (
+        <div
+          style={{
+            borderTop: "1px solid var(--kanagawa-border)",
+            marginTop: 14,
+            paddingTop: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          {!armado ? (
+            <>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setArmado(true)}
+                data-testid="armar-cancelacion"
+              >
+                <i className="fa-solid fa-ban" aria-hidden="true"></i> Cancelar venta
+              </button>
+              {/* Says what cancelling actually does, before it does it. */}
+              <span style={{ fontSize: 12, color: "var(--kanagawa-comment)" }}>
+                Devuelve el stock, revierte el dinero de la caja y deja la venta marcada.
+              </span>
+            </>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Motivo (opcional)"
+                aria-label="Motivo de la cancelacion"
+                disabled={anulando}
+                style={{ flex: "1 1 180px", minWidth: 160 }}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={anular}
+                disabled={anulando}
+                data-testid="confirmar-cancelacion"
+              >
+                {anulando ? "Cancelando..." : "Confirmar cancelacion"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setArmado(false)}
+                disabled={anulando}
+              >
+                Volver
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

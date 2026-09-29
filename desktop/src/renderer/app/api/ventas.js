@@ -25,5 +25,12 @@ export const ventasAPI = {
    * whether THIS call created it, so a retry that reused the same key is distinguishable from a
    * first attempt.
    */
-  crear: (data) => llamar('ventas', 'create', data)
+  crear: (data) => llamar('ventas', 'create', data),
+
+  /**
+   * Void a recorded sale. The stock returns to the shelf, the drawer entry is reversed and the
+   * journal gets its mirror row — the server does all of it, so the caller sends an id and a
+   * reason and never adjusts a balance itself.
+   */
+  cancelar: (id, motivo) => llamar('ventas', 'cancel', { id, motivo })
 }
