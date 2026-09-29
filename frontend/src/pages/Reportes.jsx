@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { reportesAPI } from "../api/reportes";
 import { negocioAPI } from "../api/negocio";
 import { useCaja } from "../context/CajaContext";
@@ -17,6 +17,53 @@ const monthStart = () => today().slice(0, 7) + "-01";
 const fmt = (n) => `$${(n ?? 0).toFixed(2)}`;
 
 const cleanParams = (params) => Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null));
+
+// Búsqueda de producto insensible a mayúsculas y acentos: "coca" encuentra
+// "Coca-Cola", "JUGO" encuentra "jugo de naranja".
+const normalizar = (texto) =>
+  String(texto ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+// `campos` son extractores: (fila) => string. Con búsqueda vacía devuelve la
+// lista completa, así el filtro no necesita un caso especial en el caller.
+const filtrarPorProducto = (filas, consulta, campos) => {
+  const q = normalizar(consulta).trim();
+  if (!q) return filas;
+  return filas.filter((f) => campos.some((campo) => normalizar(campo(f)).includes(q)));
+};
+
+// Input de búsqueda reutilizado por las pestañas Ganancias y Productos.
+// Mismo patrón visual que Deudores.jsx / Proveedores.jsx (.filter-input).
+const BuscadorProducto = ({ consulta, onChange, mostrados, total }) => (
+  <div className="form-group" style={{ marginBottom: 0 }}>
+    <label>Buscar producto</label>
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <input
+        type="text"
+        className="filter-input"
+        style={{ width: 240 }}
+        placeholder="🔍 Buscar por nombre o código..."
+        value={consulta}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {consulta && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="btn-secondary"
+          style={{ fontSize: 13, whiteSpace: "nowrap" }}
+          aria-label="Limpiar búsqueda"
+        >
+          <i className="fa-solid fa-xmark"></i> Limpiar
+        </button>
+      )}
+    </div>
+    {consulta && (
+      <p style={{ fontSize: 12, color: "#94a3b8", margin: "6px 0 0" }}>
+        Mostrando {mostrados} de {total}
+      </p>
+    )}
+  </div>
+);
 
 const tabs = [
   // Diagnóstico
@@ -400,6 +447,9 @@ export default function Reportes() {
   const [comprasResult, setComprasResult] = useState(null);
   const [deudoresResult, setDeudoresResult] = useState(null);
   const [cajaResult, setCajaResult] = useState(null);
+  // Búsqueda por producto, independiente por pestaña: cada una tiene su propio c
+  // conjunto de datos (líneas de venta vs. productos agregados).
+  const [busqueda, setBusqueda] = useState({ ganancias: "", productos: "" });
 
   const handleConsultarGerencial = async () => {
     const { fechaInicio, fechaFin } = dates.gerencial;
@@ -448,6 +498,7 @@ export default function Reportes() {
           const ganancia = totalVenta - costoTotal;
           items.push({
             producto: det.producto?.nombre || det.nombreProducto || "Producto",
+            codigo: det.producto?.codigo || "",
             cantidad: cant,
             precioVenta: pv,
             precioCompra: pc,
@@ -495,7 +546,10 @@ export default function Reportes() {
     if (!fechaInicio || !fechaFin) { toast.error("Seleccioná fecha de inicio y fin"); return; }
     try {
       setLoading((p) => ({ ...p, productos: true }));
-      const res = await reportesAPI.productosMasVendidos(cleanParams({ limit: 10, fechaInicio, fechaFin }));
+      // Trae TODOS los productos vendidos del período, no solo el top 10: con
+      // un límite chico la búsqueda por nombre no encontraría los productos que
+      // quedaron fuera, y "no aparece" se confundiría con "no se vendió".
+      const res = await reportesAPI.productosMasVendidos(cleanParams({ limit: 500, fechaInicio, fechaFin }));
       setProductosResult(res.data.data);
     } catch { toast.error("Error al consultar top productos"); }
     finally { setLoading((p) => ({ ...p, productos: false })); }
@@ -570,6 +624,43 @@ export default function Reportes() {
     caja: handleConsultarCaja,
   };
 
+  // ===== Filtro por producto =====
+  // Las tablas se dibujan desde las listas filtradas, y los totales de las
+  // tarjetas se recalculan SOBRE lo filtrado. Si las tarjetas usaran el total
+  // del período completo, al buscar un producto seguirían mostrando la suma de
+  // todos: la pantalla mentiría.
+  const itemsVisibles = useMemo(
+    () =>
+      filtrarPorProducto(gananciasResult?.items || [], busqueda.ganancias, [
+        (i) => i.producto,
+        (i) => i.codigo,
+      ]),
+    [gananciasResult, busqueda.ganancias],
+  );
+
+  const totalesVisibles = useMemo(() => {
+    const totalVenta = itemsVisibles.reduce((s, i) => s + i.totalVenta, 0);
+    const totalCosto = itemsVisibles.reduce((s, i) => s + i.costoTotal, 0);
+    return {
+      totalVenta,
+      totalCosto,
+      totalGanancia: itemsVisibles.reduce((s, i) => s + i.ganancia, 0),
+    };
+  }, [itemsVisibles]);
+
+  const productosVisibles = useMemo(
+    () =>
+      filtrarPorProducto(productosResult || [], busqueda.productos, [
+        (p) => p.producto?.nombre,
+        (p) => p.producto?.codigo,
+      ]),
+    [productosResult, busqueda.productos],
+  );
+
+  // Sin filas no hay costo: la tarjeta de Margen no puede decir "sin costo
+  // configurado" cuando en realidad no hay nada que mostrar.
+  const hayGanancia = itemsVisibles.length > 0;
+
   const currentDates = dates[tab];
   const setCurrentDates = (updater) => setDates((prev) => ({ ...prev, [tab]: updater(prev[tab]) }));
 
@@ -643,6 +734,16 @@ export default function Reportes() {
                   <input type="date" value={currentDates.fechaFin} onChange={(e) => setCurrentDates((prev) => ({ ...prev, fechaFin: e.target.value }))} />
                 </div>
               </>
+            )}
+
+            {/* Búsqueda por producto: solo en las dos pestañas que listan productos */}
+            {(tab === "ganancias" || tab === "productos") && (
+              <BuscadorProducto
+                consulta={busqueda[tab]}
+                onChange={(valor) => setBusqueda((prev) => ({ ...prev, [tab]: valor }))}
+                mostrados={tab === "ganancias" ? itemsVisibles.length : productosVisibles.length}
+                total={tab === "ganancias" ? (gananciasResult?.items.length ?? 0) : (productosResult?.length ?? 0)}
+              />
             )}
           </div>
           <button
@@ -821,31 +922,33 @@ export default function Reportes() {
           <div className="stats-grid" style={{ marginBottom: 20 }}>
             <div className="stat-card" style={{ borderTop: "3px solid #3b82f6" }}>
               <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Total Vendido</p>
-              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#2563eb" }}>{fmt(gananciasResult.totalVenta)}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#2563eb" }}>{fmt(totalesVisibles.totalVenta)}</p>
             </div>
             <div className="stat-card" style={{ borderTop: "3px solid #f59e0b" }}>
               <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Costo Total</p>
               <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#d97706" }}>
-                {gananciasResult.totalCosto > 0 ? fmt(gananciasResult.totalCosto) : <span style={{color: "#94a3b8", fontStyle: "italic"}}>— sin datos</span>}
+                {totalesVisibles.totalCosto > 0 ? fmt(totalesVisibles.totalCosto) : <span style={{color: "#94a3b8", fontStyle: "italic"}}>— sin datos</span>}
               </p>
             </div>
             <div className="stat-card" style={{ borderTop: "3px solid #22c55e" }}>
               <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Ganancia Total</p>
               <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: "#16a34a" }}>
-                {gananciasResult.totalCosto > 0 ? fmt(gananciasResult.totalGanancia) : <span style={{color: "#94a3b8", fontStyle: "italic"}}>— sin datos</span>}
+                {totalesVisibles.totalCosto > 0 ? fmt(totalesVisibles.totalGanancia) : <span style={{color: "#94a3b8", fontStyle: "italic"}}>— sin datos</span>}
               </p>
             </div>
-            <div className="stat-card" style={{ borderTop: `3px solid ${gananciasResult.totalCosto > 0 ? "#a855f7" : "#94a3b8"}` }}>
+            <div className="stat-card" style={{ borderTop: `3px solid ${totalesVisibles.totalCosto > 0 ? "#a855f7" : "#94a3b8"}` }}>
               <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Margen</p>
-              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: gananciasResult.totalCosto > 0 ? "#a855f7" : "#94a3b8" }}>
-                {gananciasResult.totalCosto > 0
-                  ? ((gananciasResult.totalGanancia / gananciasResult.totalVenta) * 100).toFixed(1) + "%"
-                  : <span style={{fontStyle: "italic", fontSize: 16}}>sin costo configurado</span>}
+              <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0 0", color: totalesVisibles.totalCosto > 0 ? "#a855f7" : "#94a3b8" }}>
+                {totalesVisibles.totalCosto > 0
+                  ? ((totalesVisibles.totalGanancia / totalesVisibles.totalVenta) * 100).toFixed(1) + "%"
+                  : <span style={{fontStyle: "italic", fontSize: 16}}>{hayGanancia ? "sin costo configurado" : "sin datos"}</span>}
               </p>
             </div>
           </div>
 
-          {gananciasResult.items.every((i) => !i.precioCompra) && (
+          {/* itemsVisibles.every() sobre lista vacía da true: sin el largo, el
+              aviso "sin precios de costo" aparecería cuando solo falta data. */}
+          {itemsVisibles.length > 0 && itemsVisibles.every((i) => !i.precioCompra) && (
             <div style={{background: "#fef9c3", border: "1px solid #fde047", borderRadius: 12, padding: "14px 18px", marginBottom: 20, fontSize: 13, color: "#854d0e"}}>
               <i className="fa-solid fa-triangle-exclamation" style={{marginRight: 6}}></i>
               <strong>Sin precios de costo.</strong> Los productos no tienen <strong>Precio Costo</strong> configurado.
@@ -853,6 +956,16 @@ export default function Reportes() {
             </div>
           )}
 
+          {itemsVisibles.length === 0 && (
+            <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
+              {busqueda.ganancias
+                ? `Ninguna venta coincide con "${busqueda.ganancias}"`
+                : "No hay ventas en el período consultado"}
+            </div>
+          )}
+
+          {itemsVisibles.length > 0 && (
+          <>
           <div className="table-container">
             <table>
               <thead>
@@ -863,7 +976,7 @@ export default function Reportes() {
                 </tr>
               </thead>
               <tbody>
-                {gananciasResult.items.map((item, i) => (
+                {itemsVisibles.map((item, i) => (
                   <tr key={i} className="table-row">
                     {columnsGanancias.map((c) => (
                       <td key={c.key} className="td">{c.cell(item)}</td>
@@ -876,9 +989,9 @@ export default function Reportes() {
           <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
             <button
               onClick={() => exportExcel(
-                gananciasExcelRows(gananciasResult.items),
+                gananciasExcelRows(itemsVisibles),
                 columnsGananciasExport,
-                `ganancias-${dates.ganancias.fechaInicio}-${dates.ganancias.fechaFin}`
+                `ganancias-${dates.ganancias.fechaInicio}-${dates.ganancias.fechaFin}${busqueda.ganancias ? "-filtrado" : ""}`
               )}
               className="btn-secondary" style={{ fontSize: 13 }}
             >
@@ -888,8 +1001,8 @@ export default function Reportes() {
               onClick={() => exportPDF(
                 "Reporte de Ganancias",
                 columnsGananciasExport,
-                gananciasResult.items,
-                `ganancias-${dates.ganancias.fechaInicio}-${dates.ganancias.fechaFin}`,
+                itemsVisibles,
+                `ganancias-${dates.ganancias.fechaInicio}-${dates.ganancias.fechaFin}${busqueda.ganancias ? "-filtrado" : ""}`,
                 negocio
               )}
               className="btn-secondary" style={{ fontSize: 13 }}
@@ -897,6 +1010,8 @@ export default function Reportes() {
               <i className="fa-solid fa-file-pdf"></i> PDF
             </button>
           </div>
+          </>
+          )}
         </>
       )}
 
@@ -1037,32 +1152,40 @@ export default function Reportes() {
       {/* Productos tab */}
       {tab === "productos" && productosResult && productosResult.length > 0 && (
         <div className="card">
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e9edf2" }}>
-                  {columnsProductos.map((c) => (<th key={c.key} style={{ padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b" }}>{c.header}</th>))}
-                </tr>
-              </thead>
-              <tbody>
-                {productosResult.map((p, i) => (
-                  <tr key={p.productoId} className="table-row">
-                    {columnsProductos.map((c) => (<td key={c.key} className="td">{c.cell(p, i)}</td>))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button onClick={() => exportExcel(productosResult, columnsProductos, `top-productos-${dates.productos.fechaInicio}-${dates.productos.fechaFin}`)}
-              className="btn-secondary" style={{ fontSize: 13 }}>
-              <i className="fa-solid fa-file-excel"></i> Excel
-            </button>
-            <button onClick={() => exportPDF("Top Productos Más Vendidos", columnsProductos, productosResult, `top-productos-${dates.productos.fechaInicio}-${dates.productos.fechaFin}`, negocio)}
-              className="btn-secondary" style={{ fontSize: 13 }}>
-              <i className="fa-solid fa-file-pdf"></i> PDF
-            </button>
-          </div>
+          {productosVisibles.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
+              Ningún producto coincide con "{busqueda.productos}"
+            </div>
+          ) : (
+            <>
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e9edf2" }}>
+                      {columnsProductos.map((c) => (<th key={c.key} style={{ padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#64748b" }}>{c.header}</th>))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productosVisibles.map((p, i) => (
+                      <tr key={p.productoId} className="table-row">
+                        {columnsProductos.map((c) => (<td key={c.key} className="td">{c.cell(p, i)}</td>))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <button onClick={() => exportExcel(productosVisibles, columnsProductos, `top-productos-${dates.productos.fechaInicio}-${dates.productos.fechaFin}${busqueda.productos ? "-filtrado" : ""}`)}
+                  className="btn-secondary" style={{ fontSize: 13 }}>
+                  <i className="fa-solid fa-file-excel"></i> Excel
+                </button>
+                <button onClick={() => exportPDF("Top Productos Más Vendidos", columnsProductos, productosVisibles, `top-productos-${dates.productos.fechaInicio}-${dates.productos.fechaFin}${busqueda.productos ? "-filtrado" : ""}`, negocio)}
+                  className="btn-secondary" style={{ fontSize: 13 }}>
+                  <i className="fa-solid fa-file-pdf"></i> PDF
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
