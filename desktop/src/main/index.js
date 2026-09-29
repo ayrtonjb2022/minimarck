@@ -9,6 +9,7 @@ import { registerDbHandlers } from './ipc/db.js'
 import { registerCajasHandlers } from './ipc/cajas.js'
 import { registerVentasHandlers } from './ipc/ventas.js'
 import { registerAuthHandlers } from './ipc/auth.js'
+import { registerNegocioHandlers } from './ipc/negocio.js'
 import { registerProductosHandlers } from './ipc/productos.js'
 import { registerCategoriasHandlers } from './ipc/categorias.js'
 import { registerDeudoresHandlers } from './ipc/deudores.js'
@@ -187,6 +188,7 @@ async function main() {
   else console.log(`[identity] ${identity.negocioNombre} · ${identity.operadorNombre} (${identity.rol})`)
 
   registerAuthHandlers(registry, { conn: db.conn })
+  registerNegocioHandlers(registry, { conn: db.conn })
   registerProductosHandlers(registry, { conn: db.conn })
   registerCategoriasHandlers(registry, { conn: db.conn })
   registerDeudoresHandlers(registry, { conn: db.conn })

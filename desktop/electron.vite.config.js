@@ -1,6 +1,14 @@
 import { defineConfig } from 'electron-vite'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import react from '@vitejs/plugin-react'
+
+// This package is `"type": "module"`, so `__dirname` is not defined here. The config already
+// leans on `path.resolve('...')` (which resolves against process.cwd) for the migrations dir;
+// the alias below needs a real absolute path, so it comes from `import.meta.url` instead of
+// depending on where the build was invoked from.
+const here = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * Emit `001_init.sql` next to the main bundle.
@@ -92,6 +100,16 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
+    plugins: [react()],
+    resolve: {
+      // `@shared/*` is `src/shared/*`, the money/quantity/contract modules main and the renderer
+      // BOTH import. It is the whole point of that directory: a total computed by `lineTotalCentavos`
+      // in the renderer and one computed by `ventas.repo.js` in main are the same function, not two
+      // implementations that agree today. The alias is here so a renderer file does not have to
+      // count `../` hops out of `src/renderer/app/pages/` to reach a sibling of `main/`, which is
+      // exactly the kind of path that silently gains a level and resolves to nothing.
+      alias: { '@shared': path.resolve(here, 'src/shared') }
+    },
     build: {
       outDir: 'out/renderer',
       // 'app://bundle' is the scheme root; the protocol handler supplies index.html for
