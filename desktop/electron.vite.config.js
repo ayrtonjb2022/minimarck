@@ -1,4 +1,49 @@
 import { defineConfig } from 'electron-vite'
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+
+/**
+ * Emit `001_init.sql` next to the main bundle.
+ *
+ * `db/paths.js` `defaultMigrationsDir()` resolves `./migrations/` against the main bundle's own
+ * `import.meta.url`, so the SQL has to sit at `out/main/migrations/`. Without this the app
+ * builds, launches, and silently runs at `user_version = 0` with an empty database — the
+ * packaging failure mode is a WORKING app with no schema, not a crash, so nothing upstream
+ * would ever notice.
+ *
+ * A hand-rolled plugin rather than `viteStaticCopy` because this is one directory of read-only
+ * assets, and the alternative is a dependency whose job is to move files. `emitFile` keeps the
+ * SQL inside the build graph, so rollup reports it as an emitted asset and a missing file fails
+ * the build instead of producing an empty directory.
+ *
+ * `verify:migrations` then asserts the emitted tree matches `src/main/db/migrations/`, so a
+ * rename or a new migration cannot land without being packaged.
+ */
+function emitMigrations() {
+  const srcDir = path.resolve('src/main/db/migrations')
+  return {
+    name: 'minimarck:emit-migrations',
+    generateBundle() {
+      let files
+      try {
+        files = readdirSync(srcDir)
+      } catch {
+        // No migrations yet is a legitimate state (the runner is allowed to run against an
+        // absent directory), so this is a warning rather than a build failure.
+        this.warn('src/main/db/migrations not found; no migration will be packaged')
+        return
+      }
+      for (const file of files) {
+        if (!file.toLowerCase().endsWith('.sql')) continue
+        this.emitFile({
+          type: 'asset',
+          fileName: `migrations/${file}`,
+          source: readFileSync(path.join(srcDir, file))
+        })
+      }
+    }
+  }
+}
 
 /**
  * electron-vite build for the desktop shell. Three targets: the Electron main process,
@@ -29,7 +74,10 @@ export default defineConfig({
   main: {
     build: {
       outDir: 'out/main',
-      rollupOptions: { input: { index: 'src/main/index.js' } }
+      rollupOptions: {
+        input: { index: 'src/main/index.js' },
+        plugins: [emitMigrations()]
+      }
     }
   },
   preload: {
