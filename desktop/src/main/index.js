@@ -17,6 +17,7 @@ import { bootstrapDatabase } from './db/bootstrap.js'
 import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
+import { runPaymentDrive } from './payment-drive.js'
 
 const isPackaged = app.isPackaged
 
@@ -302,7 +303,7 @@ async function main() {
   //
   // Resolved once, after the seed has run, so it sees the business and operator the seed just
   // created. Every group below is a group the FROZEN contract already named — no `OPS` edit, so
-  // the count is still 88. `auth.me` answers for the operator (there is no login on this
+  // the count is still 89. `auth.me` answers for the operator (there is no login on this
   // platform); `productos`/`categorias` are what a point of sale reads to show its grid and look
   // up a barcode; `deudores` is what makes a credit sale possible, since a credit sale with no
   // named debtor is income nobody can collect.
@@ -340,11 +341,38 @@ async function main() {
   // different repeats, two different flags, and neither one is a module-level global that a
   // second window would have to contend for.
   let probeStarted = false
+  // Separate from `probeStarted` on purpose: the two drives can both be requested by a reviewer
+  // in one run, and one flag would let the second silently reuse the first's single-shot guard.
+  let driveStarted = false
   win.webContents.on('did-finish-load', () => {
     installMenu(() => shell.openPath(db.paths.dataDir))
     if (process.env.MINIMARCK_S0_PROBE && !probeStarted) {
       probeStarted = true
       runLaunchProbe(win)
+    }
+    // The payment drive, same gating story as the probe above: off unless the env var is set, and
+    // it drives THIS window - the real one, with the real preload over the real app:// origin.
+    // Its `onReady` resolves `{ ok, total, failed }` and the exit code follows.
+    if (process.env.MINIMARCK_PAYMENT_DRIVE && !driveStarted) {
+      driveStarted = true
+      // A rejection here would otherwise leave the window open and the process alive with no
+      // output, so the drive carries both a catch and a wall-clock watchdog. A driven window that
+      // never reaches `finish()` is a failure, not something to wait on forever.
+      const watchdog = setTimeout(() => {
+        console.error('PAYMENT_DRIVE_ERROR timeout after 120s — the drive never reached finish()')
+        app.exit(1)
+      }, 120_000)
+      runPaymentDrive(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`PAYMENT_DRIVE_RESULT ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`PAYMENT_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
     }
   })
 

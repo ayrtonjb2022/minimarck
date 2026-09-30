@@ -11,6 +11,7 @@
     "launch": "npm run build && electron out/main/index.js",
     "spike": "electron src/main/spike/node-sqlite.spike.js",
     "probe:launch": "node scripts/probe-launch.mjs",
+    "drive:payment": "node scripts/drive-payment.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:offline": "node scripts/verify-offline.mjs",
@@ -21,7 +22,7 @@
     "db:reset": "node scripts/db-reset.mjs",
     "db:reset:force": "node scripts/db-reset.mjs --force",
     "db:demo": "node scripts/db-demo.mjs",
-    "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:offline && npm run verify:licences && npm run probe:launch"
+    "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:offline && npm run verify:licences && npm run probe:launch && npm run drive:payment"
   },
   "engines": {
     "node": ">=24.18.0 <25"
