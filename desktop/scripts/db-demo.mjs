@@ -45,18 +45,12 @@ const TABLES = tablesCreatedBy(
 )
 
 /**
- * The demo shop. Prices are pesos, quantities are kilos, and the weighed ones are weighed ON
- * PURPOSE: the scale is the part of this app that had two silent, million-times bugs, and a
- * catalog without a weighed product would let both come straight back.
+ * The demo shop catalogue is NOT defined here. It lives in `src/shared/demo-catalogo.js` and is
+ * imported, so this terminal route and the renderer's first-run button seed byte-identical data.
+ * Two copies would drift, and the day they did, the button in the app would load a catalogue the
+ * script no longer matched.
  */
-const CATALOGO = [
-  { nombre: 'Queso artesanal', codigo: '7790123000015', precio: 2000, costo: 1200, stock: 12, unidad: 'kg' },
-  { nombre: 'Pan de molde', codigo: '7790123000022', precio: 850, costo: 500, stock: 40, unidad: 'unidad' },
-  { nombre: 'Leche entera 1 L', codigo: '7790123000039', precio: 1200, costo: 900, stock: 60, unidad: 'unidad' },
-  { nombre: 'Gaseosa 500 ml', codigo: '7790123000046', precio: 900, costo: 650, stock: 144, unidad: 'unidad' },
-  { nombre: 'Fideos 500 g', codigo: '7790123000053', precio: 750, costo: 480, stock: 80, unidad: 'unidad' },
-  { nombre: 'Aceite 900 ml', codigo: '7790123000060', precio: 2400, costo: 1900, stock: 24, unidad: 'unidad' }
-]
+const { CATALOGO_DEMO, demoToProductoInput } = await import('../src/shared/demo-catalogo.js')
 
 const paths = resolveDataPaths(process.env.APPDATA ? path.join(process.env.APPDATA, 'MiniMarck') : '', process.env)
 if (!paths.dbFile) {
@@ -87,7 +81,7 @@ try {
 
   const creados = []
   const existentes = []
-  for (const p of CATALOGO) {
+  for (const p of CATALOGO_DEMO) {
     const yaEsta = conn.db
       .prepare('SELECT id FROM productos WHERE negocio_id = ? AND codigo = ?')
       .get(ctx.negocioId, p.codigo)
@@ -95,15 +89,7 @@ try {
       existentes.push(p.nombre)
       continue
     }
-    productos.crear(ctx, {
-      nombre: p.nombre,
-      codigo: p.codigo,
-      precio: p.precio,
-      precioCompra: p.costo,
-      stock: p.stock,
-      unidadMedida: p.unidad,
-      stockMinimo: p.unidad === 'kg' ? 1 : 5
-    })
+    productos.crear(ctx, demoToProductoInput(p))
     creados.push(p.nombre)
   }
 

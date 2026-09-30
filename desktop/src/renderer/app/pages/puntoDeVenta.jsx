@@ -15,8 +15,11 @@ import { formatCentavos, formatCantidad } from "../utils/formatters";
 // `src/shared/` es el módulo que main y el renderer comparten para no discrepar sobre plata y
 // cantidades. Desde `src/renderer/app/pages/` son tres niveles arriba, NO cuatro: un `..` de más
 // apunta a `desktop/shared/`, que no existe, y el error sólo aparece al resolver, no al parsear.
-import { lineTotalCentavos, toMilli, escalaUnidad, QTY_SCALE, MAX_MILLI } from "../../../shared/qty";
-import { toCents } from "../../../shared/money";
+  import { lineTotalCentavos, toMilli, escalaUnidad, QTY_SCALE, MAX_MILLI } from "../../../shared/qty";
+  import { toCents } from "../../../shared/money";
+  // El catálogo de ejemplo es la MISMA definición que usa `npm run db:demo`, no una copia: dos
+  // listas se desincronizan y el día que lo hacen, el botón carga algo que el script ya no conoce.
+  import { CATALOGO_DEMO, demoToProductoInput } from "../../../shared/demo-catalogo";
 
 
 const METODOS_PAGO = [
@@ -681,6 +684,55 @@ export default function PuntoDeVenta() {
   const conStock = productosFiltrados.filter((p) => (p.stockMilli ?? 0) > 0);
   const sinStock = productosFiltrados.filter((p) => (p.stockMilli ?? 0) <= 0);
 
+  // LOS TRES VACÍOS SON DISTINTOS Y ANTES SE CONFUNDÍAN EN UNO.
+  //
+  // `conStock` y `sinStock` vacíos significaban las tres cosas siguientes con el mismo mensaje,
+  // "No se encontraron productos", y las tres necesitan una acción distinta:
+  //
+  //   1. PRIMERA VEZ — el catálogo está VACÍO de verdad. Ocurre en cada instalación nueva, que es
+  //      el primer minuto de uso de una app que el usuario acaba de instalar. Decir "no se
+  //      encontraron" suena a que la búsqueda falló, cuando en realidad no hay nada que buscar y
+  //      el POS queda entero —productos, escáner, balanza, venta— inalcanzable sin que ninguna de
+  //      esas pantallas avise que falta algo. Por eso acá va el botón para cargar el catálogo de
+  //      ejemplo.
+  //   2. BÚSQUEDA — hay catálogo pero el texto no matchea. Corregir el texto es la acción.
+  //   3. CATEGORÍA — hay catálogo pero se está mirando una categoría vacía o sin stock. Volver a
+  //      "Todas" es la acción.
+  //
+  // La distinción se hace contra `productos` (el catálogo entero, sin filtrar) y no contra
+  // `productosFiltrados`, porque sólo la primera responde a la pregunta "¿es la primera vez?".
+  const catalogoVacio = productos.length === 0;
+  const filtrando = filtro.trim() !== "" || categoriaActiva !== "Todas";
+  const [confirmDemo, setConfirmDemo] = useState(false);
+
+  // La siembra usa `productos.create`, el MISMO camino que usa la pantalla de Productos. No se
+  // agregó ninguna operación al contrato IPC — sigue en 89 — ni un atajo de INSERT.
+  // Un producto que entrara por una puerta distinta no dispararía las mismas validaciones que uno
+  // cargado de verdad, y un catálogo de ejemplo que esquiva las reglas de un producto real no es
+  // una demostración de la app: es un dato basura con forma de app.
+  //
+  // El `withGuard` que se usa es el MISMO de la venta, no una segunda instancia. Dos guards en la
+  // misma pantalla significan dos candados: el usuario podía apretar «Cargar ejemplo» mientras una
+  // venta estaba en vuelo, y las dos escrituras al mismo catálogo se cruzaban.
+  const sembrarCatalogoDemo = async () => {
+    setConfirmDemo(false);
+    await withGuard(async () => {
+      try {
+        for (const p of CATALOGO_DEMO) {
+          await productosAPI.crear(demoToProductoInput(p));
+        }
+        await queryClient.invalidateQueries({ queryKey: ["productos"] });
+        showToast(
+          `Catálogo de ejemplo cargado: ${CATALOGO_DEMO.length} productos. Son ficticios; borralos desde Productos cuando quieras.`,
+          "success",
+          6000
+        );
+      } catch (err) {
+        showToast(mensajeDeError(err) || "No se pudo cargar el catálogo de ejemplo", "error");
+      }
+    });
+  };
+
   // El total, en centavos, con la aritmética de `shared/qty`. La web hacía
   // `s + parseFloat(i.precio) * i.qty` sobre pesos: 3 × 33,33 son 99,99 y el ticket podía mostrar
   // un centavo menos que lo que se cobraba.
@@ -1082,10 +1134,65 @@ export default function PuntoDeVenta() {
 
         <div className="pos-scroll">
           {conStock.length === 0 && sinStock.length === 0 ? (
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
-              <i className="fa-solid fa-search" style={{fontSize:"32px"}}></i>
-              <p style={{fontSize:"14px"}}>No se encontraron productos</p>
-            </div>
+            catalogoVacio ? (
+              /* PRIMERA VEZ. El POS acaba de instalarse y el catálogo está vacío de verdad. Este
+                 caso NOexistía antes: caía en el mismo mensaje de búsqueda, de modo que el primer
+                 minuto de uso de una app recién instalada era una grilla vacía sin explicación y
+                 sin salida — sin productos no hay venta, ni escáner, ni balanza. */
+              <div className="pos-primera-vez">
+                <i className="fa-solid fa-box-open" style={{fontSize:"36px"}} aria-hidden="true"></i>
+                <h3>Aún no cargaste ningún producto</h3>
+                <p style={{maxWidth:"420px",textAlign:"center",lineHeight:"1.5"}}>
+                  Para poder cobrar necesitás al menos un producto con precio y stock.
+                  Podés empezar con un catálogo de ejemplo y borrarlo cuando quieras.
+                </p>
+                {confirmDemo ? (
+                  <div className="pos-primera-vez-confirm" role="group" aria-label="Confirmar carga del catálogo de ejemplo">
+                    <p style={{textAlign:"center",maxWidth:"420px",lineHeight:"1.5"}}>
+                      Se van a crear <strong>{CATALOGO_DEMO.length} productos ficticios</strong> con
+                      precios y stock de ejemplo. No se borra nada existente, y podés eliminarlos
+                      desde <strong>Productos</strong> cuando cargues los tuyos.
+                    </p>
+                    <div style={{display:"flex",gap:"8px"}}>
+                      <button className="btn-primary" onClick={sembrarCatalogoDemo} disabled={isSubmitting}>
+                        {isSubmitting ? "Cargando..." : `Sí, cargar ${CATALOGO_DEMO.length} productos de ejemplo`}
+                      </button>
+                      <button className="btn-secondary" onClick={() => setConfirmDemo(false)} disabled={isSubmitting}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Un solo botón, y es el que resuelve el problema. El POS abre en `/pos` y esta
+                     build no tiene login, así que la pantalla de Productos es un placeholder y no
+                     es a dónde puede ir el cajero: ofrecer «Cargar mis productos» como alternativa
+                     sería mandar a un sitio que dice «todavía no existe». Sin productos esta
+                     pantalla no puede cobrar nada, entonces sembrar el catálogo es la acción, no
+                     un adorno. */
+                  <button className="btn-primary" onClick={() => setConfirmDemo(true)}>
+                    <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Cargar catálogo de ejemplo
+                  </button>
+                )}
+              </div>
+            ) : filtrando ? (
+              /* HAY catálogo pero el filtro no matchea. La acción es cambiar el filtro, no cargar
+                 datos: ofrecer «cargar ejemplo» acá metería productos de mentira en una tienda que
+                 ya tiene los suyos. */
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
+                <i className="fa-solid fa-search" style={{fontSize:"32px"}} aria-hidden="true"></i>
+                <p style={{fontSize:"14px"}}>Ningún producto coincide con la búsqueda</p>
+                <button className="btn-secondary" onClick={() => { setFiltro(""); setCategoriaActiva("Todas"); }}>
+                  Quitar filtros
+                </button>
+              </div>
+            ) : (
+              /* Hay catálogo y no hay filtros, pero los productos visibles están todos sin stock.
+                 Es information, no un vacío: el artículo existe y hay que reponerlo. */
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
+                <i className="fa-solid fa-triangle-exclamation" style={{fontSize:"32px"}} aria-hidden="true"></i>
+                <p style={{fontSize:"14px"}}>Todos tus productos están sin stock</p>
+              </div>
+            )
           ) : (
             <div style={{display:"flex",flexDirection:"column",gap:"24px"}}>
               {conStock.length > 0 && (
@@ -1101,7 +1208,12 @@ export default function PuntoDeVenta() {
                     if (enTicket) cardClass += " en-carrito";
                     else if (stockMilli <= 5 * QTY_SCALE) cardClass += " stock-bajo";
                     return (
-                      <div key={p.id} className={cardClass} onClick={() => agregarProducto(p)}>
+                      // `data-producto-id` is not decoration. The grid is sorted by name, so the FIRST
+                      // card is not the first row by id, and anything that needs to know which product
+                      // a card is — the payment drive, a test, a support tool pointed at a screenshot —
+                      // would otherwise have to match on the product's NAME, which is not unique and
+                      // is display text. The id belongs in the DOM for the same reason `id` does.
+                      <div key={p.id} data-producto-id={p.id} className={cardClass} onClick={() => agregarProducto(p)}>
                         {enTicket && <span className="badge-cart-qty">{formatCantidad(enTicket.qtyMilli, { unidad: p.unidadMedida })}</span>}
                         <div className="icon-product">
                           {p.imagen ? <img src={p.imagen} alt={p.nombre} /> : <i className="fa-solid fa-cube"></i>}

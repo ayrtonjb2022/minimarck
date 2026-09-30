@@ -597,6 +597,36 @@ table tr:hover td { background: var(--kanagawa-bg); }
   padding-bottom: 8px;
 }
 
+/* La pantalla de PRIMERA VEZ: catálogo vacío en una instalación nueva.
+   Sin esto el POS mostraba un bloque con una lupa y la frase «No se encontraron productos», que es
+   exactamente el mensaje equivocado para un catálogo que todavía no existe. */
+.pos-primera-vez {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 320px;
+  padding: 32px 16px;
+  color: var(--kanagawa-comment);
+}
+.pos-primera-vez h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--kanagawa-fg);
+}
+.pos-primera-vez-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1.5px solid var(--ctp-surface1);
+  border-radius: 12px;
+  background: var(--kanagawa-bg-alt);
+  max-width: 480px;
+}
+
 .pos-product-card {
   background: var(--kanagawa-bg-alt);
   border: 1.5px solid var(--ctp-surface1);
