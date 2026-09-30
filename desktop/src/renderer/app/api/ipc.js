@@ -4,7 +4,7 @@
  * WHY THIS IS NOT AXIOS. The web reached its API over HTTP to a host and a port, so every
  * `api/*.js` module was a thin wrapper around `axios.create({ baseURL })` and every call site
  * unwrapped `response.data.data`. The desktop has no host, no port and no URL: it has
- * `window.minimarck.call(group, op, payload)`, which is an operation name in the frozen 88-op
+ * `window.minimarck.call(group, op, payload)`, which is an operation name in the frozen 89-op
  * contract and nothing else. So this file does what axios did — send a request, return the
  * result, throw on failure — and returns the RESULT ITSELF.
  *

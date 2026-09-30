@@ -7,16 +7,18 @@ runner, and a first-run seed. **S2** added the schema itself: the 20 tables the 
 declare, every money column an integer number of centavos, and the packaging that gets the SQL
 into the build.
 
-No business logic yet. Two of the 88 contract operations are implemented (`db.info` and
-`db.schemaVersion`); everything else answers a structured `NOT_IMPLEMENTED` (501), so the renderer
-never mistakes "not built yet" for "succeeded".
+The contract is 89 operations, of which **27 are implemented** and **62 honestly answer a structured
+`NOT_IMPLEMENTED` (501)**, so the renderer never mistakes "not built yet" for "succeeded". A shop
+can open a till, sell, take cash with the change calculated by the database, print a debtor's
+receipt, and cancel a sale.
 
 ## Quick path
 
 ```bash
 npm install
-npm run verify:s0        # spike + tests + build + preload-format + migrations-packaged + offline + launch probe
+npm run verify:s0        # spike + tests + build + preload-format + migrations-packaged + offline + launch probe + payment drive
 npm run probe:launch     # just the launch probe (also runs inside verify:s0)
+npm run drive:payment    # just the payment drive (also runs inside verify:s0)
 ```
 
 Expected: `verify:s0` green. The Node version is pinned in `package.json` `engines`
@@ -31,7 +33,7 @@ exists precisely to pin that runtime rather than drift with whatever the machine
 | No native module, no rebuild, no ABI lock | The spike asserts the stack is `node:sqlite` only | `ABORT CRITERION CLEARED` |
 | The app makes **zero** network calls | `verify:offline` fails the build on any external origin in any build output; the renderer probe instruments fetch, XHR, WebSocket, EventSource, sendBeacon and off-origin elements | `0 outbound attempts to any real origin`, with the recorder proven live on all 6 |
 | The renderer gets a narrow bridge, not `ipcRenderer` | Preload exposes exactly `call`, `on`, `platform`, `env` and nothing else | `SEC-1 bridge exposes exactly 4 members` |
-| The renderer cannot reach SQL or the filesystem | `sandbox:true` + an 88-op allowlist registry; unknown group/op is rejected in main | `Unknown group: evil` |
+| The renderer cannot reach SQL or the filesystem | `sandbox:true` + a 89-op allowlist registry; unknown group/op is rejected in main | `Unknown group: evil` |
 | The origin is real, so storage and routing work | `app://bundle` is privileged + standard, so `localStorage` and `BrowserRouter` behave | `origin is a real origin — app://bundle` |
 | Only the trusted origin can reach IPC | `SEC-4` compares the **parsed** origin, so `http://localhost:5173@evil.com/x` is rejected | `REJECT(403)` on all 4 prefix-collision shapes |
 
@@ -195,13 +197,21 @@ is unit-tested (`tests/db/reset.spec.js`) rather than only reachable by hand.
 | `npm run verify:migrations` | The emitted migrations are byte-for-byte identical to source, and the bundled main would resolve them. S2 |
 | `npm run verify:offline` | No external origin, CDN, raw-content host, socket.io or ScannerSync in **any** of the three build outputs |
 | `npm run probe:launch` | The **real** window passes its in-window checks, with the real preload |
+| `npm run drive:payment` | The **real** app can actually take money: open a till, `F2`, type the tender, confirm, and read the sale, the stock, the drawer and the change back out of the **real** database file |
 | `npm run verify:s0` | All of the above, in order. This is the gate that must be green |
 
-`probe:launch` is the one that matters most: it opens an actual window and asserts from inside
-the renderer. A preload that fails to load, a sandbox that leaks, or an opaque origin all turn
-into a non-zero exit code. It used to sit **outside** `verify:s0`, which meant the single command
-a developer was told to run could not catch a broken bridge — that gap is why it is in the gate
-now.
+`probe:launch` and `drive:payment` are the two that matter most: they open an actual window and
+assert from inside the running application. A preload that fails to load, a sandbox that leaks,
+or an opaque origin all turn into a non-zero exit code. `probe:launch` used to sit **outside**
+`verify:s0`, which meant the single command a developer was told to run could not catch a broken
+bridge — that gap is why it is in the gate now.
+
+`drive:payment` exists because 371 passing tests still shipped an app that opened on a "screen
+does not exist" placeholder, and a point of sale with no way back to the sales list. Every test
+mounted a component or rendered at `/`; none of them asked what URL the app really launches with,
+or whether the till screen could be left. Both bugs are fixed, and both now have a check that
+fails if they come back. It runs against a throwaway data directory, so it can never touch a real
+shop's database.
 
 ### Read the test COUNT, not just the exit code
 

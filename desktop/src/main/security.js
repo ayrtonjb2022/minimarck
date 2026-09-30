@@ -59,7 +59,7 @@ export function canonicalOrigin(frameUrl) {
  * origin test: `http://localhost:5173@evil.com/x` starts with `http://localhost:5173` but
  * its host is `evil.com`, and `http://localhost:5173.evil.com/` is a different site
  * entirely. Both were accepted by the old prefix predicate in an unpackaged build, and the
- * `will-navigate` guard shared that predicate, so a renderer could both CALL the 88-op
+ * `will-navigate` guard shared that predicate, so a renderer could both CALL the 89-op
  * contract and NAVIGATE to an origin it does not own.
  */
 export function isTrustedOrigin(frameUrl, isPackaged) {

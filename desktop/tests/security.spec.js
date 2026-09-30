@@ -108,7 +108,7 @@ describe('SEC-4 sender validation', () => {
    *
    * The old predicate was `url.startsWith(DEV_ORIGIN)`. Every URL below starts with the
    * literal text `http://localhost:5173` and every one of them is a DIFFERENT origin, so
-   * all three were ACCEPTED in an unpackaged build: the renderer could reach the 88-op IPC
+   * all three were ACCEPTED in an unpackaged build: the renderer could reach the 89-op IPC
    * contract from `evil.com`, and the shared `will-navigate` guard let it navigate there.
    * These are the three shapes a prefix test cannot distinguish from the real thing.
    */

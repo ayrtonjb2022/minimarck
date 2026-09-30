@@ -29,19 +29,19 @@ the POS will ever collect a split, and only that unlocks `mixto` on either side.
 
 ---
 
-## 2. Sale cancellation is data-layer capability, not a renderer operation
+## 2. Sale cancellation - RESOLVED, this is no longer a gap
 
 **Web**: `PATCH /ventas/:id/cancelar` exists; a cancelled sale returns its stock and posts the
 reversal.
 
-**Desktop**: the 88-op IPC contract (frozen for this port) is `OPS.ventas = ['list', 'get',
-'create']` — there is no cancel op, so no renderer path can cancel a sale today.
-`ventas.repo.js#cancelar` exists in full (stock restored, mirrored ledger, egreso in the drawer,
-audit UPDATE), is exercised by `tests/db/ventas.spec.js`, and is exactly what the V2 wiring
-calls once an op is added. Nothing about the capability is missing; only the plumbing is.
+**Desktop**: was the single largest port gap - the frozen contract had `OPS.ventas = ['list',
+'get', 'create']`, so no renderer path could cancel a sale, even though `ventas.repo.js#cancelar`
+existed in full. `ventas.cancel` is now in the contract (89 ops, up from 88), registered in
+`src/main/ipc/ventas.js`, and the sales list has a two-step cancel with a required confirmation.
 
-**Status**: port gap, by contract freeze. The single largest known capability gap; everything
-else on this page is a willed difference.
+**Status**: RESOLVED. `npm run drive:payment` proves it in the real app: it takes a sale through
+the till, cancels it from the list, and reads back that the stock returned to its original value
+and the drawer recorded the egress.
 
 ---
 

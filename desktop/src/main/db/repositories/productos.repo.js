@@ -12,7 +12,7 @@ import { requireTenant } from '../seed.js'
  * in the app that could put a product there in the first place. The POS screen is therefore only
  * reachable once these reads exist, and they are inside the FROZEN contract already —
  * `productos: [list, get, findByCode, create, update, remove]` and
- * `categorias: [list, get, create, update, remove]`. Nothing was added to `OPS` (still 88).
+ * `categorias: [list, get, create, update, remove]`. Nothing was added to `OPS` (still 89).
  *
  * WHAT IS IMPLEMENTED, AND WHAT IS NOT. `list`, `get`, `findByCode` and `create` for products;
  * `list` and `create` for categories. `update`, `remove` and the rest are contract members whose
