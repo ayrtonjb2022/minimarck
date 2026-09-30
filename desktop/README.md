@@ -25,6 +25,31 @@ Expected: `verify:s0` green. The Node version is pinned in `package.json` `engin
 (`>=24.18.0 <25`) because the app ships Electron 44.4.5's Node **24.21.0** and the S0 spike
 exists precisely to pin that runtime rather than drift with whatever the machine has.
 
+## First run: the empty catalogue
+
+A brand-new install has **no products** — MiniMarck does not ship a shop's stock. Opening the point
+of sale with an empty catalogue used to show an empty grid with no way forward, which reads as
+"broken" rather than "new". It now distinguishes three different empties, because they need three
+different answers:
+
+| State | What the user sees |
+|---|---|
+| First run, nothing in the catalogue | A panel explaining the shelf is empty, with a button to load the **fictional demo catalogue** |
+| A search or category filter that matches nothing | "No products match", keeping the search box and the filters in view |
+| Products exist but all are out of stock | The out-of-stock list, marked as such |
+
+The demo catalogue is **opt-in and fictional** (six generic grocery items: pan, leche, aceite, fideos,
+gaseosa, queso). It is created through the ordinary `productos.create` IPC operation — the same path
+the app uses for a real product — so loading it exercises real code rather than a back door. The
+same list is available from the command line:
+
+```bash
+npm run db:demo     # seeds the CURRENT profile's database
+```
+
+Both write through `src/shared/demo-catalogo.js`, so the button and the CLI can never disagree about
+what the demo data is. The IPC contract is still **89 operations**; nothing was added for this.
+
 ## What S0 proves
 
 | Claim | How it is proven | Evidence |
@@ -92,6 +117,74 @@ policy; `sandbox:true` is the outer boundary. See `VENDORED.md`.
 
 `node:sqlite` is used **directly** — no `better-sqlite3`, no `node-gyp`, no prebuilt binary, so
 there is no native ABI to break on an Electron upgrade.
+
+## Building and shipping the installer
+
+```bash
+npm run dist          # production build -> NSIS installer at release/MiniMarck Setup.exe
+npm run pack:dir      # same build, no installer — the unpacked app only
+```
+
+`dist` produces `release\MiniMarck Setup.exe` (about 96 MB) and records the build in
+`release\LATEST.txt`. **Double-click it.** It installs per-user under
+`%LOCALAPPDATA%\Programs\MiniMarck` with **no administrator prompt**, creates a desktop and
+Start-menu shortcut, and appears in Programs and Features as *MiniMarck 1.0.0*.
+
+- **The installer is UNSIGNED.** Windows SmartScreen will show "Windows protected your PC" on
+  first run; the user clicks *More info* → *Run anyway*. This is expected for a build that is not
+  bought from a certificate authority, and it is a one-time warning per machine, not a defect.
+- **Language.** The wizard is Spanish (`nsis.installerLanguages: [es_ES]`). Proven by running it —
+  see `verify:installer-ui` below — not by grepping the binary.
+- **Uninstalling keeps the data.** `deleteAppDataOnUninstall: false` means the shop's database
+  survives, so reinstalling brings the catalogue, the sales ledger and the till history back. See
+  `## Uninstall keeps the data` for the proof.
+
+### Why the build stages into a timestamped directory
+
+`npm run dist` writes to `release\build-<timestamp>\`, then copies the installer up to
+`release\MiniMarck Setup.exe`. It does not build into `release\` directly because a leftover
+`release\win-unpacked\` from an earlier run can be **locked by a security scanner** (Avast and the
+Windows Search indexer were both observed holding memory-mapped handles to `app.asar` on this
+machine). `electron-builder` then fails with `EBUSY: resource busy or locked, unlink ... app.asar`
+even though no build process is running. Staging means every build writes somewhere new and never
+touches the locked directory. Deleting the old `release\` is still fine to attempt, but it is not
+required and may fail.
+
+### Verifying a build
+
+```bash
+npm run verify:package        # the staged release/: asar contents, no probe, installer is a PE
+npm run verify:installer-ui   # RUNS the installer and reads the Spanish captions off the window
+npm run verify:installed      # install -> migrate -> seed -> sell -> uninstall -> prove data survived
+npm run verify:migrations     # migrations in out/ AND inside the packaged app.asar
+```
+
+`verify:installer-ui` opens the wizard, enumerates its Win32 controls, asserts the captions are
+Spanish, and closes it **without installing** — so it is safe to run on a machine that already has
+MiniMarck. The assertion is on the real window rather than on the .exe because NSIS **compresses**
+its data section: the wizard's strings are not present as plaintext in the file, and a grep for
+`Siguiente` cannot succeed on a perfectly Spanish installer.
+
+`verify:installed` is the end-to-end proof and it **does** modify the machine: it moves any
+existing profile aside into `%LOCALAPPDATA%\Temp\opencode\`, installs, drives a real sale through the
+installed app, uninstalls, and checks the database is still intact afterwards. The uninstaller runs
+asynchronously, so the script polls until the program directory and the `HKCU` uninstall key are
+actually gone rather than assuming the uninstaller had finished when it exited.
+
+## Uninstall keeps the data
+
+A shop's stock, prices and sales history are worth more than the program, so the uninstaller is
+configured **not** to touch `%APPDATA%\MiniMarck`. This is verified rather than assumed:
+
+```
+the program was removed                        — after 10.6s
+it is gone from Programs and Features          — HKCU Uninstall key
+the data directory was NOT deleted             — %APPDATA%\MiniMarck\data\minimarck.db
+the database is still valid after uninstall    — integrity_check: ok
+the sale ledger SURVIVED the uninstall, unchanged
+the catalogue survived the uninstall           — 6 products
+the drawer movements survived                  — 3 movimiento(s)
+```
 
 ## Build layout
 
