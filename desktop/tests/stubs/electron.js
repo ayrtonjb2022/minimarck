@@ -14,8 +14,39 @@ export const contextBridge = {
   }
 }
 
+// S0 EXTENSION (was: `invoke: async () => undefined`, which answered every call with `undefined`).
+//
+// The same lesson as `appEvents` below, one layer over: a stub that ANSWERS every call with
+// `undefined` cannot tell a working bridge from a broken one, because a renderer bug and a
+// missing handler are indistinguishable at the call site — both read `undefined`. So `invoke`
+// now ROUTES to a handler that a test registers with `registerMainHandler`, on the real
+// `CHANNEL`, exactly as Electron routes `ipcRenderer.invoke` to `ipcMain.handle`.
+//
+// This is what lets `tests/integration/` drive the REAL preload against the REAL registry:
+// before this, the entire renderer -> preload -> main chain was unreachable from a test, and
+// `src/main/index.js` (where `installIpc` is defined) imports `electron` at line 1 and boots
+// the app on import, so its composition could never be exercised without launching Electron.
+// Nothing simulates Electron behaviour here beyond "the handler is retrievable by channel".
+export const mainHandlers = Object.create(null)
+export function registerMainHandler(channel, fn) {
+  mainHandlers[channel] = fn
+}
+export function resetMainHandlers() {
+  for (const k of Object.keys(mainHandlers)) delete mainHandlers[k]
+}
+/** The URL `installIpc` reads with `assertTrustedSender(event.senderFrame?.url, isPackaged)`. */
+export let senderFrameUrl = 'file:///app/index.html'
+export function setSenderFrameUrl(url) {
+  senderFrameUrl = url
+}
+
 export const ipcRenderer = {
-  invoke: async () => undefined,
+  invoke: async (channel, payload) => {
+    const fn = mainHandlers[channel]
+    if (!fn) throw new Error(`No handler registered for '${channel}'`)
+    // The same shape Electron passes: an event carrying the frame that sent the message.
+    return fn({ senderFrame: { url: senderFrameUrl } }, payload)
+  },
   on: () => undefined,
   removeListener: () => undefined
 }
@@ -23,7 +54,11 @@ export const ipcRenderer = {
 export const BrowserWindow = function BrowserWindow() {}
 BrowserWindow.getAllWindows = () => []
 
-export const ipcMain = { handle: () => undefined }
+export const ipcMain = {
+  handle: (channel, fn) => {
+    mainHandlers[channel] = fn
+  }
+}
 
 // S1 EXTENSION (was: `on: () => undefined`, which discarded every registration).
 //
