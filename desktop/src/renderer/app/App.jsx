@@ -15,7 +15,7 @@ import Ventas from "./pages/Ventas";
  * of them cannot work here at all. Login and Register need a server that does not exist.
  * ScannerSync is the phone-side half of the socket.io/QR flow, and the socket is gone
  * because there is no network. Proveedores, Compras, Reportes and Contabilidad depend on
- * IPC operations that the frozen 88-op contract does not contain, and the contract is
+ * IPC operations that the frozen 89-op contract does not contain, and the contract is
  * frozen on purpose.
  *
  * Importing them anyway would have produced a bundle that fails to resolve at startup, so
@@ -31,11 +31,11 @@ const PANTALLAS_FALTANTES = [
   { ruta: "/categorias", nombre: "Categorías", motivo: "el filtro del POS ya las usa" },
   { ruta: "/caja", nombre: "Caja", motivo: "se abre al vender, el arqueo manual no" },
   { ruta: "/clientes", nombre: "Clientes", motivo: "los deudores se eligen al cobrar" },
-  { ruta: "/proveedores", nombre: "Proveedores", motivo: "no esta en el contrato de 88 operaciones" },
-  { ruta: "/compras", nombre: "Compras", motivo: "no esta en el contrato de 88 operaciones" },
-  { ruta: "/reportes", nombre: "Reportes", motivo: "no esta en el contrato de 88 operaciones" },
-  { ruta: "/contabilidad", nombre: "Contabilidad", motivo: "no esta en el contrato de 88 operaciones" },
-  { ruta: "/configuracion", nombre: "Configuracion", motivo: "no esta en el contrato de 88 operaciones" },
+  { ruta: "/proveedores", nombre: "Proveedores", motivo: "no esta en el contrato de 89 operaciones" },
+  { ruta: "/compras", nombre: "Compras", motivo: "no esta en el contrato de 89 operaciones" },
+  { ruta: "/reportes", nombre: "Reportes", motivo: "no esta en el contrato de 89 operaciones" },
+  { ruta: "/contabilidad", nombre: "Contabilidad", motivo: "no esta en el contrato de 89 operaciones" },
+  { ruta: "/configuracion", nombre: "Configuracion", motivo: "no esta en el contrato de 89 operaciones" },
 ];
 
 /**
@@ -138,6 +138,17 @@ const App = () => {
     <Routes>
       {/* A till app opens on the till, not on a menu. */}
       <Route path="/" element={<Navigate to="/pos" replace />} />
+      {/* And `/index.html` opens on the till too, because THAT is the URL the app launches with.
+          `rendererUrl()` in src/main/protocol.js returns `app://bundle/index.html`, so the path
+          `BrowserRouter` sees on a real launch is `/index.html` — which is not `/` and matched
+          nothing but the `*` catch-all below. The first thing an operator saw on every launch was
+          the "No disponible" placeholder, and the till was one click further away than the
+          comment above promises. Found by launching the app, not by a test: every test mounts a
+          component or renders at `/`, so nothing ever asked what the real launch URL resolves to.
+          The redirect is deliberately a ROUTE and not a change to `rendererUrl()`: deep links like
+          `app://bundle/ventas` rely on `isNavigationRequest()` treating a real file path as a
+          file, and moving the launch URL would put that rule and the router in each other's way. */}
+      <Route path="/index.html" element={<Navigate to="/pos" replace />} />
       <Route
         path="/pos"
         element={

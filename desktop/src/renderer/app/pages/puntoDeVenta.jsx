@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+  import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+  import { NavLink } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
@@ -1047,6 +1048,21 @@ export default function PuntoDeVenta() {
             <button onClick={toggleTheme} className="theme-toggle" title={posTheme === "light" ? "Modo oscuro" : "Modo claro"} aria-label={posTheme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}>
               <i className={`fa-solid ${posTheme === "light" ? "fa-moon" : "fa-sun"}`} aria-hidden="true"></i>
             </button>
+            {/* LA SALIDA DEL PUNTO DE VENTA. Antes no existía ninguna.
+                `/pos` se renderiza FUERA de `app-layout` — es una pantalla de ancho completo, sin la
+                barra lateral que tienen el resto de las pantallas — y este archivo no tenía ni un
+                `NavLink`, ni un `useNavigate`, ni un botón de "volver". Consecuencia real, no
+                teórica: la app abre acá (`/index.html` redirige a `/pos`), así que después de
+                cobrar el cajero se quedaba sin forma de llegar a la lista de ventas, que es
+                justamente donde vive la cancelación de una venta. Salir era reiniciar la app.
+
+                Va como `NavLink` y no como `<a href>` para que sea navegación del router, sin
+                recargar el documento: recargar la app en mitad de un ticket abierto perdería el
+                ticket. El ticket vive en estado del componente, y por eso un `a` normal aquí
+                habría sido un peor bug que el que arregla. */}
+            <NavLink to="/ventas" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
+              <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ventas
+            </NavLink>
             {/* El botón de «escanear desde el celular» y su punto rojo/verde se fueron con el
                 socket: no hay servidor al que conectarse, y un punto rojo fijo en la barra del POS
                 le diría al cajero que algo está roto cuando lo único roto era una feature web. */}
