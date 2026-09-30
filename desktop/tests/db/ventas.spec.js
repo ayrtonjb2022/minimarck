@@ -434,6 +434,91 @@ describe('crear — the sale', () => {
     expect(r.venta.totalCentavos).toBe(30000) // sold
     expect(r.advertenciaLimite).toContain('supera el límite de crédito')
   })
+
+  /**
+   * THE WARNING HAS TO SEE WHAT THE DEBTOR ALREADY OWES, and this is the test for the arithmetic
+   * that decides it.
+   *
+   * A debtor on a $100.000 limit already $90.000 deep buys $15.000. The resulting debt is
+   * $105.000 and the limit is crossed, so the cashier must be told. The old check compared
+   * `total > limite` on its own — $15.000 < $100.000 — and said nothing, which is a warning that
+   * is wrong in the only direction that costs money.
+   *
+   * It is also the test for the DOUBLE COUNT that the naive fix introduces. The check runs after
+   * `INSERT INTO ventas`, and the view it reads sums the credit sales, so the row just inserted is
+   * ALREADY in the number it returns. Adding `total` to that figure counts the ticket twice: the
+   * same customer buying the same $15.000 would be warned about $120.000 of debt instead of
+   * $105.000, and a cashier who sees that number stops trusting the warning entirely.
+   *
+   * The message carries both figures so the operator can check the arithmetic themselves, and both
+   * are asserted here because a message that reports the wrong "deuda actual" is as useless as no
+   * message.
+   */
+  it('warns from the RESULTING debt, and counts the new ticket exactly once', () => {
+    // 10 kg on the shelf for four sales of 1,5 kg. The stock guard is real and it would have
+    // stopped the fourth sale with "Stock insuficiente" — a refusal about the shelf, arriving in
+    // the middle of a test about credit limits, which is how a warning test gets misread as a
+    // ledger failure.
+    const { t, ctx, producto } = escenario({ conCaja: false, stockMilli: 10000 })
+    // $1.000 limit on a product that sells at $200/kg in 1,5 kg lines: $300 a ticket, so three
+    // tickets land at $900 — under the limit — and the fourth crosses it.
+    const deudor = insertarDeudor(t, {
+      negocioId: t.negocioId,
+      usuarioId: t.usuarioId,
+      limiteCreditoCentavos: 100000
+    })
+
+    // $300 of credit three times over: $900 owed, $100 under the limit.
+    for (let i = 0; i < 3; i += 1) {
+      const r = crear(ctx, {
+        items: [{ productoId: producto.id, cantidad: '1.5' }],
+        metodoPago: 'credito',
+        clienteDeudorId: deudor.id
+      })
+      // None of these crosses the limit on its own, which is the whole point.
+      expect(r.advertenciaLimite).toBeUndefined()
+    }
+    expect(
+      t.conn.db.prepare('SELECT deuda_pendiente_centavos AS n FROM v_clientes_deudores WHERE id = ?').get(deudor.id).n
+    ).toBe(90000)
+
+    // And the fourth one crosses it: 900 + 300 = 1200 > 1000.
+    const r = crear(ctx, {
+      items: [{ productoId: producto.id, cantidad: '1.5' }],
+      metodoPago: 'credito',
+      clienteDeudorId: deudor.id
+    })
+
+    expect(r.venta.totalCentavos).toBe(30000)
+    expect(r.advertenciaLimite).toContain('supera el límite de crédito')
+    // $900 before, $1.200 after. NOT $1.500, which is what `pendiente + total` would print.
+    expect(r.advertenciaLimite).toContain('Deuda actual: 90000')
+    expect(r.advertenciaLimite).toContain('con esta venta: 120000')
+    // The sale is recorded either way: the limit warns, it does not refuse.
+    expect(r.venta.estado).toBe('completada')
+    expect(
+      t.conn.db.prepare('SELECT deuda_pendiente_centavos AS n FROM v_clientes_deudores WHERE id = ?').get(deudor.id).n
+    ).toBe(120000)
+  })
+
+  it('a debtor with no limit is never warned about a limit', () => {
+    const { t, ctx, producto } = escenario({ conCaja: false })
+    const deudor = t.conn.db
+      .prepare(
+        `INSERT INTO clientes_deudores (nombre, limite_credito_centavos, user_id, negocio_id, activo, created_at, updated_at)
+         VALUES ('Sin tope', NULL, ?, ?, 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`
+      )
+      .run(t.usuarioId, t.negocioId)
+
+    const r = crear(ctx, {
+      items: [{ productoId: producto.id, cantidad: '1.5' }],
+      metodoPago: 'credito',
+      clienteDeudorId: Number(deudor.lastInsertRowid)
+    })
+
+    // "No limit" is a real setting, and a null read as zero would warn on the very first sale.
+    expect(r.advertenciaLimite).toBeUndefined()
+  })
 })
 
 describe('cancelar — putting a sale back', () => {

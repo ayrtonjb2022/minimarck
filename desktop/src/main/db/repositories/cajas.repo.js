@@ -1,6 +1,7 @@
 import { IpcError } from '../../bridge/errors.js'
 import { assertCents, toCents } from '../../../shared/money.js'
 import { requireTenant } from '../seed.js'
+import { esViolacionUnicaEn } from '../errores-sqlite.js'
 
 /**
  * The till (design §D.5; spec CAJA-1..4).
@@ -356,17 +357,10 @@ export function desglose(db, negocioId, id) {
 
 /**
  * The partial index `ux_cajas_abierta` (on `negocio_id`, WHERE `estado = 'abierta'`) refuses a
- * second open register. SQLite names the offending COLUMN in constraint messages — the index
- * name never appears — and `cajas.negocio_id` is unique exactly once, in exactly that index, so
- * the message is the identifier. Truthiness matches every shape better-sqlite3 has shipped the
- * constraint in: the bare extended code (`SQLITE_CONSTRAINT_UNIQUE`), the wrapped one
- * (`ERR_SQLITE_ERROR`, with the real code in `errcode`, like Node's URI errors wrap the cause),
- * and the numeric code itself (2067).
+ * second open register. `cajas.negocio_id` is unique exactly once, in exactly that index, so the
+ * column is the identifier. The "which shapes can this arrive in" half of the question lives in
+ * `errores-sqlite.js`, where it is written down once instead of copied.
  */
 function esIndiceCajaAbierta(err) {
-  const msg = String(err?.message ?? '')
-  return (
-    (err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || err?.code === 'ERR_SQLITE_ERROR' || err?.errcode === 2067) &&
-    msg.includes('cajas.negocio_id')
-  )
+  return esViolacionUnicaEn(err, 'cajas.negocio_id')
 }

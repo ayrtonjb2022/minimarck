@@ -18,6 +18,7 @@ import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
 import { runPaymentDrive } from './payment-drive.js'
+import { runDeudoresDrive } from './deudores-drive.js'
 
 const isPackaged = app.isPackaged
 
@@ -344,6 +345,10 @@ async function main() {
   // Separate from `probeStarted` on purpose: the two drives can both be requested by a reviewer
   // in one run, and one flag would let the second silently reuse the first's single-shot guard.
   let driveStarted = false
+  // A third flag for a third one-shot drive, for the same reason: the debtor drive, the payment
+  // drive and the launch probe can all be requested in one run and one flag would let the second
+  // silently reuse the first's guard.
+  let deudoresDriveStarted = false
   win.webContents.on('did-finish-load', () => {
     installMenu(() => shell.openPath(db.paths.dataDir))
     if (process.env.MINIMARCK_S0_PROBE && !probeStarted) {
@@ -371,6 +376,27 @@ async function main() {
         .catch((err) => {
           clearTimeout(watchdog)
           console.error(`PAYMENT_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
+    }
+    // The debtor drive: create a customer, bill a credit sale, take a part payment, and read the
+    // drawer, the journal and the balance back out of the real file. Same gating, same watchdog
+    // discipline as the payment drive above, and it drives THIS window.
+    if (process.env.MINIMARCK_DEUDORES_DRIVE && !deudoresDriveStarted) {
+      deudoresDriveStarted = true
+      const watchdog = setTimeout(() => {
+        console.error('DEUDORES_DRIVE_ERROR timeout after 180s — the drive never reached finish()')
+        app.exit(1)
+      }, 180_000)
+      runDeudoresDrive(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`DEUDORES_DRIVE_RESULT ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`DEUDORES_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
           app.exit(1)
         })
     }

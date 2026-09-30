@@ -76,6 +76,26 @@ schema (which this port may not change) already picked the other side of that ar
 
 ---
 
+## 4b. The opening float is in the drawer but not in `1.1.01`
+
+**Both**: `cajas.abrir` records the opening float as a `movimientos_caja` row (`origen =
+'caja_apertura'`) and posts NO journal entry for it. So the till a cashier counts at close
+(`saldo_inicial + ingresos - egresos`) is systematically `saldo_inicial` HIGHER than the balance
+of the cash account in the ledger, and the two numbers — which exist to check each other — differ
+by exactly the float.
+
+**Why it is recorded and not fixed here**: this is the till-opening path, not the payment path.
+`deudores.addPayment` was measured against both sides and moves them by the same amount, which is
+what it is responsible for; `tests/db/deudores.spec.js` asserts that DELTA precisely because an
+assertion of equality would have "passed" only by folding the float into the expected value.
+Fixing it means posting an `asentar` for the opening (debit `1.1.01`, credit the funding account,
+whatever the shop funds a till from) — a product decision about where the money came from, which
+this build has no screen for.
+
+**Status**: open, willed for now. Owner: whoever owns the till-opening story.
+
+---
+
 ## 5. A negative register cannot be closed — the schema contradicts itself
 
 **Schema**: `cajas CHECK (saldo_final_centavos >= 0)` forbids storing a negative close, while the
@@ -112,18 +132,48 @@ integer subset. No web query changes meaning.
 
 ---
 
-## 7. Credit-limit warning cannot see what the debtor already owes
+## 7. Credit-limit warning — RESOLVED, the limit is a ceiling on the resulting debt
 
 **Web**: the limit check reads `deudaPendiente` (a running balance) and warns when
 `nuevaDeuda = deudaPendiente + total > limiteCredito`
 (`venta.controller.js:289-292`).
 
-**Desktop**: `clientes_deudores` deliberately has NO balance column — the schema's own note
-rejects cached balances as a source of drift — so the warning compares `total > limite` alone.
+**Desktop**: was a willed fidelity loss. `clientes_deudores` deliberately has NO balance column —
+the schema's own note rejects cached balances as a source of drift — so the warning compared
+`total > limite` alone, and a debtor already 90% deep on his limit got nothing until one ticket
+crossed the whole limit by itself. `v_clientes_deudores` (header §4) is the answer that was
+already there: it derives both balances from the credit sales and the payments, so
+`ventas.repo.js` now reads `deuda_pendiente_centavos` inside the sale's own transaction and warns
+when the RESULTING debt is over the limit.
 
-**Status**: willed, with fidelity loss. A debtor who owes 90% of his limit gets no warning until
-a sale crosses the whole limit on its own. The ledger is the balance (sum of `1.3.01` entries),
-so the faithful reading is a SUM over receivables, not a column; that query is the owner's move.
+**Where the arithmetic is decided, and why it is not `pendiente + total`**: the check runs after
+`INSERT INTO ventas`, and the view sums `ventas WHERE metodo_pago = 'credito' AND estado <>
+'cancelada'`, so the row just inserted is already inside the number the read returns. That figure
+IS the resulting debt. Adding `total` to it counts the ticket twice. The check is therefore
+`proyectado > limite`, with the previous debt reported as `proyectado - total` — the same
+comparison the POS draws on screen (`deudaPendienteCentavos + totalCentavos > limite`) and the
+same one the web makes, reached from the other side of the INSERT.
+
+**Status**: RESOLVED. The warning on the POS and the warning in the response read one number
+between them, and neither can be right while the other is wrong.
+
+---
+
+## 7b. `mixto` on a DEBTOR PAYMENT — port vs web
+
+**Web**: `deudor.controller.js:291-296` accepts `mixto` on `registrarPago`, because the web
+writes no journal entry and no drawer movement for a payment. The money's destination is never
+stated, so there is nothing to be wrong about.
+
+**Desktop**: refuses it, with `PAGO_METODO_INVALIDO` and the same sentence `ventas.repo.js` uses
+for a mixed SALE. A payment here is three facts that must agree — the debt shrank, the money is
+somewhere, and the ledger says both — and `mixto` cannot answer the second one: the cash/credit
+split is not collected by any screen and has no column in `pagos_deuda`. Posting one entry would
+claim the whole amount arrived in a single account, which is the same lie `asentar` refuses when
+one line is non-zero on both sides. The renderer never offers the method, so this refuses a
+hand-written payload, not a button.
+
+**Status**: willed, pending the same product decision as §1. Owner: product, for both.
 
 ---
 

@@ -138,16 +138,26 @@ export function abrirCaja(t, { negocioId, usuarioId, saldoInicialCentavos = 5000
   )
 }
 
-/** Insert a debtor for credit sales; returns the row. */
-export function insertarDeudor(t, { negocioId, usuarioId, nombre = 'Juan Carlos Pérez', limiteCreditoCentavos = 100000 }) {
+/**
+ * Insert a debtor for credit sales; returns the row.
+ *
+ * `documento` DEFAULTS TO NULL, and that is a change: it used to be a hardcoded `'28456789'`, which
+ * made the second call in one test shop fail on `ux_clientes_deudores_documento` — a fixture that
+ * refuses to be called twice is a fixture that quietly limits a test to one customer. Most tests
+ * are not about the document, so it passes one when it is.
+ */
+export function insertarDeudor(
+  t,
+  { negocioId, usuarioId, nombre = 'Juan Carlos Pérez', documento = null, limiteCreditoCentavos = 100000 }
+) {
   const ts = '2026-01-01T00:00:00.000Z'
   const info = t.conn.db
     .prepare(
       `INSERT INTO clientes_deudores
          (nombre, documento, limite_credito_centavos, notas, user_id, negocio_id, created_at, updated_at)
-       VALUES (?, '28456789', ?, NULL, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`
     )
-    .run(nombre, limiteCreditoCentavos, usuarioId, negocioId, ts, ts)
+    .run(nombre, documento, limiteCreditoCentavos, usuarioId, negocioId, ts, ts)
   return t.conn.db.prepare('SELECT * FROM clientes_deudores WHERE id = ?').get(Number(info.lastInsertRowid))
 }
 

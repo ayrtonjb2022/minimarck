@@ -16,9 +16,10 @@ receipt, and cancel a sale.
 
 ```bash
 npm install
-npm run verify:s0        # spike + tests + build + preload-format + migrations-packaged + offline + launch probe + payment drive
+npm run verify:s0        # spike + tests + build + preload-format + migrations-packaged + offline + launch probe + payment drive + debtors drive
 npm run probe:launch     # just the launch probe (also runs inside verify:s0)
 npm run drive:payment    # just the payment drive (also runs inside verify:s0)
+npm run drive:deudores   # just the debtor drive (also runs inside verify:s0)
 ```
 
 Expected: `verify:s0` green. The Node version is pinned in `package.json` `engines`
@@ -291,13 +292,23 @@ is unit-tested (`tests/db/reset.spec.js`) rather than only reachable by hand.
 | `npm run verify:offline` | No external origin, CDN, raw-content host, socket.io or ScannerSync in **any** of the three build outputs |
 | `npm run probe:launch` | The **real** window passes its in-window checks, with the real preload |
 | `npm run drive:payment` | The **real** app can actually take money: open a till, `F2`, type the tender, confirm, and read the sale, the stock, the drawer and the change back out of the **real** database file |
+| `npm run drive:deudores` | The **real** app can actually collect a debt: create a customer, bill a credit sale to them from the POS, take a part payment in cash and one by card, and read the drawer, the journal and the remaining balance back out of the **real** database file |
 | `npm run verify:s0` | All of the above, in order. This is the gate that must be green |
 
-`probe:launch` and `drive:payment` are the two that matter most: they open an actual window and
-assert from inside the running application. A preload that fails to load, a sandbox that leaks,
-or an opaque origin all turn into a non-zero exit code. `probe:launch` used to sit **outside**
-`verify:s0`, which meant the single command a developer was told to run could not catch a broken
-bridge — that gap is why it is in the gate now.
+`probe:launch`, `drive:payment` and `drive:deudores` are the three that matter most: they open an
+actual window and assert from inside the running application. A preload that fails to load, a
+sandbox that leaks, or an opaque origin all turn into a non-zero exit code. `probe:launch` used to
+sit **outside** `verify:s0`, which meant the single command a developer was told to run could not
+catch a broken bridge — that gap is why it is in the gate now.
+
+`drive:deudores` exists for the same reason `drive:payment` does, one flow over. Fiar a sale is the
+only way this app creates a debt, and the whole "collect the debt" half of the business lives
+downstream of it: the drawer, the `1.1.01`/`1.1.02` split, the `1.3.01` credit and the remaining
+balance can each be wrong while every unit test still passes, because every unit test calls the
+repository directly. This drive goes through the screens instead, with real keypresses, and then
+asks the **file** what happened. It is also what found the one real navigation bug in this
+feature: `/pos` is the app's landing screen, it renders outside `app-layout`, and it had no link to
+`/deudores` at all — a cashier standing at the till had no way to reach the debtor screen.
 
 `drive:payment` exists because 371 passing tests still shipped an app that opened on a "screen
 does not exist" placeholder, and a point of sale with no way back to the sales list. Every test

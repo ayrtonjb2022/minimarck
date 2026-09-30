@@ -4,6 +4,7 @@ import { assertCents, extractRate, toCents } from '../../../shared/money.js'
 import { QtyError, assertMilli, lineTotalCentavos, toMilli } from '../../../shared/qty.js'
 import { requireTenant } from '../seed.js'
 import { asentar, asegurarPlan, CUENTA } from './cuentas.repo.js'
+import { esViolacionUnicaEn } from '../errores-sqlite.js'
 import { cajaActiva, registrarMovimiento } from './cajas.repo.js'
 
 /**
@@ -435,13 +436,42 @@ export function crear(ctx, body) {
       ctx.db
         .prepare('UPDATE clientes_deudores SET notas = ?, updated_at = ? WHERE id = ?')
         .run(`${deudor.notas ? deudor.notas + '\n\n' : ''}${detalleTexto}`, ts, deudor.id)
-      if (deudor.limite_credito_centavos != null && total > deudor.limite_credito_centavos) {
-        // The web warns when `nuevaDeuda > limiteCredito` (venta.controller.js:289-292), where
-        // `nuevaDeuda` is `deudaPendiente + total`. This schema deliberately keeps NO per-debtor
-        // balance column (the `clientes_deudores` note in `001_init.sql`), so the receivable
-        // this sale adds is the only debt that can be measured here — and the warning is the
-        // web's words, only scoped to what this shop can know.
-        advertenciaLimite = `Atención: la venta supera el límite de crédito configurado (${deudor.limite_credito_centavos} centavos).`
+
+      // THE LIMIT IS A CEILING ON THE RESULTING DEBT, so the comparison has to include what the
+      // debtor ALREADY owes. `DIVERGENCES.md` §7 recorded this as an unfixable fidelity loss —
+      // "the warning compares `total > limite` alone", because at the time there was no way to
+      // read a per-debtor balance. There is now: `v_clientes_deudores` derives it.
+      //
+      // That matters because a warning that cannot see the balance is a warning that is WRONG in
+      // the direction that costs money: a customer already $90.000 deep on a $100.000 limit buys
+      // a $2.000 ticket, `total > limite` is false, and nothing is said — while a $90.000 deep
+      // customer who buys $15.000 is allowed through with a warning, which teaches the cashier
+      // the warning is noise.
+      //
+      // READ WHERE IT IS, AND THAT DECIDES THE ARITHMETIC. This block sits AFTER the
+      // `INSERT INTO ventas` above, and the view sums `ventas WHERE metodo_pago = 'credito' AND
+      // estado <> 'cancelada'` — so the row that was just inserted is ALREADY inside the number
+      // this read returns. The figure below is therefore the RESULTING debt, not the previous
+      // one, and adding `total` to it would count this ticket twice: a customer on a $100.000
+      // limit buying $15.000 with $90.000 already owed would be warned about $120.000, and a
+      // cashier would learn to ignore it. The first version of this check did exactly that.
+      //
+      // It is the same comparison the POS makes on screen (`deudaPendienteCentavos + totalCentavos
+      // > limite`, `puntoDeVenta.jsx:134-135`) and the same one the web does
+      // (`nuevaDeuda = deudaPendiente + total > limiteCredito`, `venta.controller.js:289-292`) —
+      // the renderer's `total` and this function's post-insert `pendiente` are the same number
+      // reached from two sides, so the warning on screen and the warning in the response cannot
+      // disagree. The previous debt is reported as `proyectado - total` so the operator still sees
+      // both figures.
+      const saldo = ctx.db
+        .prepare('SELECT deuda_pendiente_centavos FROM v_clientes_deudores WHERE id = ?')
+        .get(deudor.id)
+      const proyectado = saldo?.deuda_pendiente_centavos ?? 0
+      if (deudor.limite_credito_centavos != null && proyectado > deudor.limite_credito_centavos) {
+        advertenciaLimite =
+          `Atención: la venta supera el límite de crédito configurado ` +
+          `(${deudor.limite_credito_centavos} centavos). ` +
+          `Deuda actual: ${proyectado - total}; con esta venta: ${proyectado}.`
       }
     }
 
@@ -525,8 +555,14 @@ export function crear(ctx, body) {
  * unique violation into a 500, which is right: a duplicate folio is a bug, a duplicate key is a
  * retry.
  *
- * The check is on the INDEX NAME, not on the word "duplicate" in the message, because the message
- * is SQLite's wording and wording is not an API.
+ * The check is on the COLUMNS of the index, not on the word "duplicate" in the message, because
+ * the message is SQLite's wording and wording is not an API — and not on the INDEX NAME either,
+ * which is what this used to do. SQLite names the columns a UNIQUE INDEX covers and never the index
+ * itself: the message is "UNIQUE constraint failed: ventas.negocio_id, ventas.idempotency_key" and
+ * `ux_ventas_idempotencia` appears nowhere in it. So the guard matched nothing, and the one path it
+ * exists for — two writers racing on the same key, where the pre-flight SELECT above could not see
+ * the winner — fell through as a raw SQLite error to the operator. The race is rare; the stock it
+ * can move twice is not.
  */
 function correrTransaccion(ctx, idempotencyKey, fn) {
   try {
@@ -534,8 +570,7 @@ function correrTransaccion(ctx, idempotencyKey, fn) {
   } catch (err) {
     const esClaveRepetida =
       idempotencyKey !== null &&
-      err?.code === 'SQLITE_CONSTRAINT_UNIQUE' &&
-      String(err.message).includes('ux_ventas_idempotencia')
+      esViolacionUnicaEn(err, 'ventas.idempotency_key', 'ventas.negocio_id')
     if (esClaveRepetida) {
       // Re-read by the key that failed. There is exactly one row per key, so this is THE
       // competing sale, and it is a committed sale that already moved its own stock.

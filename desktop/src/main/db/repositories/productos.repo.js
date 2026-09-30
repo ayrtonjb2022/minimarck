@@ -2,6 +2,7 @@ import { IpcError } from '../../bridge/errors.js'
 import { assertCents, formatCents, toCents, toRate } from '../../../shared/money.js'
 import { assertMilli, toMilli } from '../../../shared/qty.js'
 import { requireTenant } from '../seed.js'
+import { esViolacionUnicaEn } from '../errores-sqlite.js'
 
 /**
  * The catalogue: products and the category a product belongs to.
@@ -292,9 +293,12 @@ export function crear(ctx, body) {
           ts
         )
     } catch (err) {
-      const esCodigoRepetido =
-        err?.code === 'SQLITE_CONSTRAINT_UNIQUE' && String(err.message).includes('ux_productos_codigo_negocio')
-      if (esCodigoRepetido) {
+      // Matched on the COLUMNS, because SQLite names the columns a UNIQUE INDEX covers and never
+      // the index itself: the message is "UNIQUE constraint failed: productos.codigo,
+      // productos.negocio_id" and `ux_productos_codigo_negocio` appears nowhere in it. The old guard
+      // matched the index name, so it matched nothing and a repeated barcode escaped as an
+      // untranslated SQLite error. Both columns, because the index is on the PAIR.
+      if (esViolacionUnicaEn(err, 'productos.codigo', 'productos.negocio_id')) {
         throw new IpcError('PRODUCTO_CODIGO_DUPLICADO', 400, `El código "${p.codigo}" ya existe en esta tienda`)
       }
       throw err
@@ -454,9 +458,15 @@ export function crearCategoria(ctx, body) {
         )
         .run(nombre, descripcion, ctx.actorId, ctx.negocioId, ts, ts)
     } catch (err) {
-      const esNombreRepetido =
-        err?.code === 'SQLITE_CONSTRAINT_UNIQUE' && String(err.message).includes('ux_categorias_nombre_negocio')
-      if (esNombreRepetido) {
+      // The index is `ux_categorias_nombre_negocio` over `(nombre, negocio_id)`.
+      //
+      // THIS USED TO MATCH THE INDEX NAME, and matched nothing: SQLite names the columns a
+      // UNIQUE index covers and never the index itself, so `ux_categorias_nombre_negocio` is not
+      // in the message. The guard was unreachable, and the duplicate escaped as a raw SQLite
+      // error. Its test still passed, because the pre-check `SELECT` above catches the duplicate
+      // first — the guard is only reachable when two writers both pass the pre-check, and nothing
+      // tested that.
+      if (esViolacionUnicaEn(err, 'categorias.nombre', 'categorias.negocio_id')) {
         throw new IpcError('CATEGORIA_NOMBRE_DUPLICADO', 400, `La categoría "${nombre}" ya existe en esta tienda`)
       }
       throw err

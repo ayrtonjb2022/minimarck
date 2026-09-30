@@ -1115,6 +1115,15 @@ export default function PuntoDeVenta() {
             <NavLink to="/ventas" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
               <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ventas
             </NavLink>
+            {/* Y el mismo argumento para Deudores, con una vuelta de tuerca: el POS es la
+                pantalla de INGRESO de la app, y es la única forma de fiar. El cajero que
+                necesita ver quién debe, llamar a un cliente o mirar el historial de pagos
+                está parado acá, con un ticket en el carrito, y no tenía por dónde salir a
+                /deudores: la barra lateral que lo enlaza no se renderiza en /pos. Se agrega
+                el mismo NavLink, por el mismo motivo. */}
+            <NavLink to="/deudores" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
+              <i className="fa-solid fa-user-clock" aria-hidden="true"></i> Deudores
+            </NavLink>
             {/* El botón de «escanear desde el celular» y su punto rojo/verde se fueron con el
                 socket: no hay servidor al que conectarse, y un punto rojo fijo en la barra del POS
                 le diría al cajero que algo está roto cuando lo único roto era una feature web. */}

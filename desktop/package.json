@@ -15,6 +15,7 @@
     "spike": "electron src/main/spike/node-sqlite.spike.js",
     "probe:launch": "node scripts/probe-launch.mjs",
     "drive:payment": "node scripts/drive-payment.mjs",
+    "drive:deudores": "node scripts/drive-deudores.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:offline": "node scripts/verify-offline.mjs",
@@ -37,7 +38,7 @@
     "drive:installed": "node scripts/drive-payment-installed.mjs",
     "verify:payload": "node scripts/assert-installed-payload.mjs",
     "verify:installed": "node scripts/verify-installed-e2e.mjs",
-    "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:encoding && npm run verify:bundle && npm run verify:offline && npm run verify:licences && npm run probe:launch && npm run drive:payment"
+    "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:encoding && npm run verify:bundle && npm run verify:offline && npm run verify:licences && npm run probe:launch && npm run drive:payment && npm run drive:deudores"
   },
   "engines": {
     "node": ">=24.18.0 <25"

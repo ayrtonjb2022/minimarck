@@ -5,6 +5,7 @@ import { useTheme } from "./context/ThemeContext";
 import CajaGuard from "./components/common/CajaGuard";
 import PuntoDeVenta from "./pages/puntoDeVenta";
 import Ventas from "./pages/Ventas";
+import Deudores from "./pages/Deudores";
 
 /**
  * The route tree, cut down to what this build can actually do.
@@ -20,9 +21,14 @@ import Ventas from "./pages/Ventas";
  *
  * Importing them anyway would have produced a bundle that fails to resolve at startup, so
  * the operator would get a white screen on a build whose tests all pass. Instead the app
- * mounts two real routes, and everything else lands on a page that says plainly what is
+ * mounts three real routes, and everything else lands on a page that says plainly what is
  * and is not there. A missing screen the operator can read is better than a stack trace
  * they cannot.
+ *
+ * `Deudores` joined `PuntoDeVenta` and `Ventas` because a credit sale needs two ends: a name to
+ * bill at the till, and a place to collect the money afterwards. The POS could name a debtor
+ * (`ventas.create` refuses a `credito` sale with no `clienteDeudorId`) but had nowhere to record
+ * a payment, so a customer on credit could be created and never closed.
  */
 
 const PANTALLAS_FALTANTES = [
@@ -30,7 +36,6 @@ const PANTALLAS_FALTANTES = [
   { ruta: "/productos", nombre: "Productos", motivo: "el catalogo se carga, la edicion todavia no" },
   { ruta: "/categorias", nombre: "Categorías", motivo: "el filtro del POS ya las usa" },
   { ruta: "/caja", nombre: "Caja", motivo: "se abre al vender, el arqueo manual no" },
-  { ruta: "/clientes", nombre: "Clientes", motivo: "los deudores se eligen al cobrar" },
   { ruta: "/proveedores", nombre: "Proveedores", motivo: "no esta en el contrato de 89 operaciones" },
   { ruta: "/compras", nombre: "Compras", motivo: "no esta en el contrato de 89 operaciones" },
   { ruta: "/reportes", nombre: "Reportes", motivo: "no esta en el contrato de 89 operaciones" },
@@ -63,6 +68,9 @@ const TopBar = ({ titulo }) => {
         </NavLink>
         <NavLink to="/ventas" className={({ isActive }) => (isActive ? "active" : "")}>
           <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ventas
+        </NavLink>
+        <NavLink to="/deudores" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Deudores
         </NavLink>
       </nav>
 
@@ -102,8 +110,8 @@ const NoDisponible = () => {
             </h3>
           </div>
           <p style={{ color: "var(--kanagawa-fg-muted)", fontSize: 14, marginBottom: 16 }}>
-            Pediste <code>{location.pathname}</code>. La app de escritorio hoy vende y muestra el
-            historial; el resto de las secciones todavia no.
+            Pediste <code>{location.pathname}</code>. La app de escritorio hoy vende, muestra el
+            historial y cobra las cuentas corrientes; el resto de las secciones todavia no.
           </p>
           <ul className="mm-missing-list">
             {PANTALLAS_FALTANTES.map((p) => (
@@ -118,8 +126,8 @@ const NoDisponible = () => {
             <NavLink to="/pos" className="btn-primary">
               <i className="fa-solid fa-cash-register" aria-hidden="true"></i> Ir a vender
             </NavLink>
-            <NavLink to="/ventas" className="btn-secondary">
-              <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ver ventas
+            <NavLink to="/deudores" className="btn-secondary">
+              <i className="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Ver deudores
             </NavLink>
           </div>
         </div>
@@ -127,6 +135,26 @@ const NoDisponible = () => {
     </div>
   );
 };
+
+/**
+ * The debtor list, in the same chrome as Ventas.
+ *
+ * NOT WRAPPED IN `CajaGuard`, deliberately and this is the difference from the POS. `CajaGuard`
+ * exists because a SALE with no open till records no drawer movement, so a cashier must not be
+ * able to start selling. A PAYMENT is the opposite case: a card payment and a transfer are
+ * refused by nothing, and forcing the till open to look at who owes what would put an error page
+ * between an operator and a debt they are trying to collect. The only thing the till is needed
+ * for here is CASH, and `deudores.addPayment` says so by name — `CAJA_ABIERTA_REQUERIDA`, 409 —
+ * on the cash method and only on the cash method.
+ */
+const PaginaDeudores = () => (
+  <div className="app-layout">
+    <main className="main">
+      <TopBar titulo="Deudores" />
+      <Deudores />
+    </main>
+  </div>
+);
 
 /**
  * The desktop has no login, so there is no ProtectedRoute and no gate: whoever opens the
@@ -168,6 +196,12 @@ const App = () => {
           </div>
         }
       />
+      {/* Customers and debtors are the SAME ROWS here. The web had a `clientes` screen and a
+          `deudores` screen over one `clientes_deudores` table, so sending the old `/clientes`
+          URL to the debtor list is a redirect to the truth rather than a missing page: a customer
+          with a clean slate is on that list too, with a "Debe" of $0,00. */}
+      <Route path="/deudores" element={<PaginaDeudores />} />
+      <Route path="/clientes" element={<Navigate to="/deudores" replace />} />
       <Route path="*" element={<NoDisponible />} />
     </Routes>
   );
