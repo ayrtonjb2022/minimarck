@@ -7,8 +7,8 @@ import { crear as crearDeudor, listar as listarDeudores, pagos as pagosDeudor } 
  *
  * WHY THREE IS ENOUGH FOR A SALE. `ventas.repo.js` refuses a `credito` sale with no
  * `clienteDeudorId` (`VENTA_CREDITO_SIN_DEUDOR`), and that refusal is correct: a credit sale with
- * no named debtor is income nobody can collect. So the POS cannot offer "CrǸdito" to an
- * anonymous customer �?" it must be able to LIST the people a shop already knows it sells to, and
+ * no named debtor is income nobody can collect. So the POS cannot offer "Crédito" to an
+ * anonymous customer — it must be able to LIST the people a shop already knows it sells to, and
  * that is the whole requirement for taking the sale.
  *
  * `payments` is the read side of the same debt, and it is here for one reason: the payment
@@ -23,7 +23,7 @@ import { crear as crearDeudor, listar as listarDeudores, pagos as pagosDeudor } 
  *
  * The balances in the response come from `v_clientes_deudores`, never from arithmetic in this
  * process: the view is the single copy of that invariant, and the web's two hand-maintained
- * columns are exactly what `001_init.sql` ��4 removed.
+ * columns are exactly what `001_init.sql` §4 removed.
  */
 export function registerDeudoresHandlers(registry, { conn }) {
   const ctx = (reqCtx) => createCtx(conn, reqCtx ?? {})
