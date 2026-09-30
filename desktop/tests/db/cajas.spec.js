@@ -10,6 +10,7 @@ import {
   saldoCaja
 } from '../../src/main/db/repositories/cajas.repo.js'
 import { crear } from '../../src/main/db/repositories/ventas.repo.js'
+import { balanceAsiento, CUENTA } from '../../src/main/db/repositories/cuentas.repo.js'
 import { tienda, ctxDe, abrirCaja, insertarProducto } from './fixtures/tienda.js'
 
 /**
@@ -51,6 +52,17 @@ function movimientosDe(t, cajaId) {
     .all(cajaId)
 }
 
+/** One account's balance, straight from the database: `debe - haber` in centavos. */
+function saldoCuenta(t, codigo) {
+  return t.conn.db
+    .prepare(
+      `SELECT COALESCE(SUM(d.debe_centavos), 0) - COALESCE(SUM(d.haber_centavos), 0) AS n
+         FROM detalles_asientos d JOIN cuentas_contables c ON c.id = d.cuenta_contable_id
+        WHERE c.codigo = ? AND c.negocio_id = ?`
+    )
+    .get(codigo, t.negocioId).n
+}
+
 describe('abrir — opening the drawer', () => {
   it('opens with the float recorded but NOT counted as income', () => {
     const { t, ctx, caja } = tumbar()
@@ -73,6 +85,88 @@ describe('abrir — opening the drawer', () => {
     expect(movs[0].referencia).toBe(`caja:${caja.id}`)
   })
 
+  it('the drawer and the books say the SAME number the moment the till opens', () => {
+    const { t, ctx, caja } = tumbar()
+
+    // THE invariant, and the reason the float is journaled at all: the number a cashier counts in
+    // the drawer and the `Caja` balance an accountant reads are one number, available in two
+    // places so they can check each other. While the float was unposted they differed by exactly
+    // the float, and no test said so.
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(saldoCaja(caja))
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(50000)
+    expect(saldoCuenta(t, CUENTA.CAPITAL)).toBe(-50000)
+  })
+
+  it('the float is journalled as an owner contribution, inside the opening transaction', () => {
+    const { t, caja } = tumbar()
+
+    const lineas = t.conn.db
+      .prepare(
+        `SELECT c.codigo, c.tipo, d.debe_centavos, d.haber_centavos
+           FROM detalles_asientos d
+           JOIN cuentas_contables c ON c.id = d.cuenta_contable_id
+           JOIN asientos_contables a ON a.id = d.asiento_contable_id
+          WHERE a.referencia = ?`
+      )
+      .all(`caja:${caja.id}`)
+
+    // Cash in, capital out. Not revenue: the shop has sold nothing yet.
+    expect(lineas).toHaveLength(2)
+    const cajaLine = lineas.find((l) => l.codigo === CUENTA.CAJA)
+    const capitalLine = lineas.find((l) => l.codigo === CUENTA.CAPITAL)
+    expect([cajaLine.debe_centavos, cajaLine.haber_centavos]).toEqual([50000, 0])
+    expect([capitalLine.debe_centavos, capitalLine.haber_centavos]).toEqual([0, 50000])
+    expect(capitalLine.tipo).toBe('capital')
+
+    // Balanced, read back from the database rather than from the arrays the code built.
+    const asientoId = t.conn.db
+      .prepare('SELECT id FROM asientos_contables WHERE referencia = ?')
+      .get(`caja:${caja.id}`).id
+    expect(balanceAsiento(t.conn.db, asientoId)).toMatchObject({ debe: 50000, haber: 50000, balanceado: true })
+    expect(
+      t.conn.db.prepare('SELECT tipo FROM asientos_contables WHERE id = ?').get(asientoId).tipo
+    ).toBe('apertura')
+  })
+
+  it('a failed opening leaves NEITHER the till NOR a journal entry behind', () => {
+    const t = tienda()
+    stores.push(t)
+    const ctx = ctxDe(t, t.negocioId, t.usuarioId)
+
+    // A float in the drawer with its entry rolled back is worse than the gap this replaced: the
+    // drawer total would look right, the books would not explain it, and nothing would show the
+    // difference until someone reconciled. So the two must be atomic — proven by breaking one.
+    const reventado = {
+      ...ctx,
+      db: new Proxy(ctx.db, {
+        get(alvo, prop) {
+          if (prop === 'prepare') {
+            return (sql) => {
+              const st = ctx.db.prepare(sql)
+              if (!/INSERT INTO asientos_contables/.test(sql)) return st
+              return new Proxy(st, {
+                get(s, p) {
+                  if (p === 'run') {
+                    return () => {
+                      throw new Error('FALLO INYECTADO: el asiento no se pudo escribir')
+                    }
+                  }
+                  return typeof s[p] === 'function' ? s[p].bind(s) : s[p]
+                }
+              })
+            }
+          }
+          return typeof alvo[prop] === 'function' ? alvo[prop].bind(alvo) : alvo[prop]
+        }
+      })
+    }
+
+    expect(() => abrir(reventado, { saldoInicial: '500' })).toThrow(/FALLO INYECTADO/)
+    expect(t.conn.db.prepare("SELECT COUNT(*) AS n FROM cajas WHERE negocio_id = ?").get(t.negocioId).n).toBe(0)
+    expect(t.conn.db.prepare("SELECT COUNT(*) AS n FROM movimientos_caja WHERE negocio_id = ?").get(t.negocioId).n).toBe(0)
+    expect(t.conn.db.prepare("SELECT COUNT(*) AS n FROM asientos_contables WHERE negocio_id = ?").get(t.negocioId).n).toBe(0)
+  })
+
   it('opens with no float and writes no movement — there was no cash event', () => {
     const { t } = tumbar({ conCaja: false })
     const caja = abrirCaja(t, {
@@ -86,6 +180,16 @@ describe('abrir — opening the drawer', () => {
     // `monto_centavos < 1`; the desktop records nothing, which is the same truth in fewer rows.
     expect(movimientosDe(t, caja.id)).toHaveLength(0)
     expect(caja.total_ingresos_centavos).toBe(0)
+    // And a zero float posts no journal entry either — no cash event, no entry. A shop that opens
+    // an empty till must not be forced to grow a chart of accounts in order to say nothing.
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(0)
+    expect(
+      t.conn.db
+        .prepare('SELECT COUNT(*) AS n FROM asientos_contables WHERE referencia = ?')
+        .get(`caja:${caja.id}`).n
+    ).toBe(0)
+    // The till is still open and still usable: opening with nothing in it is legal.
+    expect(caja.estado).toBe('abierta')
   })
 
   it('refuses a second open till with an actionable message', () => {

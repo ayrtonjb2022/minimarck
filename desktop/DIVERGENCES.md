@@ -78,21 +78,49 @@ schema (which this port may not change) already picked the other side of that ar
 
 ## 4b. The opening float is in the drawer but not in `1.1.01`
 
-**Both**: `cajas.abrir` records the opening float as a `movimientos_caja` row (`origen =
-'caja_apertura'`) and posts NO journal entry for it. So the till a cashier counts at close
-(`saldo_inicial + ingresos - egresos`) is systematically `saldo_inicial` HIGHER than the balance
-of the cash account in the ledger, and the two numbers — which exist to check each other — differ
-by exactly the float.
+**The defect (both)**: `cajas.abrir` records the opening float as a `movimientos_caja` row (`origen =
+'caja_apertura'`) and posted NO journal entry for it. So the till a cashier counts at close
+(`saldo_inicial + ingresos - egresos`) was systematically `saldo_inicial` HIGHER than the balance
+of the cash account in the ledger, and the two numbers — which exist to check each other — differed
+by exactly the float. `backend/src/controllers/caja.controller.js:40-62` has the same gap: the
+`APERTURA DE CAJA` movement, no entry.
 
-**Why it is recorded and not fixed here**: this is the till-opening path, not the payment path.
-`deudores.addPayment` was measured against both sides and moves them by the same amount, which is
-what it is responsible for; `tests/db/deudores.spec.js` asserts that DELTA precisely because an
-assertion of equality would have "passed" only by folding the float into the expected value.
-Fixing it means posting an `asentar` for the opening (debit `1.1.01`, credit the funding account,
-whatever the shop funds a till from) — a product decision about where the money came from, which
-this build has no screen for.
+**The accounting decision**: the float is an **owner contribution**, not revenue. The owner put
+their own money into the drawer to open the till; until the books say so, that money has no origin.
+It is not a sale (nothing was sold), and it is not a transfer between two accounts this app owns
+(there is no bank account standing behind the drawer until the owner funds one). So the opening is:
 
-**Status**: open, willed for now. Owner: whoever owns the till-opening story.
+```
+1.1.01 Caja       debe   el float
+3.1.01 Capital    haber  el float
+```
+
+`3.1.01 Capital Social` was ALREADY in the seeded chart (`cuentas.repo.js`, tipo `capital`,
+"Capital aportado"), so this recorded where the money came from without inventing an account. No
+migration was needed and none was added.
+
+**Desktop — resolved.** `cajas.abrir` posts the entry through `asentar` with `tipo = 'apertura'` and
+`referencia = 'caja:<id>'`, inside the SAME `ctx.tx` that creates the till and its APERTURA movement.
+Atomicity is the point: a float sitting in the drawer with its journal entry rolled back is WORSE
+than the gap it fixes — the drawer total would look right, the books would not explain it, and the
+failure would stay invisible until someone reconciled. Either the till, its movement and its entry
+all exist, or none of them do. A **zero float posts nothing** and stays legal: no cash event
+happened, so no entry is written and the chart of accounts is not even grown to record a zero.
+
+**The tests that were hiding it**: `tests/db/deudores.spec.js` asserted a DELTA across a cash
+payment, and the reasoning recorded here was that an equality assertion "would have passed only by
+folding the float into the expected value". That was the wrong conclusion — it was the DELTA that
+could not see the gap, because a payment moves both the drawer and the ledger by the same amount and
+never touches the difference the float opened. The assertion is now a direct equality of
+`saldoCaja(caja)` against the `1.1.01` balance, before and after. Verified by mutation: commenting
+out the `asentar` call turns 10 tests red across `cajas.spec.js`, `deudores.spec.js` and
+`ventas.spec.js`; restoring it returns them to green, byte-identical (SHA-256 verified).
+
+**Web — still open.** The same defect remains in `backend/src/controllers/caja.controller.js`. It is
+not fixed here: this build owns the desktop path, and the web is the port's reference, not its
+target. Whoever ports the opening back must post the same entry in the same transaction.
+
+**Status**: desktop resolved; web still open, identical gap.
 
 ---
 

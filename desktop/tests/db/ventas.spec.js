@@ -1,8 +1,19 @@
 ﻿import { describe, it, expect, afterEach } from 'vitest'
 import { crear, cancelar, obtener, listar } from '../../src/main/db/repositories/ventas.repo.js'
-import { cerrar } from '../../src/main/db/repositories/cajas.repo.js'
-import { balanceAsiento, balanceGeneral } from '../../src/main/db/repositories/cuentas.repo.js'
-import { tienda, ctxDe, insertarProducto, abrirCaja, insertarDeudor, partidasDe } from './fixtures/tienda.js'
+import { cerrar, saldoCaja } from '../../src/main/db/repositories/cajas.repo.js'
+import { balanceAsiento, balanceGeneral, CUENTA } from '../../src/main/db/repositories/cuentas.repo.js'
+import { tienda, ctxDe, insertarProducto, abrirCaja, insertarDeudor, partidasDe, partidasDeOperacion } from './fixtures/tienda.js'
+
+/** One account's balance, straight from the database: `debe - haber` in centavos. */
+function saldoCuenta(t, codigo) {
+  return t.conn.db
+    .prepare(
+      `SELECT COALESCE(SUM(d.debe_centavos), 0) - COALESCE(SUM(d.haber_centavos), 0) AS n
+         FROM detalles_asientos d JOIN cuentas_contables c ON c.id = d.cuenta_contable_id
+        WHERE c.codigo = ? AND c.negocio_id = ?`
+    )
+    .get(codigo, t.negocioId).n
+}
 
 /**
  * The sale repository, on a REAL migrated and seeded database.
@@ -75,7 +86,7 @@ describe('crear — the sale', () => {
     const r = crear(ctx, {
       items: [{ productoId: producto.id, cantidad: '0.5' }],
       metodoPago: 'efectivo',
-      montoRecibido: 200 // $200 = 20000 centavos
+      montoRecibido: 200
     })
 
     // ---- the header -------------------------------------------------------
@@ -113,22 +124,27 @@ describe('crear — the sale', () => {
     // The running chain: APERTURA 0 -> 50000, this sale 50000 -> 60000.
     expect(mov.saldo_anterior_centavos).toBe(50000)
     expect(mov.saldo_nuevo_centavos).toBe(60000)
+    // The APERTURA plus this sale. Counted before, because the point is "this sale added exactly
+    // one movement", and a hardcoded total breaks every time a legitimate movement type appears.
     expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(2)
 
     // ---- the ledger ---------------------------------------------------------
-    // TWO entries — revenue (12a) and cost (12b) — each independently balanced.
+    // Scoped to THIS SALE's entries. The till opening posts its own `Caja`/`Capital` entry, so the
+    // shop's ledger is no longer only about the sale — and `1.1.01` now carries a line from both
+    // operations, which an unscoped `Object.fromEntries` map would have collapsed to one.
     const asientos = t.conn.db
       .prepare(
-        `SELECT * FROM asientos_contables WHERE negocio_id = ? ORDER BY id`
+        `SELECT * FROM asientos_contables WHERE negocio_id = ? AND referencia = ? ORDER BY id`
       )
-      .all(t.negocioId)
+      .all(t.negocioId, `venta:${r.venta.id}`)
+    // TWO entries — revenue (12a) and cost (12b) — each independently balanced.
     expect(asientos).toHaveLength(2)
     for (const a of asientos) {
       const b = balanceAsiento(t.conn.db, a.id)
       expect(b.balanceado).toBe(true)
       expect(b.debe).toBe(b.haber)
     }
-    const partidas = partidasDe(t, t.negocioId)
+    const partidas = partidasDeOperacion(t, t.negocioId, `venta:${r.venta.id}`)
     const porCuenta = Object.fromEntries(partidas.map((p) => [p.codigo, p]))
     expect(partidas).toHaveLength(4)
     // revenue entry: the drawer receives the money, Ventas earns it
@@ -141,6 +157,12 @@ describe('crear — the sale', () => {
     expect(porCuenta['5.1.01'].haber).toBe(0)
     expect(porCuenta['1.2.01'].debe).toBe(0)
     expect(porCuenta['1.2.01'].haber).toBe(6000)
+
+    // ---- THE BOOKS BALANCE --------------------------------------------------
+    // The whole point of journalling the opening float: the cash the shop holds on the books is the
+    // cash in the drawer, to the centavo, with a sale in between. `50000` float + `10000` sale.
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(60000)
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(saldoCaja(cajaDespues))
 
     // ---- the trail ----------------------------------------------------------
     const audit = t.conn.db
@@ -230,6 +252,14 @@ describe('crear — the sale', () => {
     const { t, ctx, producto, caja } = escenario({ stockMilli: 3000 })
 
     const antes = t.conn.db.prepare('SELECT stock_milli FROM productos WHERE id = ?').get(producto.id)
+    // Counted BEFORE the refusal, because "the refusal wrote nothing" is a claim about a DELTA.
+    // The scenario opened a till, and the opening float is journalised, so the ledger already held
+    // the float's own entry before the sale was even attempted. Asserting an absolute zero here
+    // would assert that the till was never opened, which is a different statement.
+    const asientosAntes = contar(t, 'asientos_contables', t.negocioId)
+    const partidasAntes = contar(t, 'detalles_asientos', t.negocioId)
+    const movsAntes = contar(t, 'movimientos_caja', t.negocioId)
+    expect(asientosAntes).toBe(1) // the float's Caja/Capital entry, and nothing else
 
     let err = null
     try {
@@ -243,9 +273,9 @@ describe('crear — the sale', () => {
     // the whole sale rolled back: no header, no lines, no drawer, no ledger, no trail
     expect(contar(t, 'ventas', t.negocioId)).toBe(0)
     expect(contarDetalles(t, t.negocioId)).toBe(0)
-    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(1) // only the APERTURA
-    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(0)
-    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(0)
+    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(movsAntes)
+    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(asientosAntes)
+    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(partidasAntes)
     expect(contar(t, 'auditoria', t.negocioId)).toBe(0)
     const despues = t.conn.db.prepare('SELECT stock_milli, updated_at FROM productos WHERE id = ?').get(producto.id)
     expect(despues.stock_milli).toBe(antes.stock_milli)
@@ -275,6 +305,18 @@ describe('crear — the sale', () => {
   it('rolls back EVERYTHING when a failure fires after the stock and the ledger were written', () => {
     const { t, ctx, producto, caja } = escenario()
 
+    // Baselines taken BEFORE the sale. This scenario opens a till, and opening a till now posts the
+    // float's own journal entry, so the shop's ledger is NOT empty when the sale starts. The
+    // rollback's claim is that the SALE left nothing behind, which is a delta — so the deltas are
+    // what get asserted. The one absolute that survives is `cuentas_contables`: the sale inserts the
+    // plan itself, and here the plan is pre-existing because the till needed it, so the assertion
+    // is that the sale did not add a SINGLE account on top.
+    const movsAntes = contar(t, 'movimientos_caja', t.negocioId)
+    const cuentasAntes = contar(t, 'cuentas_contables', t.negocioId)
+    const asientosAntes = contar(t, 'asientos_contables', t.negocioId)
+    const partidasAntes = contar(t, 'detalles_asientos', t.negocioId)
+    expect(cuentasAntes).toBeGreaterThan(0) // the till opening grew the plan already
+
     // The injection: the last write of the sale transaction is the audit row, so a trigger that
     // aborts on it fires AFTER the header, the lines, the stock decrement, the till movement,
     // the plan of accounts and both journal entries are already written. RAISE(ROLLBACK) unwinds
@@ -295,23 +337,31 @@ describe('crear — the sale', () => {
     }
     expect(String(err?.message)).toContain('INYECTADO')
 
-    // NOTHING survived. In particular: the stock already decremented, the movement already
-    // recorded, and the plan of accounts already inserted are all gone.
+    // NOTHING of the sale survived. In particular: the stock already decremented and the movement
+    // already recorded are both gone.
     expect(contar(t, 'ventas', t.negocioId)).toBe(0)
     expect(contarDetalles(t, t.negocioId)).toBe(0)
-    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(1) // APERTURA only; the sale's ingreso vanished
-    expect(contar(t, 'cuentas_contables', t.negocioId)).toBe(0)
-    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(0)
-    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(0)
+    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(movsAntes) // APERTURA only
+    expect(contar(t, 'cuentas_contables', t.negocioId)).toBe(cuentasAntes)
+    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(asientosAntes)
+    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(partidasAntes)
     expect(contar(t, 'auditoria', t.negocioId)).toBe(0)
     const despues = t.conn.db.prepare('SELECT stock_milli FROM productos WHERE id = ?').get(producto.id)
     expect(despues.stock_milli).toBe(3000)
     const cajaDespues = t.conn.db.prepare('SELECT total_ingresos_centavos FROM cajas WHERE id = ?').get(caja.id)
     expect(cajaDespues.total_ingresos_centavos).toBe(0)
+    // And the books still agree with the drawer after the rollback: float in, float out, nothing
+    // half-written on either side.
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(50000)
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(caja.saldo_inicial_centavos)
   })
 
   it('sells once per idempotency key, however many times it is retried', () => {
     const { t, ctx, producto } = escenario()
+
+    const movsAntes = contar(t, 'movimientos_caja', t.negocioId)
+    const asientosAntes = contar(t, 'asientos_contables', t.negocioId)
+    const partidasAntes = contar(t, 'detalles_asientos', t.negocioId)
 
     const cuerpo = {
       items: [{ productoId: producto.id, cantidad: '0.5' }],
@@ -328,10 +378,14 @@ describe('crear — the sale', () => {
     expect(segunda.duplicado).toBe(true)
     expect(segunda.venta.id).toBe(primera.venta.id)
 
+    // Exactly ONE of everything, counted from the pre-sale baseline. The baseline is not zero: the
+    // scenario opened a till and the float is journalled, so "the retry wrote nothing" is a delta
+    // and only a delta.
     expect(contar(t, 'ventas', t.negocioId)).toBe(1)
     expect(contarDetalles(t, t.negocioId)).toBe(1)
-    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(2) // APERTURA + one ingreso
-    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(2)
+    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(movsAntes + 1) // exactly one ingreso
+    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(asientosAntes + 2) // revenue + cost
+    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(partidasAntes + 4)
     expect(contar(t, 'auditoria', t.negocioId)).toBe(1)
     const stock = t.conn.db.prepare('SELECT stock_milli FROM productos WHERE id = ?').get(producto.id)
     expect(stock.stock_milli).toBe(2500) // decremented exactly once
@@ -551,22 +605,39 @@ describe('cancelar — putting a sale back', () => {
     expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(3)
 
     // ---- the ledger nets to ZERO: every account, every entry -----------------------
+    // Scoped to THIS SALE's entries. The whole-ledger version of this assertion used to be the
+    // right one, and silently stopped being the right one the moment the till opening posted its
+    // own entry: `Caja` and `Capital` now carry a balanced but NON-ZERO balance (the float is
+    // still in the drawer), so "every account nets to zero" became false for reasons that have
+    // nothing to do with the cancellation. The property being tested is that the sale and its
+    // reversal cancel EACH OTHER, and that is a statement about the sale's entries alone.
     const asientos = t.conn.db
-      .prepare(`SELECT id FROM asientos_contables WHERE negocio_id = ? ORDER BY id`)
-      .all(t.negocioId)
+      .prepare(
+        `SELECT id FROM asientos_contables
+          WHERE negocio_id = ? AND referencia = ? ORDER BY id`
+      )
+      .all(t.negocioId, `venta:${r.venta.id}`)
     expect(asientos).toHaveLength(4) // Venta, CMV, Reversa ventas, Reversa CMV
     for (const a of asientos) {
       const b = balanceAsiento(t.conn.db, a.id)
       expect(b.balanceado).toBe(true)
     }
-    const general = balanceGeneral(t.conn.db, t.negocioId)
+    for (const g of balanceGeneral(t.conn.db, t.negocioId, [`venta:${r.venta.id}`])) {
+      expect(g.debe).toBe(g.haber) // per-account identity, sale + reversal only
+    }
+
+    // And the WHOLE ledger still balances, float included: the opening float is a balanced entry
+    // of its own, so it adds nothing to the net either way.
     let neto = 0
-    for (const g of general) {
-      expect(g.debe).toBe(g.haber) // per-account identity after the reversal
+    for (const g of balanceGeneral(t.conn.db, t.negocioId)) {
       neto += g.debe - g.haber
     }
-    // ...and the ledger as a whole nets to zero: sale + reversal cancel each other exactly.
     expect(neto).toBe(0)
+
+    // The books and the drawer agree once more: the sale was taken and given back, so the till is
+    // exactly the float it started with.
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(saldoCaja(cajaDespues))
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(caja.saldo_inicial_centavos)
 
     // ---- the trail ----------------------------------------------------------------
     const audit = t.conn.db
@@ -627,6 +698,11 @@ describe('cancelar — putting a sale back', () => {
       montoRecibido: 200
     })
 
+    // After the SALE, before the cancellation: the exact state the reversal must leave untouched.
+    // Not zero — the scenario opened a till and the float is journalled, so this is a delta.
+    const movsTrasVenta = contar(t, 'movimientos_caja', t.negocioId)
+    const asientosTrasVenta = contar(t, 'asientos_contables', t.negocioId)
+
     // The last write of `cancelar` is its audit row too — same trap, same proof.
     t.conn.db.exec(`
       CREATE TRIGGER inyectar_falla_anulacion AFTER INSERT ON auditoria
@@ -644,13 +720,17 @@ describe('cancelar — putting a sale back', () => {
     }
     expect(String(err?.message)).toContain('INYECTADO')
 
-    // the reversal vanished whole: stock still short, ledger still 2 entries, sale still open
+    // the reversal vanished whole: stock still short, the ledger still holds only the sale's own
+    // entries, the sale still open. Counted from the post-sale state, which already includes the
+    // till opening's journalled float.
     const stock = t.conn.db.prepare('SELECT stock_milli FROM productos WHERE id = ?').get(producto.id)
     expect(stock.stock_milli).toBe(2500)
-    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(2)
-    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(2)
+    expect(contar(t, 'asientos_contables', t.negocioId)).toBe(asientosTrasVenta)
+    expect(contar(t, 'movimientos_caja', t.negocioId)).toBe(movsTrasVenta)
     const venta = t.conn.db.prepare('SELECT estado FROM ventas WHERE id = ?').get(r.venta.id)
     expect(venta.estado).toBe('completada')
+    // The books still agree with the drawer after the failed reversal — float plus the sale.
+    expect(saldoCuenta(t, CUENTA.CAJA)).toBe(60000)
   })
 })
 

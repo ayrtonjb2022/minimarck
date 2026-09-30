@@ -184,3 +184,27 @@ export function partidasDe(t, negocioId) {
     )
     .all(negocioId)
 }
+
+/**
+ * The journal lines of ONE operation, not of the whole shop.
+ *
+ * `partidasDe` returns every line the business has ever posted, and callers used to assert on that
+ * set. The moment a second operation posted to the SAME account — the opening float's `Caja` line
+ * landing beside a cash sale's — an `Object.fromEntries(partidas)` map silently kept only the last
+ * of the two and the assertion was reading whichever line happened to sort last. Scoping by the
+ * operation's own `referencia` is what makes these assertions mean what they say.
+ *
+ * @param referencia e.g. `venta:12`, `pago:3`, `caja:1`
+ */
+export function partidasDeOperacion(t, negocioId, referencia) {
+  return t.conn.db
+    .prepare(
+      `SELECT d.debe_centavos AS debe, d.haber_centavos AS haber, c.codigo, c.tipo
+         FROM detalles_asientos d
+         JOIN cuentas_contables c ON c.id = d.cuenta_contable_id
+         JOIN asientos_contables a ON a.id = d.asiento_contable_id
+        WHERE a.negocio_id = ? AND a.referencia = ?
+        ORDER BY d.asiento_contable_id, d.id`
+    )
+    .all(negocioId, referencia)
+}

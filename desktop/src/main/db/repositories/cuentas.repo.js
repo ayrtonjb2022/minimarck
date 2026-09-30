@@ -65,6 +65,11 @@ export const CUENTA = Object.freeze({
   MERCADOPAGO: '1.1.03',
   MERCADERIAS: '1.2.01',
   CLIENTES: '1.3.01',
+  // The account an OWNER CONTRIBUTION lands in. `3.1.01 Capital Social` is already in the seeded
+  // chart above (tipo `capital`, "Capital aportado"), so the till opening needed no new account.
+  // Its credit is where the float's money is said to come from: not revenue — the shop has sold
+  // nothing yet — and not another asset, which would move the gap rather than close it.
+  CAPITAL: '3.1.01',
   VENTAS: '4.1.01',
   CMV: '5.1.01'
 })
@@ -217,8 +222,28 @@ export function balanceAsiento(db, asientoId) {
   return { debe: row.debe, haber: row.haber, balanceado: row.debe === row.haber }
 }
 
-/** The trial balance for a whole business, per account. Every row must have `debe === haber`. */
-export function balanceGeneral(db, negocioId) {
+/**
+ * The trial balance for a whole business, per account. Every row must have `debe === haber`.
+ *
+ * @param referencias optional — restrict to entries carrying one of these `referencia` values
+ *   (`['venta:12', 'pago:3']`). The default is every entry in the business. The scope exists because
+ *   "this sale and its reversal cancel each other" is a claim about the SALE's entries, and once a
+ *   till opening posts a balanced-but-non-zero float entry, a whole-ledger reading can no longer
+ *   answer it: `Caja` and `Capital` carry a real balance that has nothing to do with the sale.
+ */
+export function balanceGeneral(db, negocioId, referencias = null) {
+  const acotado = Array.isArray(referencias) && referencias.length > 0
+  // The scope filters the DETAIL rows, not the account list, and it is applied in the WHERE with an
+  // EXISTS over the entry. Filtering in the `a` join would be wrong: `d` is joined independently
+  // of `a`, so a detail whose entry is not in scope would still be summed.
+  const params = [negocioId]
+  let alcance = ''
+  if (acotado) {
+    alcance = ` AND EXISTS (SELECT 1 FROM asientos_contables a
+                             WHERE a.id = d.asiento_contable_id
+                               AND a.referencia IN (${referencias.map(() => '?').join(', ')}))`
+    params.push(...referencias)
+  }
   return db
     .prepare(
       `SELECT c.codigo, c.nombre, c.tipo,
@@ -227,9 +252,9 @@ export function balanceGeneral(db, negocioId) {
          FROM cuentas_contables c
          LEFT JOIN detalles_asientos d
            ON d.cuenta_contable_id = c.id AND d.negocio_id = c.negocio_id
-        WHERE c.negocio_id = ?
+        WHERE c.negocio_id = ?${alcance}
         GROUP BY c.id
         ORDER BY c.codigo`
     )
-    .all(negocioId)
+    .all(...params)
 }

@@ -2,6 +2,7 @@ import { IpcError } from '../../bridge/errors.js'
 import { assertCents, toCents } from '../../../shared/money.js'
 import { requireTenant } from '../seed.js'
 import { esViolacionUnicaEn } from '../errores-sqlite.js'
+import { asentar, asegurarPlan, CUENTA } from './cuentas.repo.js'
 
 /**
  * The till (design §D.5; spec CAJA-1..4).
@@ -181,6 +182,52 @@ export function abrir(ctx, { saldoInicial = 0, observaciones = null } = {}) {
           ts,
           ts
         )
+
+      // ---- AND THE BOOKS -------------------------------------------------------------------
+      // The float is an OWNER CONTRIBUTION: the owner put their own money in the drawer to open
+      // the till, and until the books say so, that money has no origin. It is not revenue (the shop
+      // has sold nothing), and it is not a transfer between two accounts this app already owns
+      // (there is no "bank" standing behind the drawer until the owner funds one). So:
+      //
+      //     1.1.01 Caja      debe  el float
+      //     3.1.01 Capital   haber el float
+      //
+      // which is the standard treatment for a small retail till and the reason the books can now
+      // be trusted: the number a cashier counts in the drawer and the `Caja` balance an accountant
+      // reads are the SAME number, checked against each other, which is the only reason to keep
+      // both. `3.1.01 Capital Social` was already in the seeded chart (tipo `capital`, "Capital
+      // aportado"), so nothing new had to be invented to record where the money came from.
+      //
+      // INSIDE THIS SAME TRANSACTION, deliberately. A float sitting in the drawer with the journal
+      // entry rolled back is WORSE than the gap this fixes: the drawer total would look right, the
+      // books would not explain it, and the failure would be invisible until someone reconciled.
+      // Either the till, its movement and its entry all exist, or none of them do.
+      //
+      // A ZERO FLOAT POSTS NOTHING, and stays legal. This whole block — the movement AND the entry —
+      // sits inside the `saldoInicialCentavos >= 1` guard, so opening an empty till writes neither,
+      // which is the truth: no cash event happened. The chart of accounts is not grown either,
+      // because a shop that has recorded no peso should not be forced to invent a chart to say so.
+      const cuentas = asegurarPlan(ctx)
+      asentar(ctx, {
+        fecha: ts,
+        descripcion: `Apertura de caja ${cajaId}`,
+        tipo: 'apertura',
+        referencia: `caja:${cajaId}`,
+        partidas: [
+          {
+            cuentaId: cuentas.get(CUENTA.CAJA).id,
+            debeCentavos: saldoInicialCentavos,
+            haberCentavos: 0,
+            descripcion: 'Aporte del dueño a la caja'
+          },
+          {
+            cuentaId: cuentas.get(CUENTA.CAPITAL).id,
+            debeCentavos: 0,
+            haberCentavos: saldoInicialCentavos,
+            descripcion: 'Aporte del dueño a la caja'
+          }
+        ]
+      })
     }
 
     return ctx.db.prepare('SELECT * FROM cajas WHERE id = ?').get(cajaId)

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { crear as crearVenta } from '../../src/main/db/repositories/ventas.repo.js'
-import { cerrar } from '../../src/main/db/repositories/cajas.repo.js'
+import { cerrar, saldoCaja } from '../../src/main/db/repositories/cajas.repo.js'
 import { balanceGeneral, CUENTA } from '../../src/main/db/repositories/cuentas.repo.js'
 import {
   crear as crearDeudor,
@@ -160,22 +160,32 @@ describe('registrarPago — the partial payment', () => {
     const { t, ctx } = escenario()
     const deudor = insertarDeudor(t, { negocioId: t.negocioId, usuarioId: t.usuarioId })
 
+    // Counted BEFORE, not hardcoded. This scenario opens a till, and the opening float is now
+    // journalised, so the ledger legitimately holds rows that have nothing to do with the payment.
+    // A hardcoded count would have to be edited every time a legitimate entry is added, and the
+    // next person would "fix" it by loosening the number instead of asking why it moved.
+    const partidasAntes = contar(t, 'detalles_asientos', t.negocioId)
+
     expect(() => registrarPago(ctx, deudor.id, { monto: '1000' })).toThrowError(/excede la deuda/i)
     expect(contar(t, 'pagos_deuda', t.negocioId)).toBe(0)
-    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(0)
+    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(partidasAntes)
   })
 
   it('refuses zero, a negative amount and a non-numeric amount, each before any write', () => {
     const { t, ctx, deudor } = deudorConDeuda()
+
+    const partidasAntes = contar(t, 'detalles_asientos', t.negocioId)
 
     expect(() => registrarPago(ctx, deudor.id, { monto: '0' })).toThrowError(/mayor a 0/i)
     expect(() => registrarPago(ctx, deudor.id, { monto: '-500' })).toThrowError(/mayor a 0/i)
     expect(() => registrarPago(ctx, deudor.id, { monto: 'doce' })).toThrowError()
 
     expect(contar(t, 'pagos_deuda', t.negocioId)).toBe(0)
-    // FOUR, not two: the credit sale is a two-line entry (Clientes / Ingresos) and the IVA accrual
-    // posts its own pair. The count proves these three refusals added nothing to it.
-    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(4)
+    // Whatever the scenario's legitimate entries were — the opening float's Caja/Capital pair and
+    // the credit sale's Clientes/Ventas pair — the three refusals added NOTHING to that count. The
+    // assertion is about the delta, because "wrote nothing" is a delta claim.
+    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(partidasAntes)
+    expect(partidasAntes).toBeGreaterThan(0)
   })
 })
 
@@ -266,11 +276,12 @@ describe('registrarPago — the method decides the account and the drawer', () =
     // The WEB accepts `mixto` on a payment (`deudor.controller.js:291-296`) because it writes no
     // journal entry for one. Accepting it here would mean posting a single entry for money whose
     // destination is unknown, which is a lie in a ledger rather than a missing feature.
+    const partidasAntes = contar(t, 'detalles_asientos', t.negocioId)
     expect(() => registrarPago(ctx, deudor.id, { monto: '1000', metodoPago: 'mixto' })).toThrowError(
       /desglose efectivo\/crédito/i
     )
     expect(contar(t, 'pagos_deuda', t.negocioId)).toBe(0)
-    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(4)
+    expect(contar(t, 'detalles_asientos', t.negocioId)).toBe(partidasAntes)
   })
 
   it('allows a card payment with no till open, because a card never needed a drawer', () => {
@@ -599,18 +610,16 @@ describe('crear — the customer a credit sale needs', () => {
 })
 
 describe('the till and the receivable agree with the drawer', () => {
-  it('a cash payment moves the drawer and the 1.1.01 account by the SAME amount', () => {
+  it('the 1.1.01 account balance EQUALS the drawer total, before and after a cash payment', () => {
     const { t, ctx, deudor, caja } = deudorConDeuda()
 
-    // Both sides are read BEFORE and AFTER, and the assertion is on the DIFFERENCE. That is what
-    // this operation is responsible for.
-    //
-    // It is deliberately not an assertion that the account balance EQUALS the drawer balance. It
-    // does not, and cannot: `cajas.abrir` records the opening float as a `movimientos_caja` row
-    // and posts NO journal entry for it, so `1.1.01` understates the till by the float. That is a
-    // pre-existing gap in the till-opening path, it is not something `addPayment` introduced, and
-    // it is recorded in `DIVERGENCES.md` §4b rather than silently absorbed here. Asserting the
-    // equality would have "passed" only by hiding the float inside the expected value.
+    // EQUALITY, NOT A DIFFERENCE. This test used to read both sides before and after and assert
+    // on the deltas, with a comment saying the equality "would have passed only by hiding the
+    // float inside the expected value". That comment was the bug, not an explanation of it: two
+    // numbers that are supposed to be the same number were never compared, so a till whose books
+    // disagreed with its drawer by exactly the float looked green forever. Asserting the
+    // difference is asserting that addPayment moves both sides by the same amount — true, and not
+    // the property anyone cares about. The property is that the drawer and the account are EQUAL.
     const saldoCuenta = () =>
       t.conn.db
         .prepare(
@@ -619,26 +628,26 @@ describe('the till and the receivable agree with the drawer', () => {
             WHERE c.codigo = ?`
         )
         .get(CUENTA.CAJA).n
-    const saldoDrawer = () =>
-      t.conn.db
-        .prepare(
-          `SELECT ? + COALESCE(SUM(CASE WHEN tipo = 'ingreso' THEN monto_centavos
-                                        WHEN tipo = 'egreso' THEN -monto_centavos ELSE 0 END), 0) AS n
-             FROM movimientos_caja WHERE caja_id = ?`
-        )
-        .get(caja.saldo_inicial_centavos, caja.id).n
+    // The drawer total is `saldoCaja()` — the app's OWN definition, the one `cerrar` stamps at close
+    // (`saldo_inicial + ingresos - egresos`). It is deliberately NOT `saldo_inicial + SUM(movements)`:
+    // the APERTURA movement IS the float, so that sum counts the opening money twice. The old
+    // version of this test used that double-counting formula, which is why the two sides could
+    // never be compared directly — one of them was wrong by the float, always.
+    const saldoDrawer = () => saldoCaja(t.conn.db.prepare('SELECT * FROM cajas WHERE id = ?').get(caja.id))
 
-    const cuentaAntes = saldoCuenta()
-    const drawerAntes = saldoDrawer()
+    // BEFORE the payment. The float is already in the drawer, and the books already say so —
+    // `cajas.abrir` posts `Caja`/`Capital` for it. If this fails, the opening float is unposted.
+    expect(saldoDrawer()).toBe(caja.saldo_inicial_centavos)
+    expect(saldoCuenta()).toBe(saldoDrawer())
+    expect(saldoCuenta()).toBe(caja.saldo_inicial_centavos)
 
     const r = registrarPago(ctx, deudor.id, { monto: '1000', metodoPago: 'efectivo' })
 
-    // If a payment ever moved one without the other, the till a cashier counts at close and the
-    // account an accountant reads would drift apart by exactly that payment, every time, and
-    // neither could be used to check the other. This is the assertion that catches it.
-    expect(saldoCuenta() - cuentaAntes).toBe(100000)
-    expect(saldoDrawer() - drawerAntes).toBe(100000)
-    expect(saldoCuenta() - cuentaAntes).toBe(saldoDrawer() - drawerAntes)
+    // AFTER. The payment added the same 100 000 to both sides, and they are still equal — which is
+    // only a real check now that the opening float is inside both numbers.
+    expect(saldoCuenta()).toBe(saldoDrawer())
+    expect(saldoCuenta()).toBe(caja.saldo_inicial_centavos + 100000)
+    expect(saldoDrawer()).toBe(caja.saldo_inicial_centavos + 100000)
 
     const mov = movimientosDeCobro(t, caja.id).at(-1)
     const asiento = t.conn.db
@@ -650,6 +659,35 @@ describe('the till and the receivable agree with the drawer', () => {
     // And what the customer owes is 10000 - 1000, which the sale's own debit and the payment's
     // own credit both say.
     expect(r.deudor.deudaPendienteCentavos).toBe(1000000 - 100000)
+  })
+
+  it('the float is an owner contribution: Caja debits and Capital credits for it', () => {
+    const { t, caja } = deudorConDeuda()
+
+    // The float's counterpart. Without it, the money in the drawer has no stated origin, which is
+    // the whole defect: a balance that is right by accident and cannot be explained if wrong.
+    const detalle = t.conn.db
+      .prepare(
+        `SELECT c.codigo, d.debe_centavos, d.haber_centavos
+           FROM detalles_asientos d
+           JOIN cuentas_contables c ON c.id = d.cuenta_contable_id
+           JOIN asientos_contables a ON a.id = d.asiento_contable_id
+          WHERE a.referencia = ?`
+      )
+      .all(`caja:${caja.id}`)
+
+    const cajaLine = detalle.find((d) => d.codigo === CUENTA.CAJA)
+    const capitalLine = detalle.find((d) => d.codigo === CUENTA.CAPITAL)
+    expect(cajaLine.debe_centavos).toBe(caja.saldo_inicial_centavos)
+    expect(cajaLine.haber_centavos).toBe(0)
+    expect(capitalLine.haber_centavos).toBe(caja.saldo_inicial_centavos)
+    expect(capitalLine.debe_centavos).toBe(0)
+
+    // And it is typed as an opening, which the schema allows for exactly this.
+    const asiento = t.conn.db
+      .prepare('SELECT tipo FROM asientos_contables WHERE referencia = ?')
+      .get(`caja:${caja.id}`)
+    expect(asiento.tipo).toBe('apertura')
   })
 
   it('the cash is still countable at close: a payment of $1.000 lands in the drawer total', () => {

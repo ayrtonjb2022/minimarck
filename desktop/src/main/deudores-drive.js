@@ -199,6 +199,34 @@ export function runDeudoresDrive(win, db) {
     const fondoCaja = caja.saldo_inicial_centavos
     say(`         caja #${caja.id}, fondo ${pesos(fondoCaja)}`)
 
+    // ---- the float is IN THE BOOKS, not just in the drawer -------------------------------
+    // Read straight out of the file the real app just wrote, through the same SQLite the renderer
+    // is holding open. If the opening float were only a `movimientos_caja` row, the drawer would
+    // read 50 000 here and the account would read 0 — and the whole point of keeping two records
+    // of the same money is that they are checked against each other.
+    const saldoCuentaCaja = db1(
+      `SELECT COALESCE(SUM(d.debe_centavos - d.haber_centavos), 0) AS saldo
+         FROM cuentas_contables c
+         JOIN detalles_asientos d ON d.cuenta_contable_id = c.id
+        WHERE c.codigo = '1.1.01'`
+    )?.saldo
+    const saldoCajaColumn = db1(
+      `SELECT saldo_inicial_centavos + total_ingresos_centavos - total_egresos_centavos AS saldo
+         FROM cajas WHERE id = ${caja.id}`
+    )?.saldo
+    const floatAsiento = db1(
+      `SELECT a.id FROM asientos_contables a
+        WHERE a.referencia = ? AND a.tipo = 'apertura'`,
+      `caja:${caja.id}`
+    )
+    say(`         1.1.01 Caja        ${pesos(saldoCuentaCaja ?? 0)}`)
+    say(`         caja en el cajon  ${pesos(saldoCajaColumn ?? 0)}`)
+    check('el fondo abierto aparece en 1.1.01, no solo en el cajón', Number(saldoCuentaCaja) === Number(fondoCaja),
+      `cuenta ${pesos(saldoCuentaCaja ?? 0)} vs fondo ${pesos(fondoCaja)}`)
+    check('la cuenta y el cajón dicen el mismo número al abrir', Number(saldoCuentaCaja) === Number(saldoCajaColumn),
+      `cuenta ${pesos(saldoCuentaCaja ?? 0)} vs cajón ${pesos(saldoCajaColumn ?? 0)}`)
+    check('el fondo quedó asentado como aporte del dueño', Boolean(floatAsiento), 'no hay asiento de apertura para esta caja')
+
     if (!(await esperarEn(win, `document.querySelector('.pos-container')`, 8000))) {
       check('con la caja abierta aparece la pantalla de venta', false, 'no aparece la grilla')
       return finish()
@@ -379,6 +407,20 @@ export function runDeudoresDrive(win, db) {
       saldoCaja === fondoCaja + ABONO, `saldo ${pesos(saldoCaja)}, esperado ${pesos(fondoCaja + ABONO)}`)
     say(`         cajón: fondo ${pesos(fondoCaja)} + cobrado ${pesos(ABONO)} = ${pesos(saldoCaja)}`)
 
+    // And the books arrived at the SAME number. Not a delta: the point of the check is that two
+    // independent records of the same cash now agree, which is only a real test if it is stated as
+    // an equality between the two numbers and not as "both moved by the same amount".
+    const cajaEnLibros = db1(
+      `SELECT COALESCE(SUM(d.debe_centavos - d.haber_centavos), 0) AS n
+         FROM cuentas_contables c
+         JOIN detalles_asientos d ON d.cuenta_contable_id = c.id
+        WHERE c.codigo = '1.1.01'`
+    ).n
+    say(`         1.1.01 Caja        ${pesos(cajaEnLibros)}`)
+    check('la cuenta 1.1.01 y el cajón dicen el mismo número después del cobro',
+      Number(cajaEnLibros) === Number(saldoCaja),
+      `cuenta ${pesos(cajaEnLibros)} vs cajón ${pesos(saldoCaja)}`)
+
     // The journal: a cash collection debits the drawer and credits the receivable, balanced.
     const partidas = dbAll(
       `SELECT c.codigo, SUM(d.debe_centavos) AS debe, SUM(d.haber_centavos) AS haber
@@ -407,8 +449,19 @@ export function runDeudoresDrive(win, db) {
       String(pendienteEnPantalla).replace(/[^\d]/g, '') === String(pendienteEsperado),
       `pantalla "${pendienteEnPantalla}", esperado ${pesos(pendienteEsperado)}`)
 
+    // The history is a SECOND, independent read: `Cobro` refetches the payment list in an effect
+    // keyed on the pending balance, so the list arrives after the payment resolves. Reading the
+    // cell the instant the payment returns races that fetch and sees the pre-payment "$0,00". Wait
+    // for the number to land — the same way the screens above wait for their grids.
+    const esperadoPagado = String(ABONO)
+    const pagosEnPantalla = await esperarEn(
+      win,
+      `(() => { const el = document.querySelector('[data-testid="cobro-total-pagado"]');
+        return !!el && el.textContent.replace(/[^0-9]/g, '') === '${esperadoPagado}'; })()`,
+      6000
+    )
     const totalPagadoTexto = await leer(win, `document.querySelector('[data-testid="cobro-total-pagado"]').textContent`)
-    check('el historial suma exactamente lo pagado', String(totalPagadoTexto).replace(/[^\d]/g, '') === String(ABONO),
+    check('el historial suma exactamente lo pagado', pagosEnPantalla,
       `pantalla "${totalPagadoTexto}"`)
     say(`         queda debiendo ${pendienteEnPantalla}, pagado ${totalPagadoTexto}`)
 
