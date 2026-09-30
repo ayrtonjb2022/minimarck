@@ -55,6 +55,91 @@ function emitMigrations() {
 }
 
 /**
+ * Strip the launch probe out of the renderer for a RELEASE build.
+ *
+ * WHAT THE PROBE IS. `src/renderer/probe.js` is the S0 launch proof: it wraps
+ * fetch/XHR/WebSocket/EventSource/sendBeacon, watches the DOM with a MutationObserver, and fires
+ * a set of DELIBERATELY REFUSED calls (a bad IPC group, a blocked inline script, an attempted
+ * network beacon) to prove the sandbox and the CSP actually hold. `probe:launch` reads its
+ * results off `window.__S0_PROBE__` and turns them into a pass/fail gate over the real window.
+ *
+ * WHY IT MUST NOT SHIP. It is a development instrument, and it is not harmless decoration in a
+ * shop:
+ *
+ *   1. It fires refused IPC calls on EVERY page load, forever, in a production app. Each one
+ *      crosses the process boundary, is rejected by the security layer, and raises an
+ *      `IpcError`. A till is a machine that is expected to run all day, and the cost of the
+ *      instrument is paid on every single navigation for the lifetime of the install.
+ *   2. It is a denial-of-self vector by construction: a MutationObserver plus patched network
+ *      APIs is permanent overhead on the same UI thread that has to render a sale under time
+ *      pressure. Not fatal, but not free, and not needed by a user.
+ *   3. It leaves debug state in the page (`window.__S0_PROBE__`, the `#results` list). A user who
+ *      opens devtools sees a pass report for checks that have nothing to do with their shop, and
+ *      anyone reading the DOM sees probe output mixed into the app.
+ *
+ * WHY IT IS NOT DELETED. The security claim it proves is load-bearing: "the renderer cannot reach
+ * SQL or the filesystem" is only true if something checks, on every page load, that the sandbox
+ * and the CSP are really in force. Deleting the probe would delete the evidence and keep the
+ * claim, which is the worst of both.
+ *
+ * SO: the probe stays in the repository and stays in the GATE, and the release build simply does
+ * not contain it. Two builds, one source tree:
+ *
+ *   npm run build         -> probe INCLUDED. This is what `verify:s0` builds and then drives
+ *                            with `probe:launch`, so the gate keeps testing the real thing.
+ *   npm run build:release -> probe EXCLUDED. This is what `npm run dist` packages.
+ *
+ * The gate is `MINIMARCK_PROBE`. It defaults to ON, because a build that silently stopped
+ * emitting the probe would turn `probe:launch` into a test that waits 20 seconds and fails for
+ * the wrong reason, and a failing-for-the-wrong-reason gate gets deleted. Explicitly OFF is the
+ * only way to get the release artifact.
+ *
+ * WHY THE HTML IS REWRITTEN RATHER THAN THE MODULE. A guard inside `probe.js` cannot work: the
+ * flag would have to survive a client-side navigation, and the deep-link check (NAV-3) depends on
+ * the probe re-executing on the NEW document without the URL carrying anything. Removing the
+ * script tag makes the absence structural - there is no probe code in the bundle to run, and no
+ * flag that could accidentally re-enable it - instead of a runtime condition that could be
+ * forgotten, mis-set, or defeated by a query parameter.
+ */
+function stripProbeForRelease() {
+  const included = process.env.MINIMARCK_PROBE !== '0'
+  return {
+    name: 'minimarck:release-probe',
+    // Runs on the index.html transform, before it is written out. There is no
+    // `transformIndexHtml` hook, because that hook runs at DEV-server request time and this
+    // decision has to be baked into the BUILD OUTPUT, not re-decided per request.
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        if (included) return html
+        return (
+          html
+            // The probe's own module script.
+            .replace(/[ \t]*<script[^>]*probe\.js[^>]*><\/script>\r?\n?/g, '')
+            // The hidden <ul> it writes into.
+            .replace(/[ \t]*<ul id="results"[^>]*><\/ul>\r?\n?/g, '')
+            // AND THE COMMENTS THAT EXPLAIN THEM, which is the part a first pass gets wrong.
+            //
+            // Both elements in this file are preceded by a multi-line comment that says, in
+            // detail, why the probe is first and where it writes. Removing the tags and keeping
+            // the prose leaves the shipped index.html claiming the page "must be in place BEFORE
+            // React mounts" for a module that is not there, and it makes the "is the probe gone?"
+            // check ambiguous: grep for `probe.js` and the file still answers yes, in a comment,
+            // long after the thing is gone. A build output that misdescribes itself is worse than
+            // no comment, and a verifier that cannot distinguish the two stops being trusted.
+            //
+            // Non-greedy, so it matches one comment at a time, and it is anchored on the word
+            // `probe` so the unrelated comments in this file (the data: favicon note, which
+            // matters and must survive) are left alone.
+            .replace(/[ \t]*<!--(?:(?!--)[\s\S])*?probe(?:(?!--)[\s\S])*?-->\r?\n?/gi, '')
+        )
+      }
+    }
+  }
+}
+
+/**
  * electron-vite build for the desktop shell. Three targets: the Electron main process,
  * the sandboxed preload bridge, and the renderer that is served over the `app://` scheme.
  *
@@ -105,7 +190,9 @@ export default defineConfig({
     // utility CSS. Without it that import resolves to nothing and every `dark:` utility in
     // the vendored pages silently becomes an unknown class — the pages still render, they
     // just never get their dark variants.
-    plugins: [react(), tailwindcss()],
+    //
+    // `stripProbeForRelease()` is first so its index.html transform runs before React's.
+    plugins: [stripProbeForRelease(), react(), tailwindcss()],
     resolve: {
       // `@shared/*` is `src/shared/*`, the money/quantity/contract modules main and the renderer
       // BOTH import. It is the whole point of that directory: a total computed by `lineTotalCentavos`

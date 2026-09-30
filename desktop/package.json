@@ -1,8 +1,11 @@
 {
   "name": "minimarck-desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "MiniMarck Desktop — offline Electron + SQLite desktop app for the POS",
+  "author": {
+    "name": "MiniMarck"
+  },
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -17,35 +20,47 @@
     "verify:offline": "node scripts/verify-offline.mjs",
     "verify:preload": "node scripts/assert-preload-format.mjs",
     "verify:migrations": "node scripts/assert-migrations-packaged.mjs",
+    "verify:encoding": "node scripts/verify-encoding.mjs",
+    "verify:bundle": "node scripts/assert-bundle-selfcontained.mjs",
     "verify:contract": "node scripts/check-contract.mjs",
     "verify:licences": "node scripts/check-licences.mjs",
     "db:reset": "node scripts/db-reset.mjs",
     "db:reset:force": "node scripts/db-reset.mjs --force",
     "db:demo": "node scripts/db-demo.mjs",
-    "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:offline && npm run verify:licences && npm run probe:launch && npm run drive:payment"
+    "db:inspect": "node scripts/inspect-installed-db.mjs",
+    "verify:allowlist": "node scripts/repro-authz-second-launch.mjs",
+    "build:release": "node scripts/build-release.mjs",
+    "pack:dir": "npm run build:release && node scripts/build-installer.mjs --dir",
+    "dist": "npm run build:release && node scripts/build-installer.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:installer-ui": "node scripts/verify-installer-ui.mjs",
+    "drive:installed": "node scripts/drive-payment-installed.mjs",
+    "verify:installed": "node scripts/verify-installed-e2e.mjs",
+    "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:encoding && npm run verify:bundle && npm run verify:offline && npm run verify:licences && npm run probe:launch && npm run drive:payment"
   },
   "engines": {
     "node": ">=24.18.0 <25"
   },
   "devDependencies": {
+    "@electron/asar": "^4.3.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.104.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@vitejs/plugin-react": "^4.7.0",
     "electron": "44.4.5",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.1",
-    "jsdom": "^26.1.0",
-    "vite": "^7.1.14",
-    "vitest": "^3.2.4"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.3.3",
-    "@tanstack/react-query": "^5.104.0",
     "framer-motion": "^11.18.2",
+    "jsdom": "^26.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.6",
     "react-toastify": "^10.0.6",
-    "tailwindcss": "^4.3.3"
-  }
+    "tailwindcss": "^4.3.3",
+    "vite": "^7.1.14",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {}
 }

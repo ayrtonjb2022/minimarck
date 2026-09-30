@@ -179,14 +179,25 @@ describe('the real repository layout', () => {
     expect(existsSync(path.join(desktopRoot(), 'package.json'))).toBe(true)
   })
 
-  it('the shipped app on disk is currently UNRELEASED, so db:reset would run', () => {
-    // This test is deliberately about the real package.json: it will FAIL the day the app ships,
-    // which is the correct time for someone to read it and decide whether the guard still fits.
+  it('the version bump to 1.0.0 ARMED the db:reset guard against the real package.json', () => {
+    // This test is deliberately about the real package.json, and it deliberately flipped when the
+    // version went to 1.0.0. That flip is the test working, not the test breaking: a released
+    // build has run on a real machine, and `db:reset` must refuse to delete that machine's sales
+    // history because someone typed a convenient command. The guard now needs `db:reset:force`.
+    //
+    // It is NOT kept green by moving the version back, and it is NOT deleted to get a green run.
+    // Both would restore the ability to wipe a real shop's database with one command. The
+    // assertion is the version being AT LEAST 1.0.0, so the next bump cannot quietly lower it.
     const pkg = JSON.parse(
       readFileSync(path.join(desktopRoot(), 'package.json'), 'utf8')
     )
     const s = shippedSignals(pkg, [])
-    expect(planReset({ paths, signals: s }).allowed).toBe(true)
+    expect(s.atOrPastOne).toBe(true)
+    expect(s.version.split('.').map(Number)[0]).toBeGreaterThanOrEqual(1)
+    // And therefore the destructive command is refused on the real repo, by the real planner.
+    expect(planReset({ paths, signals: s }).allowed).toBe(false)
+    // The deliberate override must still exist, or the guard is a lock with no key.
+    expect(planReset({ paths, signals: s, force: true }).allowed).toBe(true)
   })
 
   it('the database name the script deletes is the name the app opens', () => {

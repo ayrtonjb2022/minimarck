@@ -1,6 +1,18 @@
 node_modules/
 out/
 dist/
+# electron-builder output. This is where `npm run dist` writes, and it accumulates a
+# ~96 MB installer plus a full `win-unpacked/` tree per timestamped stage — several GB after a few
+# builds. It is a build artefact, never a source, and the installer is a DELIVERY item: it is handed
+# to whoever needs it, not committed for them to pull.
+release/
+#
+# `build/` is the OPPOSITE case and must be un-ignored here. The root .gitignore has `build/` for
+# build OUTPUT, but this `build/` holds a SOURCE asset: `icon.ico`, the mark electron-builder bakes
+# into the installer and every shortcut. Left ignored, a fresh clone would build a perfectly
+# "successful" installer wearing electron-builder's default icon, and nothing would fail.
+!build/
+!build/**
 *.log
 .DS_Store
 Thumbs.db
