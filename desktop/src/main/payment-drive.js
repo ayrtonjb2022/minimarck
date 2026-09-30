@@ -321,7 +321,23 @@ export function runPaymentDrive(win, db) {
     if (!hayProducto) return finish()
 
     const nombreProducto = await leer(win, `document.querySelector('.pos-product-card:not(.stock-cero)').textContent`)
-    const stockAntes = db1(`SELECT id, stock_milli, unidad_medida FROM productos WHERE deleted_at IS NULL ORDER BY id LIMIT 1`)
+    // The product's id comes off the CARD being clicked, not from `ORDER BY id LIMIT 1`.
+    //
+    // Those are different products whenever the grid is not sorted by insertion order, which is the
+    // normal case: the POS sorts the shelf, so the first card is the first product ALPHABETICALLY,
+    // while `ORDER BY id LIMIT 1` is the first product SEEDED. With the demo catalogue those are
+    // "Aceite 900 ml" and "Queso artesanal" respectively, so the drive used to assert that Queso's
+    // stock fell after selling oil — reported as "the stock did not go down" on a run where the
+    // decrement was exactly right. A check aimed at the wrong row is worse than no check: it
+    // invites someone to "fix" correct stock logic to satisfy it.
+    const productoIdClickeado = await leer(win, `(() => {
+      const card = document.querySelector('.pos-product-card:not(.stock-cero)');
+      if (!card) return null;
+      return card.dataset.productoId || card.getAttribute('data-producto-id') || null;
+    })()`)
+    const stockAntes = productoIdClickeado === null
+      ? db1(`SELECT id, stock_milli, unidad_medida FROM productos WHERE deleted_at IS NULL ORDER BY id LIMIT 1`)
+      : db1(`SELECT id, stock_milli, unidad_medida FROM productos WHERE id = ?`, Number(productoIdClickeado))
     await buscar(win, { selector: '.pos-product-card:not(.stock-cero)' })
     const enTicket = await esperarEn(win, `document.querySelectorAll('.cart-item').length > 0`)
     check('el clic del producto lo pone en el ticket', enTicket)
@@ -336,7 +352,36 @@ export function runPaymentDrive(win, db) {
     let cambioEnPantalla = null
     let tipeo = { ok: false, via: 'no se intentó' }
     if (abrioConF2) {
-      tipeo = await tipear(win, { selector: CAMPO_MINIMO, texto: '500', dentroDelModal: true })
+      // Tender ENOUGH, computed from what is actually in the ticket.
+      //
+      // This used to type a hardcoded `500` pesos. That was only ever true for the drive's own
+      // throwaway product, which costs $15. Point the drive at a real catalogue — which is what
+      // `verify-installed-e2e.mjs` does, seeding six products before selling — and the first card in
+      // the grid may be a $2.400 oil, the tender comes up short, "Confirmar Venta" is correctly
+      // disabled by `montoValido`, and the run fails on a harness assumption rather than on a
+      // product defect. The app was right; the drive was wrong.
+      //
+      // The total is read off the modal's own "Total a cobrar" figure instead of recomputed from the
+      // database, so the money typed in is compared against the same number the cashier sees. A round
+      // note above it guarantees a non-zero change, which is what the next check looks for.
+      const totalTexto = await leer(win, `(() => {
+        const overlays = document.querySelectorAll('.modal-overlay');
+        const raiz = overlays[overlays.length - 1] || document;
+        const etiqueta = Array.from(raiz.querySelectorAll('p'))
+          .find(p => (p.textContent || '').trim() === 'Total a cobrar');
+        return etiqueta && etiqueta.nextElementSibling ? etiqueta.nextElementSibling.textContent.trim() : null;
+      })()`)
+      const totalPesos = totalTexto === null ? NaN : Number(String(totalTexto).replace(/[^\d,]/g, '').replace(',', '.'))
+      if (!Number.isFinite(totalPesos) || totalPesos <= 0) {
+        check('la pantalla muestra el total a cobrar', false, `no se pudo leer el total: ${JSON.stringify(totalTexto)}`)
+        return finish()
+      }
+      // A whole peso note above the total, so the change is never zero and the "cambio" assertion
+      // has something real to read. Rounded UP to the next 500 so the figure looks like money a
+      // customer would actually hand over rather than an exact-match edge case.
+      const aEntregar = Math.ceil((totalPesos + 1) / 500) * 500
+      say(`         total $${totalPesos.toFixed(2)}, se entrega $${aEntregar.toFixed(2)}`)
+      tipeo = await tipear(win, { selector: CAMPO_MINIMO, texto: String(aEntregar), dentroDelModal: true })
       await sleep(500)
       // Read the change the way the markup presents it: the label paragraph, then its next
       // sibling. Scraping dollars out of the whole modal's text is how a drive ends up matching
