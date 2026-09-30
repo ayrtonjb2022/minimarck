@@ -173,10 +173,29 @@ export function migrate(conn, { dir, now = () => new Date().toISOString() } = {}
   const pending = migrations.filter((m) => !appliedVersions.has(m.version))
   const done = []
 
-  for (const m of pending) {
-    // The allowlist is widened to the table this migration creates, so the authorizer blocks a
-    // write to anything the schema does not declare.
+  // The allowlist is widened for EVERY table the migration set DECLARES, not only for the tables
+  // this run happened to create.
+  //
+  // This was `pending`-scoped and it was a real, shipping bug: the authorizer opens deny-all, so a
+  // second launch against an already-migrated database had an EMPTY allowlist and every write came
+  // back `SQLITE_AUTH: not authorized`. The app could open a till and take a sale on first run and
+  // could do nothing at all on every run after it.
+  //
+  // It is invisible in development, which is exactly why it survived: the payment drive always
+  // starts from a throwaway database, so migration 001 is always pending and the allowlist is
+  // always populated. It only appeared in the INSTALLED end-to-end run, where the database was
+  // already at version 1 from the first launch. `scripts/repro-authz-second-launch.mjs` reproduces it
+  // in two bootstraps of the same file, and `tests/db/migrate.spec.js` pins the second launch.
+  //
+  // Declaring the full set is also the more honest reading of the rule. The allowlist exists so a
+  // write cannot reach a table the SCHEMA does not have, not so a write cannot reach a table this
+  // particular process did not build. Widening it per-run conflated those two and produced a
+  // database that could be read but not written.
+  for (const m of migrations) {
     for (const table of tablesCreatedBy(m.sql)) conn.allowTable(table)
+  }
+
+  for (const m of pending) {
     conn.tx(() => {
       conn.db.exec(m.sql)
       conn.db

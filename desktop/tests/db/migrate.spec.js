@@ -262,3 +262,71 @@ describe('tablesCreatedBy', () => {
     expect(tablesCreatedBy('SELECT 1')).toEqual([])
   })
 })
+
+describe('the allowlist survives a launch with nothing to migrate', () => {
+  /**
+   * The regression that shipped: the authorizer was widened inside the `pending` loop, so the
+   * second launch of a real installation had an empty allowlist and every write came back
+   * `SQLITE_AUTH: not authorized`. A shop could open the till and sell once, then never again.
+   *
+   * The payment drive could not see it because it always starts from a throwaway database where
+   * migration 001 is pending. This test opens the SAME file twice, which is the only shape that
+   * catches it, and asserts on the authorizer's verdict rather than on the allowlist's contents —
+   * the contents are an implementation detail, the verdict is the behaviour.
+   */
+  it('still permits writes when migrate() applies nothing', () => {
+    writeMigration('001_init.sql', 'CREATE TABLE auditoria (id INTEGER PRIMARY KEY, tabla TEXT NOT NULL)')
+
+    const first = openDatabase(dbFile, { walFile })
+    try {
+      migrate(first, { dir: migrationsDir, now: NOW })
+      first.tx(() => first.db.prepare(`INSERT INTO auditoria (tabla) VALUES ('primera')`).run())
+    } finally {
+      first.checkpointAndClose()
+    }
+
+    const second = openDatabase(dbFile, { walFile })
+    try {
+      const result = migrate(second, { dir: migrationsDir, now: NOW })
+      expect(result.applied).toEqual([])
+      expect(result.userVersion).toBe(1)
+
+      expect(() =>
+        second.tx(() => second.db.prepare(`INSERT INTO auditoria (tabla) VALUES ('segunda')`).run())
+      ).not.toThrow()
+
+      const rows = second.db.prepare('SELECT tabla FROM auditoria ORDER BY id').all()
+      expect(rows.map((r) => r.tabla)).toEqual(['primera', 'segunda'])
+    } finally {
+      second.checkpointAndClose()
+    }
+  })
+
+  it('widens the allowlist for tables declared by APPLIED migrations, not just pending ones', () => {
+    // Same three lines as the test above would be re-testing behaviour, not the rule behind it: the
+    // allowlist is built from the full migration SET, so a table whose migration ran on a previous
+    // launch is writable now. The assertion is on a fresh connection, which is the only way to see
+    // a stale allowlist.
+    writeMigration(
+      '001_init.sql',
+      'CREATE TABLE productos (id INTEGER PRIMARY KEY, nombre TEXT NOT NULL); ' +
+        'CREATE TABLE auditoria (id INTEGER PRIMARY KEY, tabla TEXT NOT NULL)'
+    )
+    const first = openDatabase(dbFile, { walFile })
+    try {
+      migrate(first, { dir: migrationsDir, now: NOW })
+    } finally {
+      first.checkpointAndClose()
+    }
+
+    const second = openDatabase(dbFile, { walFile })
+    try {
+      migrate(second, { dir: migrationsDir, now: NOW })
+      expect(() =>
+        second.tx(() => second.db.prepare(`INSERT INTO productos (nombre) VALUES ('Gaseosa')`).run())
+      ).not.toThrow()
+    } finally {
+      second.checkpointAndClose()
+    }
+  })
+})
