@@ -19,11 +19,20 @@
  *   - Uninstalling must not take the sales history with it. It does not, because
  *     `deleteAppDataOnUninstall: false` is set explicitly; had it been left to a default, this step
  *     would have been the one that discovered the loss.
+ *   - REINSTALLING has to give the shop back the same ledger. This step was MISSING until the second
+ *     pass on a real machine, and its absence is worth naming: the script used to end at "the folder
+ *     is gone, the data is not", which reads like the promise a user makes to themselves — "if
+ *     something goes wrong I uninstall, reinstall, and my history is there" — while proving half of
+ *     it. Step 6 now runs the same installer again and requires the program, the Programs-and-
+ *     Features entry, both shortcuts, the ledger digest, and a real window back.
+ *   - A PROCESS is not a WINDOW. `appRunning()` passes as soon as the executable starts, which on
+ *     this machine was before the window existed. The window caption is now read and compared, so
+ *     "the app opened onto the shop" means a titled, visible window.
  *
- * The steps are ordered so the destructive one is LAST, and so the sale is recorded in a database
- * that then has to survive the uninstall. Verifying "the data directory still exists" without a sale
- * in it would prove almost nothing: an empty directory surviving is not the same promise as a
- * ledger of a shop's day surviving.
+ * The steps are ordered so the destructive one is near the end and is immediately followed by the
+ * REINSTALL that undoes it, and so the sale is recorded in a database that then has to survive both.
+ * Verifying "the data directory still exists" without a sale in it would prove almost nothing: an
+ * empty directory surviving is not the same promise as a ledger of a shop's day surviving.
  *
  * THE SALE IS MADE THROUGH THE REAL UI, not by inserting a row. The payment drive already proved
  * the sale path in the development build; what is unproven here is whether THAT code survives being
@@ -31,10 +40,11 @@
  * by npm. So this drives the real POS with keystrokes and the real IPC with a real migration.
  *
  * Usage:
- *   node scripts/verify-installed-e2e.mjs            # full: install -> use -> uninstall -> recheck
+ *   node scripts/verify-installed-e2e.mjs            # install -> use -> uninstall -> REINSTALL
  *   node scripts/verify-installed-e2e.mjs --no-install  # reuse the current installation
  */
 import { spawnSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, mkdirSync, readdirSync, copyFileSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import path from 'node:path'
@@ -55,6 +65,19 @@ const PROFILE = path.join(process.env.APPDATA || '', 'MiniMarck')
 const DB = path.join(PROFILE, 'data', 'minimarck.db')
 const STAMP = new Date().toISOString().replace(/[:.]/g, '-')
 const BACKUP = path.join(os.tmpdir(), 'opencode', `e2e-profile-${STAMP}`)
+
+/** The two entry points the installer promises a shop. Both must come BACK after a reinstall. */
+const SHORTCUTS = {
+  desktop: path.join(process.env.USERPROFILE || '', 'Desktop', 'MiniMarck.lnk'),
+  startMenu: path.join(
+    process.env.APPDATA || '',
+    'Microsoft',
+    'Windows',
+    'Start Menu',
+    'Programs',
+    'MiniMarck.lnk'
+  )
+}
 
 const results = []
 const record = (name, ok, detail = '') => {
@@ -114,6 +137,119 @@ function appRunning() {
 function stopApp() {
   spawnSync('taskkill', ['/f', '/im', 'MiniMarck.exe'], { encoding: 'utf8' })
   return sleep(2000)
+}
+
+/**
+ * The title of the installed app's window, read by enumerating real Win32 windows.
+ *
+ * `appRunning()` alone is not a launch check. It looks for a PROCESS, and a process exists the
+ * moment the executable starts — before the window is created, and it would also report true for an
+ * app whose window failed to appear, opened on the wrong screen, or was left in the background. On
+ * the machine this was written for, the process check passed on the very first poll while a title
+ * search came up empty, and the window only showed up seconds later. So the window itself is
+ * inspected, and the caption is COMPARED rather than merely reported: a title of "" is not evidence.
+ */
+function windowTitle() {
+  const out = path.join(os.tmpdir(), `minimarck-title-${process.pid}-${STAMP}.json`)
+  const r = spawnSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      path.join(here, 'read-window-title.ps1'),
+      '-ProcessName',
+      'MiniMarck',
+      '-TimeoutSeconds',
+      '90',
+      '-Out',
+      out
+    ],
+    { encoding: 'utf8', timeout: 3 * 60 * 1000 }
+  )
+  try {
+    return JSON.parse(readFileSync(out, 'utf8'))
+  } catch {
+    return { title: null, visible: false, error: (r.stderr || r.stdout || '').trim().slice(-200) }
+  } finally {
+    rmSync(out, { force: true })
+  }
+}
+
+/**
+ * The caption the app is supposed to show, read from the one place that sets it.
+ *
+ * THE TRAP THIS AVOIDS. `src/renderer/index.html` ends its `<title>` with U+2014 EM DASH, not
+ * U+002D HYPHEN-MINUS. Every editor, every console and this script's own output render the two
+ * identically, so a hand-typed expectation "looks right" and is wrong. That is not hypothetical: the
+ * first version of this constant used a plain hyphen and reported two failures on a run where the
+ * window was 1280x768, visible, and titled correctly — and the hand-written verification of this
+ * same title, on this same machine, had recorded it with a plain hyphen too. A check whose
+ * expectation is retyped by hand is a check that will be "fixed" by loosening it to a substring
+ * match, which would then accept any window with any title.
+ *
+ * So the expectation is READ from the source, and then ASSERTED to be the POS caption. Deriving it
+ * means the check can never drift from a deliberate title change; asserting the caption means a
+ * source that quietly says something else still fails.
+ */
+const TITLE_CAPTION = 'Punto de Venta'
+
+function sourceTitle() {
+  const html = readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
+  const m = html.match(/<title>([^<]*)<\/title>/i)
+  return m ? m[1].trim() : null
+}
+
+let EXPECTED_TITLE = null
+
+function recordWindow(name) {
+  if (EXPECTED_TITLE === null) {
+    EXPECTED_TITLE = sourceTitle()
+    record(
+      'the app declares a POS window title in its source',
+      typeof EXPECTED_TITLE === 'string' && EXPECTED_TITLE.includes(TITLE_CAPTION),
+      EXPECTED_TITLE === null ? 'no <title> in src/renderer/index.html' : `"${EXPECTED_TITLE}"`
+    )
+  }
+  const t = windowTitle()
+  const ok = typeof t.title === 'string' && t.title.trim() === EXPECTED_TITLE && t.visible === true
+  record(
+    name,
+    ok,
+    t.title
+      ? ok
+        ? `"${t.title}" (${t.width}x${t.height})`
+        : `GOT "${t.title}" (${t.width}x${t.height}), expected "${EXPECTED_TITLE}"`
+      : t.error || 'no visible window with a title'
+  )
+}
+
+/**
+ * A digest of the LEDGER'S CONTENTS, not of the database file.
+ *
+ * Hashing the .db bytes would be the wrong instrument. SQLite rewrites the file for reasons that have
+ * nothing to do with the data: a WAL checkpoint on close, a VACUUM, a page reorder, a different free
+ * page. A file that is logically identical can therefore hash differently, and a check built on it
+ * would fail on a perfectly good reinstall — or worse, be loosened until it compared nothing.
+ *
+ * What has to survive an uninstall and a reinstall is the shop's ledger: the sales, the money on
+ * them, the line items, the stock they moved and the drawer they touched. That is what gets hashed,
+ * over a canonical JSON of sorted rows, so "the ledger is unchanged" is a claim about DATA.
+ */
+function ledgerDigest() {
+  const db = new DatabaseSync(DB, { readOnly: true })
+  const q = (sql) => db.prepare(sql).all()
+  const payload = {
+    user_version: db.prepare('PRAGMA user_version').get().user_version,
+    ventas: q('SELECT * FROM ventas ORDER BY id'),
+    detalles: q('SELECT * FROM ventas_detalles ORDER BY id'),
+    productos: q('SELECT * FROM productos ORDER BY id'),
+    movimientos: q('SELECT * FROM movimientos_caja ORDER BY id')
+  }
+  db.close()
+  const json = JSON.stringify(payload)
+  return { digest: createHash('sha256').update(json).digest('hex').slice(0, 16), bytes: json.length }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +332,29 @@ if (existsSync(INSTALLED)) {
   spawn(INSTALLED, [], { detached: true, stdio: 'ignore' }).unref()
   await sleep(12000)
   record('the installed app launched', appRunning(), 'process check')
+  recordWindow('a real window opened, with the POS title')
+}
+
+// ---------------------------------------------------------------------------
+step('3b. what the installed app actually ships')
+// ---------------------------------------------------------------------------
+// Everything above proves the app RUNS. This proves the FILE it was installed from carries the
+// migration, compiles nothing, and fetches nothing — read from the installed `app.asar`, not from
+// `out/`. On the machine this was written for those two were different builds with the same version
+// string, so a green `out/`-only gate would have said nothing about the artefact under test.
+{
+  const r = spawnSync(process.execPath, [path.join(here, 'assert-installed-payload.mjs')], {
+    cwd: root,
+    encoding: 'utf8'
+  })
+  const out = `${r.stdout || ''}${r.stderr || ''}`
+  const passes = (out.match(/\bPASS\b/g) || []).length
+  record('the installed asar is verified against the source tree', r.status === 0, r.status === 0 ? `${passes} payload checks passed` : out.split('\n').filter((l) => l.includes('FAIL')).slice(0, 3).join(' | '))
+  if (r.status !== 0) console.log(out.split('\n').filter((l) => l.trim()).slice(-20).join('\n'))
+}
+
+for (const [where, p] of Object.entries(SHORTCUTS)) {
+  record(`the ${where} shortcut was created`, existsSync(p), existsSync(p) ? p : `NOT FOUND at ${p}`)
 }
 
 if (!existsSync(DB)) {
@@ -336,6 +495,16 @@ let snapshot = null
 await stopApp()
 record('app closed before uninstalling', !appRunning(), 'no MiniMarck.exe running')
 
+// The digest is taken with the app CLOSED. A WAL-mode database that is still open has committed rows
+// living in the -wal file, and reading the main .db alone can miss the newest writes — so hashing
+// while the app holds the file would hash a stale ledger and make the whole comparison meaningless.
+const before = ledgerDigest()
+record(
+  'a ledger digest was captured before uninstalling',
+  typeof before.digest === 'string' && before.digest.length === 16,
+  `${before.digest} over ${before.bytes} bytes of sales, lines, stock and drawer movements`
+)
+
 if (existsSync(UNINSTALLER)) {
   const r = spawnSync(UNINSTALLER, ['/S'], { timeout: 5 * 60 * 1000 })
   record('uninstaller started and exited', r.status === 0, `exit code ${r.status} (0 means "started", not "finished")`)
@@ -386,6 +555,68 @@ if (existsSync(DB)) {
     vendido?.stock_milli === snapshot.vendido?.stock_milli,
     `${vendido?.nombre}: ${vendido?.stock_milli} milli, was ${snapshot.vendido?.stock_milli}`
   )
+
+  const afterUninstall = ledgerDigest()
+  record(
+    'the ledger digest is unchanged by the uninstall',
+    afterUninstall.digest === before.digest,
+    `${afterUninstall.digest} (was ${before.digest})`
+  )
+}
+
+// ---------------------------------------------------------------------------
+step('6. reinstall over the surviving data, and use the app again')
+// ---------------------------------------------------------------------------
+// THE STEP THAT WAS MISSING. Everything above proves the data outlives an uninstall. It says nothing
+// about whether a shop can get the program BACK and keep working — and that is the promise a user
+// actually makes to themselves: "if something goes wrong I uninstall, reinstall, and my history is
+// there". A script that ends at "the folder is gone, the data is not" reads like that promise and
+// proves half of it.
+//
+// So: run the same installer again over the same profile, and require all four of the things a
+// returning shop depends on — the program, the Programs-and-Features entry, the shortcuts, and the
+// ledger — plus the fifth that only this can show: the app LAUNCHES and shows the same shop.
+if (installer) {
+  const r = spawnSync(installer, ['/S'], { timeout: 10 * 60 * 1000 })
+  record('the same installer ran again over the existing profile', r.status === 0, `exit code ${r.status}`)
+  await sleep(4000)
+
+  record('the program came back', existsSync(INSTALLED), existsSync(INSTALLED) ? INSTALLED : 'NOT reinstalled')
+  record('it is in Programs and Features again', uninstallEntry(), 'HKCU Uninstall key')
+  for (const [where, p] of Object.entries(SHORTCUTS)) {
+    record(`the ${where} shortcut came back`, existsSync(p), existsSync(p) ? p : `NOT recreated at ${p}`)
+  }
+  record('the data was NOT wiped by the reinstall', existsSync(DB), existsSync(DB) ? DB : 'THE DATABASE IS GONE')
+
+  if (existsSync(DB) && existsSync(INSTALLED)) {
+    const afterReinstall = ledgerDigest()
+    record(
+      'the ledger is byte-for-byte the same after reinstalling',
+      afterReinstall.digest === before.digest,
+      `${afterReinstall.digest} (was ${before.digest})`
+    )
+
+    const db = new DatabaseSync(DB, { readOnly: true })
+    const ventas = db.prepare('SELECT COUNT(*) AS n FROM ventas').get().n
+    const ids = db.prepare('SELECT id, estado, total_centavos FROM ventas ORDER BY id').all()
+    const integrity = Object.values(db.prepare('PRAGMA integrity_check').get())[0]
+    db.close()
+    record('the reinstalled database is valid', integrity === 'ok', `integrity_check: ${integrity}`)
+    record(
+      'the same sales are in the reinstalled app',
+      ventas === snapshot.ventas,
+      ids.map((r) => `#${r.id} ${r.estado} ${r.total_centavos}c`).join(', ') || 'none'
+    )
+
+    // The reinstalled app has to actually OPEN onto that shop, not merely sit on disk next to it.
+    spawn(INSTALLED, [], { detached: true, stdio: 'ignore' }).unref()
+    await sleep(10000)
+    record('the REINSTALLED app launched', appRunning(), 'process check')
+    recordWindow('the REINSTALLED app opened onto the same shop')
+    await stopApp()
+  }
+} else {
+  record('reinstall was not attempted (--no-install)', true, 'skipped: no installer path was resolved')
 }
 
 function report() {

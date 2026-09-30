@@ -35,6 +35,7 @@
     "verify:package": "node scripts/verify-package.mjs",
     "verify:installer-ui": "node scripts/verify-installer-ui.mjs",
     "drive:installed": "node scripts/drive-payment-installed.mjs",
+    "verify:payload": "node scripts/assert-installed-payload.mjs",
     "verify:installed": "node scripts/verify-installed-e2e.mjs",
     "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:encoding && npm run verify:bundle && npm run verify:offline && npm run verify:licences && npm run probe:launch && npm run drive:payment"
   },
