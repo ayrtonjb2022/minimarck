@@ -23,6 +23,7 @@
  * never touch a real shop's database.
  */
 import { app } from 'electron'
+import { firmarComoDueño } from './first-launch-signin.js'
 
 async function esperarEn(win, expr, ms = 8000) {
   const deadline = Date.now() + ms
@@ -159,6 +160,22 @@ export function runDeudoresDrive(win, db) {
     win.show()
     win.focus()
     await sleep(1500)
+
+    // ---- 0. who is on the till -------------------------------------------------------------
+    // The app opens SIGNED OUT, so this drive has to say who is on the till before it can sell
+    // anything. The walk is the shared one, with real keystrokes on the real panel: one
+    // definition of the security path for all three drives, not three copies that drift.
+    const sesion = await firmarComoDueño({
+      win,
+      base: { leer, esperarEn, buscar, tipear, sleep },
+      check,
+      say,
+      db1
+    })
+    if (!sesion.ok) {
+      check('hay un operador en la caja antes de fiar', false, sesion.motivo || 'no se pudo entrar')
+      return finish()
+    }
 
     // ---- 0. shelf and till -------------------------------------------------------------------
     // Said out loud, for the same reason the payment drive says it: a fresh install has no

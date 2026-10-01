@@ -23,6 +23,7 @@
  * The output is deliberately plain: what a person pressed, and what the shop file then said.
  */
 import { app } from 'electron'
+import { firmarComoDueño } from './first-launch-signin.js'
 
 /** Wait for a condition in the RENDERER. Polls with `executeJavaScript`, which is async-safe. */
 async function esperarEn(win, expr, ms = 8000) {
@@ -236,9 +237,26 @@ export function runPaymentDrive(win, db) {
     win.focus()
     say('')
 
+    // ---- 0. who is on the till -------------------------------------------------------------
+    // The first frame is the SIGN-IN PANEL, not the point of sale. This drive used to assert
+    // `/pos` here and that assertion is GONE, not loosened: a machine that is switched on knows
+    // nobody, so the honest first frame is the panel. What replaces it is a WALK of that panel
+    // with real keystrokes, shared with the other two drives so the security path has one
+    // definition instead of three copies.
+    const sesion = await firmarComoDueño({
+      win,
+      base: { leer, esperarEn, buscar, tipear, sleep },
+      check,
+      say,
+      db1
+    })
+    if (!sesion.ok) {
+      check('la app abre con un operador en la caja antes de cobrar', false, sesion.motivo || 'no se pudo entrar')
+      return finish()
+    }
+
     // ---- 1. the till -------------------------------------------------------------------------
-    // FIRST: what does the app put on screen when it opens by itself? The window has already
-    // finished its own first load, so this is the honest answer to "what does a person see".
+    // The window already finished its own first load; the app is now past the panel.
     await sleep(1500)
     const pantallaInicial = await leer(win, `(() => {
       const raiz = document.querySelector('#root');
@@ -246,9 +264,6 @@ export function runPaymentDrive(win, db) {
       return { ruta: location.pathname, vacio: false, texto: (raiz.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120) };
     })()`)
     say(`  al abrir, la app queda en ${pantallaInicial?.ruta}${pantallaInicial?.vacio ? ' (React todavía no montó)' : `: "${pantallaInicial?.texto}"`}`)
-    check('la app abre en la pantalla de venta',
-      Boolean(pantallaInicial) && pantallaInicial.ruta === '/pos' && !pantallaInicial.vacio,
-      `quedó en ${pantallaInicial?.ruta}`)
 
     // A brand-new database seeds a business and a user but NO catalogue — a real install on a real
     // empty shelf. There is nothing to sell, so the drive stocks one product directly, BEFORE the

@@ -1,4 +1,6 @@
 import { app, ipcMain, Menu, BrowserWindow, shell } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
 import { createRegistry } from './bridge/registry.js'
 import { toIpcError } from './bridge/errors.js'
 import { CHANNEL, ENVELOPE_VERSION } from '../shared/ipc-contract.js'
@@ -34,6 +36,22 @@ const isPackaged = app.isPackaged
 // data land under `…\AppData\Roaming\MiniMarck\` instead. Set from the constant, not from
 // package.json, so a rename cannot silently move a user's database.
 app.setName(APP_NAME)
+
+// THE LAUNCH PROBE GETS ITS OWN PROFILE. `userData` is the developer's real MiniMarck profile,
+// so a probe that boots against it inherits whatever the last run of the real app left behind:
+// a shop, its sales, and — since the sign-in feature landed — a CREDENTIAL. The first version of
+// the deep-link step died on `Este equipo ya tiene usuarios con contraseña` for exactly that
+// reason, and the honest reading was that the probe was not testing a first launch at all.
+//
+// A fixed subdirectory keyed to the marker env var is the throwaway profile, and it is REMOVED
+// first, so every run is a genuine first launch. This is set here, right after `setName`, because
+// everything downstream — `app.getPath('userData')` at the bootstrap, the single-instance lock's
+// sibling window — reads it, and `setPath` after a read is the exact bug PLAT-2 is about.
+if (process.env.MINIMARCK_S0_PROBE) {
+  const perfil = path.join(app.getPath('temp'), 'minimarck-s0-probe')
+  fs.rmSync(perfil, { recursive: true, force: true })
+  app.setPath('userData', perfil)
+}
 
 // The `app` scheme must be declared privileged BEFORE the app is ready (design §B.1).
 registerAppSchemePrivileges()
@@ -152,6 +170,39 @@ function runDeepLinkProbe(win, baseResult) {
       console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? '  — ' + detail : ''}`)
     }
 
+    // SIGN IN FIRST, THROUGH THE REAL BRIDGE. Since the app opens signed out, a deep link now
+    // lands on the sign-in panel for the same reason a fresh launch does: nobody has proved who
+    // they are. That is the feature working, so the probe has to sign in before it can ask
+    // whether the ROUTE rendered.
+    //
+    // It goes through `window.minimarck.call`, which is the preload bridge and the real IPC
+    // channel — the same three hops a person's keystroke makes. Calling the auth service
+    // directly from main would have been easier and would have proved nothing about the window
+    // the deep link actually opened.
+    const firmarEnLaVentana = async () => {
+      let registro = null
+      const deadline = Date.now() + 15_000
+      while (Date.now() < deadline) {
+        try {
+          registro = await win.webContents.executeJavaScript(`(async () => {
+            if (!window.minimarck || typeof window.minimarck.call !== 'function') return { listo: false, motivo: 'no hay puente' };
+            const r = await window.minimarck.call('auth', 'register', {
+              nombre: 'Dueña del Probeta',
+              negocioNombre: 'Tienda de la Probeta',
+              nombreAcceso: 'duena',
+              password: 'clave-de-probeta'
+            });
+            return { listo: true, nombre: r && r.nombre, adoptada: r && r.adoptoNegocioExistente };
+          })()`)
+          if (registro?.listo) return registro
+        } catch (err) {
+          registro = { listo: false, motivo: String(err && err.message) }
+        }
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      return registro || { listo: false, motivo: 'el puente no respondio en 15s' }
+    }
+
     let failedToLoad = null
     const onFail = (_e, code, desc, url) => {
       failedToLoad = `ERR_${code} ${desc} (${url})`
@@ -219,12 +270,30 @@ function runDeepLinkProbe(win, baseResult) {
       resolve({ ok: passed === checks.length, total: checks.length, passed })
     })
 
-    win.loadURL(deepUrl).catch((err) => {
-      win.webContents.removeListener('did-fail-load', onFail)
-      record('NAV-1 deep link app://bundle/ventas loads through the SPA fallback', false, String(err))
-      console.log('=== 0/1 deep-link checks passed ===')
-      resolve({ ok: false, total: 1, passed: 0 })
-    })
+    // Sign in on the page that is already open, THEN navigate. Doing it in this order matters:
+    // the credential is created once (register refuses a second owner), and the session lives in
+    // main, so the new document only has to ask `auth.me` who it is talking to.
+    firmarEnLaVentana()
+      .then((sesion) => {
+        if (!sesion?.listo) {
+          record('NAV-0 the owner signs in through the real bridge before the deep link', false, sesion?.motivo || String(sesion))
+          win.webContents.removeListener('did-fail-load', onFail)
+          console.log(`=== 0/${checks.length} deep-link checks passed ===`)
+          resolve({ ok: false, total: checks.length, passed: 0 })
+          return
+        }
+        record('NAV-0 the owner signs in through the real bridge before the deep link', true, `sesion para ${JSON.stringify(sesion.nombre)}`)
+        win.loadURL(deepUrl).catch((err) => {
+          win.webContents.removeListener('did-fail-load', onFail)
+          record('NAV-1 deep link app://bundle/ventas loads through the SPA fallback', false, String(err))
+          console.log(`=== ${checks.filter((c) => c.ok).length}/${checks.length} deep-link checks passed ===`)
+          resolve({ ok: false, total: checks.length, passed: checks.filter((c) => c.ok).length })
+        })
+      })
+      .catch((err) => {
+        record('NAV-0 the owner signs in through the real bridge before the deep link', false, String(err))
+        resolve({ ok: false, total: checks.length, passed: 0 })
+      })
   })
 }
 

@@ -39,11 +39,13 @@ async function esperarEn(win, expr, ms = 8000) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+import { firmarComoDueño } from './first-launch-signin.js'
+
 /**
  * Click something by visible text or by selector.
  *
- * Returns `{ ok, via }` rather than a bare boolean, because "the click did not happen" and "the
- * click happened and nothing changed" are different bugs and a boolean cannot tell them apart. The
+ * Returns `{ ok, via }` rather than a bare boolean, because "the click did not happen" and the
+ * "click happened and nothing changed" are different bugs and a boolean cannot tell them apart. The
  * first version of this file returned a boolean and a caller asked it for `.ok`, so the check read
  * `undefined`, failed, and reported a form that had in fact been submitted correctly.
  */
@@ -574,6 +576,22 @@ export function runComprasDrive(win, db) {
     win.show()
     win.focus()
     await sleep(1500)
+
+    // ---- 0. who is on the till -------------------------------------------------------------
+    // The app opens SIGNED OUT. A purchase is a decision somebody made, so this drive has to say
+    // who before it buys anything — with the shared walk, real keystrokes on the real panel, so
+    // there is one definition of the security path instead of three copies that drift.
+    const sesion = await firmarComoDueño({
+      win,
+      base: { leer, esperarEn, buscar, tipear, sleep },
+      check,
+      say,
+      db1
+    })
+    if (!sesion.ok) {
+      check('hay un operador en la caja antes de comprar', false, sesion.motivo || 'no se pudo entrar')
+      return finish()
+    }
 
     // ---- 0. a shelf to buy onto ------------------------------------------------------------
     // Said out loud for the same reason the other two drives say it: a fresh install has no
