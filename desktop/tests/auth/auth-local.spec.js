@@ -26,7 +26,7 @@ import { createRegistry } from '../../src/main/bridge/registry.js'
 import { registerAuthHandlers } from '../../src/main/ipc/auth.js'
 import { registerVentasHandlers } from '../../src/main/ipc/ventas.js'
 import { registerCajasHandlers } from '../../src/main/ipc/cajas.js'
-import { construirContexto } from '../../src/main/ipc/contexto.js'
+import { construirContexto, contextoDesdeEnvelope } from '../../src/main/ipc/contexto.js'
 import { createSession } from '../../src/main/auth/session.js'
 import { derivar, verificar, PARAMETROS_ACTUALES } from '../../src/main/auth/passwords.js'
 import { tienda, ctxDe, iniciarSesion, insertarProducto, abrirCaja } from '../db/fixtures/tienda.js'
@@ -405,6 +405,24 @@ describe('the renderer cannot choose who it is', () => {
     insertarProducto(e.t, { negocioId: e.t.negocioId, usuarioId: e.t.usuarioId, overrides: { nombre: 'Queso', stock_milli: 5000 } })
     await e.call('cajas', 'open', { saldoInicial: 500 })
 
+    // THE SEAM, not just the sink. This is the call the app makes: a real envelope arrives, and
+    // `contextoDesdeEnvelope` is what turns it into a context. The first version of this test only
+    // handed the forged fields to the HANDLER, which proved handlers ignore them; it could not
+    // prove the payload never reaches the context at all, because that call lived in a module that
+    // imports `electron` and no test could import it. `scripts/mutate-attribution.mjs` found the
+    // difference: making the seam honour `user_id` left all 539 tests green until the seam moved
+    // here. It is here now, so the mutation is caught.
+    const identity = { negocioId: e.t.negocioId, negocioNombre: 'Tienda', motivo: 'seed' }
+    const envelopeFalso = {
+      version: 'v1',
+      group: 'ventas',
+      op: 'create',
+      payload: { user_id: 4242, actorId: 4242, usuarioId: 4242 }
+    }
+    const { session } = e
+    expect(contextoDesdeEnvelope(identity, session, envelopeFalso).actorId).toBe(e.t.usuarioId)
+    expect(contextoDesdeEnvelope(identity, session, { ...envelopeFalso, payload: null }).actorId).toBe(e.t.usuarioId)
+
     const idProducto = e.t.conn.db.prepare('SELECT id FROM productos LIMIT 1').get().id
     const venta = ok(await e.call('ventas', 'create', {
       // Every field a renderer could try to forge, in one payload.
@@ -414,6 +432,26 @@ describe('the renderer cannot choose who it is', () => {
       idempotencyKey: 'tk-falsificacion'
     }))
     expect(e.t.conn.db.prepare('SELECT user_id FROM ventas WHERE id = ?').get(venta.venta.id).user_id).toBe(e.t.usuarioId)
+  })
+
+  it('the envelope is received and read for nothing: swapping it cannot move the actor', async () => {
+    // The negative form of the test above, stated as its own case so a future "helpfully honour the
+    // payload" change has two tests to break rather than one.
+    const { session } = iniciarSesion(e.t, { nombre: 'ana' })
+    const identity = { negocioId: e.t.negocioId, negocioNombre: 'Tienda', motivo: 'seed' }
+    const envelopes = [
+      { payload: { user_id: 999 } },
+      { payload: { actorId: 999 } },
+      { payload: { usuarioId: 999 } },
+      { payload: { user_id: 999, negocioId: 777 } },
+      { payload: { identity: { user_id: 999 } } },
+      { payload: [1, 2, 3] },
+      { payload: 'user_id=999' }
+    ]
+    for (const envelope of envelopes) {
+      expect(contextoDesdeEnvelope(identity, session, envelope).actorId).toBe(e.t.usuarioId)
+      expect(contextoDesdeEnvelope(identity, session, envelope).negocioId).toBe(e.t.negocioId)
+    }
   })
 
   it('with nobody signed in, a sale is refused — a till cannot be rung up by nobody', async () => {

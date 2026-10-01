@@ -20,7 +20,7 @@ import { registerComprasHandlers } from './ipc/compras.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
 import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { createSession } from './auth/session.js'
-import { construirContexto } from './ipc/contexto.js'
+import { contextoDesdeEnvelope } from './ipc/contexto.js'
 import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
 import { runPaymentDrive } from './payment-drive.js'
@@ -113,7 +113,7 @@ function installIpc(registry, identity, session) {
       // next operation. With nobody signed in it is null and every repository that stamps an
       // audit column answers the already-tested `ACTOR_REQUERIDO`: a sale cannot be rung up by
       // nobody.
-      const ctx = construirContexto(identity, session)
+      const ctx = contextoDesdeEnvelope(identity, session, envelope)
       return await handler(envelope.payload ?? {}, ctx)
     } catch (err) {
       throw toIpcError(err)
