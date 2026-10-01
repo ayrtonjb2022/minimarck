@@ -319,7 +319,79 @@ attempts at any real origin.
 
 ---
 
+## 13. Local user management is four `auth` operations, and there is no `usuarios` module — port vs web
+
+**Web**: `UserForm` plus a `usuarios` controller. It creates a person, EDITS one (name, role,
+active flag) and deactivates one. The role a person holds is something the shop can change later,
+because the web is a multi-user system with an administrator sitting in front of a form.
+
+**Desktop**: the frozen contract is 89 operations in 18 groups, and **no `usuarios` group exists
+in it.** Creating an employee therefore reuses `auth.register` with a session open — the same
+operation the first launch uses with no session, taking a different branch — instead of inventing
+a `usuarios.crear` that the packaging and contract gates would then have to accept. Editing and
+deactivating have no authorized operation at all, so `Usuarios.jsx` does not offer them and a
+hand-written payload could not perform them either.
+
+**The interesting half is what still exists.** `session.exigir()` re-reads the row on EVERY
+operation with `WHERE u.id = ? AND u.activo = 1 AND u.deleted_at IS NULL`, so a person who stops
+being an employee loses their authority on the next call, mid-session, with no re-login. The
+mechanism is real, exercised by tests, and there is simply no operation that flips `activo` to
+call it. That is a hole in the product, and it is named here instead of being papered over with an
+operation the contract does not authorize.
+
+**Status**: gap, owner `contract`. Adding `usuarios.update` / `usuarios.deactivate` is a
+contract decision with a schema question attached (`users.activo` exists; the audit story for a
+role change does not), not something this build may settle on its own.
+
+---
+
+## 14. Roles are enforced in the main process; the renderer gate is a courtesy — port vs web
+
+**Web**: Express middleware checks the role per route, and the router hides the link. Two separate
+places, and the server one is the one that counts.
+
+**Desktop**: the route table is frozen, so there is no server-side route guard to hang a check on
+— and the renderer is not a boundary. The authority is therefore re-checked where the work
+happens, in `crearEmpleado`: `session.exigir()` (a session is open), then
+`exigirAdministradorDeUsuarios(actual.rol)` (`admin` or `supervisor`), then the escalation rule —
+a supervisor may run the users module but may NOT create an `admin` (`SIN_PERMISO`, 403, "Sólo el
+dueño puede crear otro dueño"). A `vendedor` calling `auth.register` by hand gets the same 403
+that the missing button implies.
+
+**Why this is written down**: a renderer-only gate is a comment that costs a rebuild. Anyone
+simplifying `Usuarios.jsx` later will find `puedeAdministrarUsuarios` sitting there looking like
+the check, and deleting it would change nothing about what a signed-in seller can do — which is
+exactly the shape of a control that looks armed and is not. The check belongs in the main process
+even when the UI also hides the door.
+
+**Status**: parity, with the enforcement point moved. The web checks in middleware and the desktop
+checks in the handler; both are server-side, and the renderer is not trusted in either.
+
+---
+
+## 15. The sign-in HANDLE is not `users.email`, and the seed's own row proves it — port vs web
+
+**Web**: `users.email` IS the login identifier. One field, one meaning.
+
+**Desktop**: `nombreAcceso` is the handle, and it is deliberately NOT assumed to be the email. The
+first-run seed gave its operator `admin@minimarck.local` as an email, and that row is ADOPTED
+rather than replaced, so a person whose handle is `dueno` legitimately carries an email that is
+not their handle. `usuarioPublico()` therefore returns both (`nombreAcceso` and `email`) and never
+makes a caller guess which one signs in.
+
+**Why it is a divergence and not a nicety**: the handover picker lists people and asks for a
+password. Had it fed `email` back into `auth.login`, the list would have looked perfectly correct
+and **every handover would have failed** — the owner adopts the seeded row, whose email is not the
+name they type. This is the same class of bug as the seed trap in the internal notes below: a
+field that is right in one place and wrong in the next, where nothing complains.
+
+**Status**: willed, and it changes nothing a user can observe except that signing in works with
+the name they chose.
+
+---
+
 ## Internal notes (not user-visible, kept for the reviewer)
+
 
 - **Timestamps** are ISO-8601 UTC strings (`2026-01-01T00:00:00.000Z`), lexicographically
   sortable the way the web's `DATETIME` is; `substr(fecha, 1, 10)` in desglose equals the web's
@@ -346,3 +418,33 @@ attempts at any real origin.
   from outside the IPC layer has to convert, and forgetting it is a factor-of-100 bug that no
   type system here catches. The demo script above is the second caller; it is the reason the unit
   is stated in the function's own documentation.
+- **The seed asked "is this file seeded?" using a NAME the user is about to change.** `seed()`
+  looked for `negocios.nombre = 'Mi Negocio'`, in the outer check and again inside the
+  transaction. The owner names their shop at the sign-in panel, which renames that row, so the row
+  the seed is looking for by name no longer exists; the next launch reads "not seeded" and INSERTS
+  a second business. Two active shops, `resolveLocalIdentity` correctly refuses to pick one, and
+  **every business operation answers `TENANT_REQUIRED`** — the till is unusable and the only
+  message points at nothing. It is now "does this file have a shop?" (`WHERE deleted_at IS NULL
+  ORDER BY id LIMIT 1`), the same question `negocioUnico` asks, and it is asked by existence rather
+  than by a value the user owns.
+  - **Found by the handover drive's SECOND phase**, which relaunches the real app on the same data
+    directory. 540 unit tests could not see it: every one of them opens a FRESH temporary
+    database, and not one renames a business and then bootstraps again. A test that cannot fail is
+    not a test, and neither is a suite that only ever sees a pristine file.
+  - `tests/db/seed.spec.js` now covers it, and its own weight was checked by re-breaking the fix:
+    reverting both lookups puts 2 of its 3 tests red, and reverting only the outer one still puts
+    1 red, because the in-transaction re-read blocks the insert on its own. Half a fix looks like
+    a covered bug.
+  - **The red that was NOT a bug**: six `bootstrap.spec.js` tests failed with
+    `no such column: deleted_at` on the new query. The real schema is `paranoid` on every table
+    (`tests/db/schema.spec.js` asserts it), but that file's hand-written `MINIMAL_SCHEMA` had no
+    `deleted_at` column, so it was testing a DIFFERENT PROGRAM — one where the query cannot run.
+    The honest reading of that red was "the fixture lied", and the fixture was corrected rather
+    than the query.
+- **`mutate-attribution.mjs` proved its own restore for one file and not the other.** The check
+  read `if (despues !== antes || despuesCtx !== sha(contexto))` — comparing the restored
+  `contexto.js` against a hash taken FROM THE FILE AS IT IS AT THAT MOMENT, i.e. against itself.
+  `x !== x` is false, so `RESTAURACIÓN INCORRECTA` was unreachable for the mutated file and the
+  script printed `RESTAURADO OK` having verified only half its claim. Both hashes are now captured
+  BEFORE the mutation and compared to those. A restore check that cannot fail is a comment — the
+  same standard the mutation script exists to apply to everything else.

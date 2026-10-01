@@ -41,7 +41,15 @@ const sha = (p) => createHash('sha256').update(readFileSync(p)).digest('hex')
 const contextoOriginal = readFileSync(contexto, 'utf8')
 const original = readFileSync(objetivo, 'utf8')
 const antes = sha(objetivo)
-console.log(`index.js sha256 antes: ${antes}`)
+// CAPTURED BEFORE THE MUTATION, LIKE `antes`. This line existed and the check below still could
+// not fail: it compared the restored `contexto.js` against `sha(contexto)`, which is the hash OF
+// THE FILE AS IT IS RIGHT NOW — i.e. against itself. `x !== x` is false, so "RESTAURACIÓN
+// INCORRECTA" was unreachable for this file and the script printed "RESTAURADO OK" having proved
+// nothing about it. A restore check that cannot fail is a comment. Both hashes are taken up front
+// and both are compared to the value from BEFORE.
+const contextoAntes = sha(contexto)
+console.log(`index.js sha256 antes:    ${antes}`)
+console.log(`contexto.js sha256 antes: ${contextoAntes}`)
 
 // Two edits, both required. The call site now hands the payload over, and the
 // context honours it. Either one alone is inert, which is the point: the breach
@@ -104,7 +112,7 @@ try {
   const despuesCtx = sha(contexto)
   console.log(`\nindex.js sha256 restaurado:     ${despues}`)
   console.log(`contexto.js sha256 restaurado:  ${despuesCtx}`)
-  if (despues !== antes || despuesCtx !== sha(contexto)) {
+  if (despues !== antes || despuesCtx !== contextoAntes) {
     console.error('RESTAURACIÓN INCORRECTA: algún archivo no volvió a su estado anterior')
     process.exitCode = 1
   } else {
