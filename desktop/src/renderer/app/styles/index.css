@@ -1224,6 +1224,54 @@ body {
   color: var(--kanagawa-fg);
 }
 
+/* EL RELEVO Y EL ENLACE A USUARIOS, EN LOS DOS SITIOS DONDE HAY QUE PODER LLEGARLOS.
+   `.compacto` es la variante del punto de venta: sin etiqueta de texto, porque el POS ya
+   tiene botones de 12px y un «Usuarios» escrito ahí se lee como un Producto más. */
+.mm-turno-controles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mm-turno-controles.compacto {
+  margin-left: auto;
+}
+
+.mm-turno-enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kanagawa-fg-muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.mm-turno-enlace:hover,
+.mm-turno-enlace.activo {
+  color: var(--kanagawa-fg);
+  background: var(--kanagawa-surface-2, rgba(127, 160, 179, 0.12));
+  border-color: var(--kanagawa-border, rgba(127, 160, 179, 0.25));
+}
+
+.mm-turno-controles.compacto .mm-turno-enlace {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.mm-turno-quien {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--kanagawa-fg-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mm-pager {
   display: flex;
   align-items: center;

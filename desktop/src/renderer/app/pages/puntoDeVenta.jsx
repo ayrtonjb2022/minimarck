@@ -11,6 +11,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import CalculadoraPeso from "../components/common/CalculadoraPeso";
 import BoletaPago from "../components/common/BoletaPago";
+import ControlesDeTurno from "../components/common/ControlesDeTurno";
 import { formatCentavos, formatCantidad } from "../utils/formatters";
 // `src/shared/` es el módulo que main y el renderer comparten para no discrepar sobre plata y
 // cantidades. Desde `src/renderer/app/pages/` son tres niveles arriba, NO cuatro: un `..` de más
@@ -1162,6 +1163,18 @@ export default function PuntoDeVenta() {
             <button onClick={() => setModalVentaLibre(true)} className="btn-secondary" style={{whiteSpace:"nowrap",padding:"8px 12px",fontSize:"12px"}} title="Vender un producto que no está en el inventario">
               Venta libre
             </button>
+
+            {/* EL CONTROL DE RELEVO, Y POR QUÉ ESTÁ AQUÍ Y NO EN LA BARRA DE ARRIBA.
+                El POS es la pantalla de arranque y la única que se dibuja sin cromo: no hay
+                `TopBar` alrededor, así que un botón de relevo arriba sería invisible justo
+                donde se releva la caja. Y la barra de arriba no es una salida — cuando este
+                layout se montó, `Navbar` y `Sidebar` quedaron sin renderizar en el árbol de
+                rutas, con el botón de relevo y el enlace de usuarios dentro de archivos que
+                nadie monta. La función estaba completa y no se llegaba a: 29 pruebas del
+                módulo pasaban porque ninguna monta un componente, y sólo el recorrido a mano
+                pudo preguntarle a la app real por ese `data-testid` y recibir `false`.
+                `ControlesDeTurno` es el mismo control en los dos sitios, no dos controles. */}
+            <ControlesDeTurno compacto />
           </div>
           <div className="pos-categories">
             <button onClick={() => setCategoriaActiva("Todas")}

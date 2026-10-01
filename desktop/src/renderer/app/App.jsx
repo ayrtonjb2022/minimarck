@@ -10,6 +10,7 @@ import Proveedores from "./pages/Proveedores";
 import Compras from "./pages/Compras";
 import Acceso from "./pages/Acceso";
 import Usuarios from "./pages/Usuarios";
+import ControlesDeTurno from "./components/common/ControlesDeTurno";
 
 /**
  * The route tree, cut down to what this build can actually do.
@@ -58,6 +59,11 @@ const PANTALLAS_FALTANTES = [
  * The top strip. Not the web's Navbar: that one carried a shop switcher, a notification bell
  * polling an op that answers 501, and a logout button for a session that does not exist.
  * This says who is on the till and gets out of the way.
+ *
+ * The handover control used to hang off the web `Navbar`, which this route tree never
+ * renders — the feature was complete and unreachable, and no unit test could have said so.
+ * It is mounted here, and on the point of sale, through `ControlesDeTurno`: one place, both
+ * mount points, so there is a single definition to keep honest.
  */
 const TopBar = ({ titulo }) => {
   const { user, negocio } = useAuth();
@@ -92,6 +98,7 @@ const TopBar = ({ titulo }) => {
       </nav>
 
       <div className="mm-topbar-right">
+        <ControlesDeTurno />
         {user?.nombre ? (
           <span className="mm-topbar-user" title={`Rol: ${user.rol}`}>
             {user.nombre}

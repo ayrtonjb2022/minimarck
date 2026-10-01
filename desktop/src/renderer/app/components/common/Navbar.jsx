@@ -4,6 +4,18 @@ import { useNotificaciones } from "../../context/NotificacionContext";
 import HelpModal from "./HelpModal";
 import RelevoTurno from "./RelevoTurno";
 
+/**
+ * ESTE COMPONENTE NO SE MONTA EN EL ÁRBOL DE RUTAS DEL DESKTOP. `App.jsx` dibuja su propio
+ * `TopBar` y el POS se dibuja sin cromo, así que nada de lo que esté en este archivo se le
+ * muestra a nadie — y el `<RelevoTurno />` de la línea 81 estuvo exactamente en ese caso:
+ * la ventana de relevo, completa, con su contraseña y sus pruebas, inalcanzable desde la
+ * aplicación. Ninguna prueba de este módulo lo detectó, porque las 29 son del proceso
+ * principal y ninguna monta un componente.
+ *
+ * Si estás aquí por el relevo o por el enlace de usuarios: no los arregles acá. Viven en
+ * `ControlesDeTurno`, que sí está montado, en la barra y en el punto de venta.
+ */
+
 const PAGE_TITLES = {
   dashboard: "Dashboard", pos: "Punto de Venta", productos: "Productos",
   categorias: "Categorías", ventas: "Ventas", caja: "Caja",
