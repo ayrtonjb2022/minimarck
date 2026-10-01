@@ -487,7 +487,16 @@ export function registrarPago(ctx, deudorId, body) {
         concepto: `Pago de deuda - ${deudor.nombre}`,
         montoCentavos: montoCentavos,
         origen: 'manual',
-        referencia: `pago:${pagoId}`
+        referencia: `pago:${pagoId}`,
+        // `libro: false`, because the ENTRY ABOVE already posted this money. A payment's real
+        // counterpart is `1.3.01 Clientes (Deudores)` — the debt is what got cancelled — and an
+        // entry here would debit the drawer against `4.2.01 Otros Ingresos` instead, turning money
+        // that was owed into money that was earned and DOUBLE-posting the drawer in the process.
+        //
+        // This is the only opt-out in the codebase, and it is one line long for that reason: the
+        // default everywhere else is to post, and a caller that has to say "not here, I do it
+        // myself" is a caller whose accounting has been read rather than guessed at.
+        libro: false
       })
     }
 

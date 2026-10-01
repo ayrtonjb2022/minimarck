@@ -55,7 +55,27 @@ export const PLAN_CONTABLE = Object.freeze([
   { codigo: '5.2.03', nombre: 'Servicios (Luz, Gas, Internet)', tipo: 'gasto', descripcion: 'Servicios básicos' },
   { codigo: '5.2.04', nombre: 'Impuestos y Tasas', tipo: 'gasto', descripcion: 'Impuestos municipales y nacionales' },
   { codigo: '5.3.01', nombre: 'Gastos Bancarios', tipo: 'gasto', descripcion: 'Comisiones bancarias' },
-  { codigo: '5.3.02', nombre: 'Mantenimiento y Reparaciones', tipo: 'gasto', descripcion: 'Mantenimiento del local' }
+  { codigo: '5.3.02', nombre: 'Mantenimiento y Reparaciones', tipo: 'gasto', descripcion: 'Mantenimiento del local' },
+  // The account an OWNER-TYPED expense lands in — `cajaMovimientos.create` with `tipo: 'egreso'`.
+  //
+  // Every gasto above names a SPECIFIC thing: the rent, the electricity, the payroll, the bank
+  // fee. An owner-typed expense names none of them. Its payload is a free-text `concepto` and an
+  // amount, so the app genuinely cannot tell a bag of packaging from a light bill, and posting one
+  // to `5.2.02 Alquiler` or `5.2.03 Servicios` would put a confident, readable, FALSE claim in the
+  // ledger — the kind of lie that survives a year and then makes a real report wrong. So it goes
+  // to an account that says only what is actually true: this money left the drawer, for a reason
+  // the shop recorded in words.
+  //
+  // ADDED HERE, NOT IN A MIGRATION, and that is the whole mechanism rather than a shortcut. The
+  // chart is not in `001_init.sql` — that migration has no account INSERTs at all, because
+  // `cuentas_contables.negocio_id` is NOT NULL and a migration runs before any business exists to
+  // hang an account on. `asegurarPlan` inserts this array per tenant with
+  // `ON CONFLICT DO NOTHING` on every flow that needs it, so appending a row is how an account is
+  // added and versioned: an existing shop grows the account the next time it records anything,
+  // and an existing account is never rewritten. That is the same add-only contract the rest of
+  // this file keeps — see `3.1.01 Capital Social` and `2.1.01 Proveedores (Acreedores)`, which are
+  // also in the web's chart and needed no migration either.
+  { codigo: '5.4.01', nombre: 'Otros Gastos', tipo: 'gasto', descripcion: 'Gastos cargados manualmente por el dueño' }
 ])
 
 /** The accounts a sale touches, named by CODE so no call site carries a literal. */
@@ -71,6 +91,15 @@ export const CUENTA = Object.freeze({
   // nothing yet — and not another asset, which would move the gap rather than close it.
   CAPITAL: '3.1.01',
   VENTAS: '4.1.01',
+  // The account an owner-typed expense lands in. The chart's other gastos are all specific
+  // (`5.2.02 Alquiler`, `5.2.03 Servicios`, ...), and an owner-typed expense does not say which one
+  // it is, so it is a catch-all rather than a guess. See the note on `5.4.01` in `PLAN_CONTABLE`.
+  OTROS_GASTOS: '5.4.01',
+  // The mirror of `5.4.01`, for an owner-typed `ingreso` — money into the drawer that no sale
+  // explains. `4.2.01 Otros Ingresos` was ALREADY in the web's chart, so this direction needed no
+  // addition at all; naming it here keeps the pair visible in one place instead of one side
+  // being a literal in a repository and the other a constant.
+  OTROS_INGRESOS: '4.2.01',
   CMV: '5.1.01',
   // The account a purchase ON CREDIT lands in. Already in the seeded chart above as a `pasivo`
   // ("Proveedores (Acreedores)"), so crediting a supplier's goods posts to an existing account

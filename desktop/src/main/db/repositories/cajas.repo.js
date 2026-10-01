@@ -70,7 +70,7 @@ export function saldoCaja(caja) {
  */
 export function registrarMovimiento(
   ctx,
-  { caja, tipo, concepto, montoCentavos, referencia = null, origen, ventaId = null }
+  { caja, tipo, concepto, montoCentavos, referencia = null, origen, ventaId = null, libro = true }
 ) {
   const monto = assertCents(montoCentavos, 'monto del movimiento')
   if (monto === 0) return null
@@ -85,7 +85,7 @@ export function registrarMovimiento(
   const saldoNuevo = assertCents(saldoAnterior + (tipo === 'ingreso' ? monto : -monto), 'saldo nuevo')
   const ts = new Date().toISOString()
 
-  ctx.db
+  const info = ctx.db
     .prepare(
       `INSERT INTO movimientos_caja
          (tipo, concepto, monto_centavos, saldo_anterior_centavos, saldo_nuevo_centavos,
@@ -99,7 +99,79 @@ export function registrarMovimiento(
   // drawer whose history and whose number disagree, and the number is the one people trust.
   const columna = tipo === 'ingreso' ? 'total_ingresos_centavos' : 'total_egresos_centavos'
   ctx.db.prepare(`UPDATE cajas SET ${columna} = ${columna} + ?, updated_at = ? WHERE id = ?`).run(monto, ts, caja.id)
+
+  // ---- the ledger -------------------------------------------------------------------------
+  // A drawer that moves without a journal entry behind it is the one defect that makes EVERY
+  // report a lie at once: `1.1.01 Caja` is the account that report `reportes.cash.coincide`
+  // compares the drawer to, so an unposted movement does not break one number — it breaks the
+  // assertion that the drawer and the ledger are the same money. That is why this is here, next
+  // to the row and the total, and not in a caller: the caller's transaction is the only place
+  // where the movement, the total and the entry can all be made to succeed or fail together.
+  //
+  // ONLY for `origen: 'manual'`. A sale, a purchase, a debtor payment and a till closing each
+  // already post their OWN entry, at a different moment and against different accounts: the sale
+  // posts the revenue AND the CMV, the purchase posts inventory against a payment method, the
+  // payment posts the receivable, the closing posts nothing because it moves no money. Posting
+  // again here would double every one of them, and a double-posted drawer is the same class of
+  // defect as an unposted one, so the guard is the whole design.
+  //
+  // The polarity is deliberate. The default is "post", because a caller that forgets is the bug
+  // we are fixing; the ONE caller that already posts — a debtor payment, which is `manual` too
+  // because no ticket brought the money in — opts out explicitly, next to the entry it posts. A
+  // default of "do not post" would put the safe behaviour behind a flag nobody thinks to set.
+  if (origen === 'manual' && libro) {
+    asentarMovimientoManual(ctx, { tipo, concepto, monto, fecha: ts, movimientoId: Number(info.lastInsertRowid) })
+  }
+
   return { monto, saldoAnterior, saldoNuevo }
+}
+
+/**
+ * Post a manual till movement to the journal, in the caller's transaction.
+ *
+ * Two lines, balanced by construction, and the debit/credit side is chosen by `tipo` rather than
+ * by anything the caller could get backwards:
+ *
+ *   egreso  — the shop spent money. Something became an expense (`5.4.01 Otros Gastos`) and the
+ *             drawer gave it up (`1.1.01 Caja`, credit). Crediting the drawer is the half that is
+ *             easy to leave out, and leaving it out is the bug: the drawer fell and the account
+ *             did not.
+ *   ingreso — the shop took money in that no sale explains. The drawer holds it (`1.1.01 Caja`,
+ *             debit) and `4.2.01 Otros Ingresos` says why.
+ *
+ * `5.4.01` and `4.2.01` are named, never written as literals at the call site, and the chart is
+ * grown on the way in by `asegurarPlan` — so a shop whose database predates these accounts gets
+ * them inserted here, inside the same transaction as the movement they are about to explain.
+ */
+function asentarMovimientoManual(ctx, { tipo, concepto, monto, fecha, movimientoId }) {
+  const cuentas = asegurarPlan(ctx)
+  const cajaId = cuentas.get(CUENTA.CAJA).id
+  const contraparte = tipo === 'ingreso' ? CUENTA.OTROS_INGRESOS : CUENTA.OTROS_GASTOS
+  const contraparteId = cuentas.get(contraparte).id
+
+  // `caja-movimiento:<id>` rather than `caja:<id>`: the till opening already owns the latter, and
+  // a reference that could be read as either a till or one of its movements is a reference nobody
+  // can trust when an entry and a till disagree.
+  asentar(ctx, {
+    fecha,
+    descripcion: `${tipo === 'ingreso' ? 'Ingreso' : 'Gasto'} de caja - ${concepto}`,
+    tipo,
+    referencia: `caja-movimiento:${movimientoId}`,
+    partidas: [
+      {
+        cuentaId: tipo === 'ingreso' ? cajaId : contraparteId,
+        debeCentavos: monto,
+        haberCentavos: 0,
+        descripcion: tipo === 'ingreso' ? 'Efectivo en caja' : concepto
+      },
+      {
+        cuentaId: tipo === 'ingreso' ? contraparteId : cajaId,
+        debeCentavos: 0,
+        haberCentavos: monto,
+        descripcion: tipo === 'ingreso' ? concepto : 'Efectivo en caja'
+      }
+    ]
+  })
 }
 
 /**

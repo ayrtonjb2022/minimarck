@@ -390,6 +390,86 @@ the name they chose.
 
 ---
 
+## 16. An owner-typed expense posts to the ledger, against `5.4.01 Otros Gastos` — a real account the web does not have
+
+**Web**: `POST /api/movimientos-caja` writes the movement row and updates the till's totals. It
+posts **nothing** to the accounting ledger — `backend/src/models/MovimientoCaja.js` has no ledger
+side at all, and `backend/src/controllers/movimiento.controller.js` never calls an `asentar`. A
+sale or a purchase posts because the SALE and the PURCHASE own their entries; a manual movement in
+the web is a drawer with no journal behind it.
+
+**Desktop**: `cajaMovimientos.crear` now posts, in the same `ctx.tx()` as the movement row and the
+till total:
+
+- `tipo: 'egreso'` → **debit** `5.4.01 Otros Gastos`, **credit** `1.1.01 Caja`
+- `tipo: 'ingreso'` → **debit** `1.1.01 Caja`, **credit** `4.2.01 Otros Ingresos`
+
+**Why this had to be a divergence and not a port.** In the desktop the gap is not a missing feature,
+it is a broken invariant that the reports themselves assert. `reportes.cash` compares the drawer to
+`1.1.01` and publishes the answer as `coincide`; an unposted movement makes that field lie, and
+every report built on the same account inherits the lie. The `cerrar` failure made it worse by
+pointing the operator at `cajaMovimientos.crear` to record the money they forgot to ring up —
+following the app's own advice walked the shop straight into the divergence it was trying to
+prevent.
+
+**Why `5.4.01` is a NEW account, and why it is not a migration.** The instruction was "use a code
+that already exists; if there is none, add it through a new versioned migration, never by editing
+`001_init.sql`". Neither half was available, for a structural reason:
+
+- **There is no seeded chart to use.** Every gasto in `PLAN_CONTABLE` names something specific
+  (`5.2.02 Alquiler`, `5.2.03 Servicios`, `5.2.01 Sueldos`, `5.3.01 Gastos Bancarios`). An
+  owner-typed expense carries a free-text `concepto` and an amount, so the app genuinely cannot tell
+  a bag of packaging from a light bill. Imputing one to `5.2.03` would not be an approximation, it
+  would be a confident and false claim in the ledger — a mistake that survives a year and then
+  makes a real report wrong. `5.1.01 CMV` is worse: it is cost of goods sold, booked per sale from
+  the recorded line cost, so an owner expense there double-counts stock and corrupts the margin.
+  A catch-all is the only account that says only what is true.
+- **A migration cannot add it, because it has no business to attach it to.** `001_init.sql` contains
+  **no account INSERTs at all** — the chart is not in SQL. `cuentas_contables.negocio_id` is
+  `NOT NULL REFERENCES negocios(id)`, and `bootstrap.js` runs `migrate()` then `seed()` with no
+  business existing yet, so a global `INSERT INTO cuentas_contables` would violate NOT NULL on every
+  database in the world. The chart   is created per tenant, on demand, by `asegurarPlan()` from the
+  `PLAN_CONTABLE` array with `ON CONFLICT DO NOTHING` (`ux_cuentas_contables_codigo_negocio` is the
+  arbiter). **Appending a row to that array is this project's add-only account mechanism**: an
+  existing shop gains the account the next time anything calls `asegurarPlan` — in practice its
+  first till opening with a float, or its first sale, whichever comes first — an existing account is
+  never rewritten, and the account and the entry that needs it are created in the same transaction.
+  Writing the tests is what corrected the order here: the first draft assumed the account appeared
+  with the first expense, and a test that deleted the row to imitate an older database showed it
+  already exists beforehand, which is the better order — the account is there before the first
+  expense that could need it, rather than on the same request. `3.1.01 Capital Social` and `2.1.01
+  Proveedores (Acreedores)` are precedent — both are in the web's chart and neither needed a
+  migration.
+- `4.2.01 Otros Ingresos` already existed, so the `ingreso` direction needed no addition at all.
+
+**Why the post lives in `registrarMovimiento` and is gated on `origen === 'manual'`.** Five other
+callers reach that function and each already posts its own entry, at a different moment and against
+different accounts: a sale posts revenue AND the CMV, a purchase posts inventory against a payment
+method, a debtor payment posts the receivable, a till closing posts nothing because it moves no
+money. A debtor payment is `origen: 'manual'` too — no ticket brought the money in — so it is the
+one caller that must opt out explicitly, and it does, with `libro: false`, on the line above the
+entry it already posts. The polarity is deliberate: the default is "post", because a caller that
+forgets is the bug being fixed. A default of "do not post" would put the correct behaviour behind a
+flag nobody thinks to set.
+
+**Proven, not asserted.** `npm run mutate:expense` breaks the behaviour three ways and requires a
+red test each time, comparing the file's SHA-256 before and after every revert:
+
+- the post removed — **6 tests red**, and `reportes.cash` publishes `coincide: false` again, which is
+  the divergence the report was built to catch;
+- the account swapped for `5.1.01 CMV` — **3 tests red**. This is the one worth reading twice: the
+  entry stays balanced, the drawer still equals `1.1.01`, and `coincide` stays **true** through the
+  whole thing. A report can be perfectly self-consistent and still impute a light bill to cost of
+  goods sold, which is why the tests name the account instead of asserting the total;
+- the `manual` guard removed — **14 tests red** across the till, the sales, the purchases and the
+  debtor payments. A double-post drifts the drawer and `1.1.01` by the same amount together, so
+  `coincide` stays true through that one too; only counting entries sees it.
+
+**Status**: willed. The web's behaviour is a defect the desktop does not inherit, and a shop that
+reads a report where the drawer and the ledger disagree has been told a number that is not true.
+
+---
+
 ## Internal notes (not user-visible, kept for the reviewer)
 
 
