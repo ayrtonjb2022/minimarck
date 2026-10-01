@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bootstrapDatabase } from '../../src/main/db/bootstrap.js'
 import { openDatabase } from '../../src/main/db/connection.js'
+import { readMigrations } from '../../src/main/db/migrate.js'
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../src/main/db/migrations', import.meta.url))
 const INIT_SQL = fileURLToPath(new URL('../../src/main/db/migrations/001_init.sql', import.meta.url))
@@ -22,11 +23,18 @@ const TABLES = [
   'cuentas_contables', 'asientos_contables', 'detalles_asientos', 'clientes_deudores',
   'cuentas_corrientes_deudas', 'pagos_deuda_contabilidad', 'cajas', 'ventas',
   'ventas_detalles', 'compras', 'compras_detalles', 'movimientos_caja', 'pagos_deuda',
-  'auditoria'
+  'auditoria',
+  // The 21st, and the only one that is NOT a Sequelize model. It arrived with local sign-in
+  // (002_identidades.sql) and is here in the census on purpose: this test exists to catch a
+  // table appearing without anybody deciding it should, so a deliberately added table has to be
+  // added deliberately to the list too. See DESKTOP_DIVERGENCES.md — the web's `user.js` model
+  // declares a bare `password`, which is not enough to store a scrypt salt and parameters, and
+  // the desktop needs somewhere a future `google` identity can point without a rewrite.
+  'user_identidades'
 ]
 
-/** The 20 tables the Sequelize models define, verified against `backend/src/models/`. */
-const EXPECTED_TABLE_COUNT = 20
+/** 20 Sequelize models + `user_identidades` for local credentials. See DESKTOP_DIVERGENCES.md. */
+const EXPECTED_TABLE_COUNT = 21
 
 /**
  * Tables with `paranoid: true` carry `deleted_at`; the rest must NOT.
@@ -36,11 +44,14 @@ const EXPECTED_TABLE_COUNT = 20
  * because that model has no `paranoid` key at all and Sequelize then defaults to hard delete.
  * "No key" and "paranoid: false" mean the same thing, and both differ from `true`.
  *
- * 9 soft + 11 hard = 20.
+ * 10 soft + 11 hard = 21.
  */
 const PARANOID_TABLES = [
   'negocios', 'users', 'categorias', 'productos', 'proveedores',
-  'clientes_deudores', 'ventas', 'compras', 'cajas'
+  'clientes_deudores', 'ventas', 'compras', 'cajas',
+  // `user_identidades` is paranoid so a credential that was once valid is a fact about the
+  // shop's history rather than a row that was never there.
+  'user_identidades'
 ]
 const NON_PARANOID_TABLES = [
   'ventas_detalles', 'compras_detalles', 'movimientos_caja', 'pagos_deuda', 'auditoria',
@@ -125,15 +136,20 @@ describe('001_init.sql applies through the real migration runner', () => {
   // These three use the REAL `bootstrapDatabase` rather than the template copy, because what is
   // under test is the runner itself: that it discovers the file, applies it, sets user_version
   // and only then seeds. Three real boots is cheap; the other 29 are file copies.
-  it('boots, migrates to version 1 and seeds, for the first time end to end', () => {
+  it('boots, migrates to the LATEST version and seeds, for the first time end to end', () => {
     const base = mkdtempSync(path.join(tmpdir(), 'mm-schema-boot-'))
     const result = bootstrapDatabase({
       userDataPath: base, migrationsDir: MIGRATIONS_DIR,
       now: () => '2026-01-01T00:00:00.000Z'
     })
     try {
-      expect(result.migration.applied).toEqual([1])
-      expect(result.conn.userVersion()).toBe(1)
+      // Every migration file on disk, applied in order. Derived, not retyped: a new migration
+      // (002_identidades.sql arrived with local sign-in) must show up here as a second applied
+      // version, and a literal would have to be edited to say so — which is how a migration ships
+      // half-applied without a single test noticing.
+      const disponibles = readMigrations(MIGRATIONS_DIR)
+      expect(result.migration.applied).toEqual(disponibles.map((m) => m.version))
+      expect(result.conn.userVersion()).toBe(disponibles.length)
       // Until this file existed, `seed()` reported `schema_not_present` and wrote nothing.
       expect(result.seeded.seeded).toBe(true)
       expect(result.seeded.reason).toBe('seeded')
@@ -153,6 +169,10 @@ describe('001_init.sql applies through the real migration runner', () => {
       now: () => '2026-01-01T00:00:00.000Z'
     })
     const negocioId = first.seeded.negocioId
+    // Read the version BEFORE the connection is closed: this assertion is "the second boot
+    // landed on the same version the first one did", and asking a closed connection would
+    // throw instead of comparing anything.
+    const versionPrimera = first.conn.userVersion()
     first.conn.checkpointAndClose()
 
     const second = bootstrapDatabase({
@@ -161,7 +181,7 @@ describe('001_init.sql applies through the real migration runner', () => {
     })
     try {
       expect(second.migration.applied).toEqual([])
-      expect(second.conn.userVersion()).toBe(1)
+      expect(second.conn.userVersion()).toBe(versionPrimera)
       expect(second.seeded.seeded).toBe(false)
       expect(second.seeded.reason).toBe('already_seeded')
       expect(second.seeded.negocioId).toBe(negocioId)
@@ -171,7 +191,7 @@ describe('001_init.sql applies through the real migration runner', () => {
     }
   })
 
-  it('creates exactly the 20 tables the Sequelize models define, and no others', () => {
+  it('creates exactly the tables the desktop declares, and no others', () => {
     bootReal()
     const found = conn.db
       .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)

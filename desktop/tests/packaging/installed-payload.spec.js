@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { createPackageWithOptions } from '@electron/asar'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +27,8 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const desktopRoot = path.resolve(here, '..', '..')
 const SCRIPT = path.join(desktopRoot, 'scripts', 'assert-installed-payload.mjs')
-const MIGRATION = path.join(desktopRoot, 'src', 'main', 'db', 'migrations', '001_init.sql')
+const MIGRATIONS_DIR = path.join(desktopRoot, 'src', 'main', 'db', 'migrations')
+const MIGRATION = path.join(MIGRATIONS_DIR, '001_init.sql')
 
 let root
 
@@ -58,8 +59,15 @@ async function packArchive(name, files) {
   mkdirSync(path.join(staging, 'out', 'renderer', 'assets'), { recursive: true })
   mkdirSync(path.join(installDir, 'resources'), { recursive: true })
 
-  // The real migration, byte for byte, so the byte-identity check has something true to confirm.
-  copyFileSync(MIGRATION, path.join(staging, 'out', 'main', 'migrations', '001_init.sql'))
+  // The real migrations, byte for byte, so the byte-identity check has something true to
+  // confirm. EVERY file in the directory, not `001` by name: this fixture stages what a real
+  // package contains, and a real package contains `002_identidades.sql` too. Hard-coding one
+  // filename here made the check report a migration as "not inside the installed asar" for an
+  // archive that was never built wrong — the fixture was.
+  for (const file of readdirSync(MIGRATIONS_DIR)) {
+    if (!file.toLowerCase().endsWith('.sql')) continue
+    copyFileSync(path.join(MIGRATIONS_DIR, file), path.join(staging, 'out', 'main', 'migrations', file))
+  }
   writeFileSync(path.join(staging, 'out', 'main', 'index.js'), files.main ?? 'export const ok = true\n')
   if (files.preload !== null) {
     writeFileSync(

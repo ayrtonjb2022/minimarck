@@ -6,6 +6,19 @@ import { createRegistry } from '../../src/main/bridge/registry.js'
 import { OPS, OPS_COUNT, TOPICS } from '../../src/shared/ipc-contract.js'
 import { registerDbHandlers } from '../../src/main/ipc/db.js'
 import { bootstrapDatabase } from '../../src/main/db/bootstrap.js'
+import { readMigrations } from '../../src/main/db/migrate.js'
+import { fileURLToPath } from 'node:url'
+
+/**
+ * The real migration set on disk, so "the version on disk" is derived and never retyped.
+ *
+ * Anchored on this file's own URL, not on `process.cwd()`: vitest runs this file with the
+ * REPOSITORY as the CWD, so a `path.resolve('src/main/...')` silently pointed at a directory
+ * that does not exist and `readMigrations` returned `[]` — which made the derived expectation
+ * vacuously true in the first attempt at this change. A version assertion that reads an empty
+ * list is worse than a hardcoded one.
+ */
+const MIGRATIONS_DIR = fileURLToPath(new URL('../../src/main/db/migrations', import.meta.url))
 
 /**
  * The IPC allowlist (SEC-2). The security claim is that the renderer cannot express SQL,
@@ -126,9 +139,11 @@ describe('S1 registered surface', () => {
       expect(info.sizeBytes).toBeGreaterThan(0) // a real file, not null
       // Read from the live connection now, not hardcoded.
       expect(info.journalMode).toBe('wal')
-      // Real migrations ship now, so the version is 1 — read from the live connection, which
-      // is the point of the test. S1 asserted 0 here for a month before S2 landed.
-      expect(info.schemaVersion).toBe(1)
+      // Every migration file must be APPLIED, so the version is the file count — derived, not
+      // typed. This used to be the literal `1`, which meant adding `002_identidades.sql` made
+      // this test red for the right reason: the version on disk had to be re-derived, not
+      // retyped. A literal here would have been a number that quietly stops meaning anything.
+      expect(info.schemaVersion).toBe(readMigrations(MIGRATIONS_DIR).length)
       expect(info.schemaVersion).toBe(db.conn.userVersion())
       expect(typeof info.sqlite).toBe('string')
       // `tables: []` was passed and the caller still cannot write a business table directly:
@@ -152,18 +167,18 @@ describe('S1 registered surface', () => {
       const r = createRegistry()
       registerDbHandlers(r, db)
       const v = r.resolve('db', 'schemaVersion')({})
-      expect(v.userVersion).toBe(1)
+      expect(v.userVersion).toBe(readMigrations(MIGRATIONS_DIR).length)
       expect(v.userVersion).toBe(db.conn.userVersion())
       // `migrated` must agree with the real version, and `available` with the real file count.
       expect(v.migrated).toBe(true)
-      expect(v.available).toBe(1)
+      expect(v.available).toBe(readMigrations(MIGRATIONS_DIR).length)
       expect(v.pending).toBe(0)
-      // `lastRun` is what THIS launch applied. It is `[1]`, not `[]`: this is the first
-      // bootstrap, so 001_init.sql ran now. S1 asserted `[]` back when no migration existed,
-      // and the value flipped the moment one did — which is the correct behaviour, and worth
-      // asserting from the real connection rather than trusting the number.
-      expect(v.lastRun.applied).toEqual([1])
+      // `lastRun` is what THIS launch applied. On a FRESH userDataPath that is EVERY migration,
+      // not `[]` and not a hand-written number: 001_init.sql runs now, and so does
+      // 002_identidades.sql beside it. Asserted as the real `db.migration.applied` so the
+      // expectation tracks the directory instead of drifting one migration behind again.
       expect(v.lastRun.applied).toEqual(db.migration.applied)
+      expect(v.lastRun.applied).toEqual([1, 2])
     } finally {
       db.conn.checkpointAndClose()
       rmSync(base, { recursive: true, force: true })

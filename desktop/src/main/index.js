@@ -17,6 +17,8 @@ import { registerProveedoresHandlers } from './ipc/proveedores.js'
 import { registerComprasHandlers } from './ipc/compras.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
 import { identityWarning, resolveLocalIdentity } from './db/identity.js'
+import { createSession } from './auth/session.js'
+import { construirContexto } from './ipc/contexto.js'
 import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
 import { runPaymentDrive } from './payment-drive.js'
@@ -54,15 +56,25 @@ if (!gotLock) {
  * order: envelope version, trusted sender, then the allowlisted (group, op). Nothing
  * reaches business code without clearing all three (SEC-2, SEC-4).
  *
- * `identity` is the LOCAL IDENTITY — the business this file belongs to and the operator on duty
- * (design #275: no login, no session, no token). It is resolved ONCE at startup and closed over
- * here, which is the whole reason `installIpc` takes it as an argument rather than reading it
- * per request: a per-request read would be a per-request guess, and the one time the file has two
- * businesses in it is exactly when a guess is worst. With no resolvable identity the object
- * carries `negocioId: null` and every business operation answers the existing, already-tested
- * `TENANT_REQUIRED` — a refusal, not a silent default to some other shop's data.
+ * `identity` is the LOCAL IDENTITY — WHICH BUSINESS this file belongs to. It is resolved ONCE at
+ * startup and closed over here, which is the whole reason `installIpc` takes it as an argument
+ * rather than reading it per request: a per-request read would be a per-request guess, and the
+ * one time the file has two businesses in it is exactly when a guess is worst. With no
+ * resolvable business the object carries `negocioId: null` and every business operation answers
+ * the existing, already-tested `TENANT_REQUIRED` — a refusal, not a silent default to some other
+ * shop's data.
+ *
+ * WHO IS OPERATING IS NOT IN `identity` ANY MORE, and this is the change that matters.
+ *
+ * `identity.actorId` used to be a startup snapshot of "the operator this file has", the same
+ * person for the whole life of the process. It is now `session.actorId()`: the person who typed
+ * their password, read from the main process on EVERY call, so it changes mid-run when the till
+ * is handed over. The renderer cannot reach it — `envelope.payload` goes to the handler untouched
+ * and is never merged into `ctx`, so a frame that sends `{ user_id: 7 }` has its own key ignored
+ * and the sale lands under whoever is actually signed in. `tests/auth/attribution.spec.js` is the
+ * test that fails if that merge is ever added.
  */
-function installIpc(registry, identity) {
+function installIpc(registry, identity, session) {
   ipcMain.handle(CHANNEL, async (event, envelope) => {
     try {
       if (!envelope || envelope.v !== ENVELOPE_VERSION) {
@@ -76,18 +88,14 @@ function installIpc(registry, identity) {
       assertTrustedSender(event.senderFrame?.url, isPackaged)
       const handler = registry.resolve(envelope.group, envelope.op)
       // ctx is threaded explicitly (design §C.3). negocioId/actorId are the tenant boundary every
-      // repository must scope by (SEC-6) and they come from the resolved local identity, not
-      // from the renderer: a frame that named its own tenant would be a frame with admin rights.
-      // `createCtx` destructures only these two, so the extra display fields below never reach a
-      // repository — `auth.me` reads them from the request context instead.
-      const ctx = {
-        negocioId: identity.negocioId,
-        actorId: identity.actorId,
-        negocioNombre: identity.negocioNombre,
-        operadorNombre: identity.operadorNombre,
-        rol: identity.rol,
-        motivo: identity.motivo
-      }
+      // repository must scope by (SEC-6) and they come from the process, not from the renderer: a
+      // frame that named its own tenant would be a frame with admin rights.
+      //
+      // `actorId` is read per call, NOT captured at startup, so a handover takes effect on the
+      // next operation. With nobody signed in it is null and every repository that stamps an
+      // audit column answers the already-tested `ACTOR_REQUERIDO`: a sale cannot be rung up by
+      // nobody.
+      const ctx = construirContexto(identity, session)
       return await handler(envelope.payload ?? {}, ctx)
     } catch (err) {
       throw toIpcError(err)
@@ -298,32 +306,32 @@ async function main() {
   registerVentasHandlers(registry, { conn: db.conn })
   registerCajasHandlers(registry, { conn: db.conn })
 
-  // WHO IS SELLING, AND WHAT IS FOR SALE.
+  // WHICH SHOP, AND WHO IS ON THE TILL.
   //
-  // Before this, every business operation in the app answered TENANT_REQUIRED: `installIpc`
-  // passed `{negocioId: null}` and every repository calls `requireTenant` on the way in. The
-  // handlers were right and the schema was right; the missing piece was the answer to "which
-  // shop is this file?", which is a fact about the FILE and not about the request.
+  // `identity` answers "which shop is this file?" — a fact about the FILE, resolved once after
+  // the seed, and the tenant every repository scopes by. It no longer answers "who is
+  // operating": that is the session, and the session is empty until somebody signs in.
   //
-  // Resolved once, after the seed has run, so it sees the business and operator the seed just
-  // created. Every group below is a group the FROZEN contract already named — no `OPS` edit, so
-  // the count is still 89. `auth.me` answers for the operator (there is no login on this
-  // platform); `productos`/`categorias` are what a point of sale reads to show its grid and look
-  // up a barcode; `deudores` is what makes a credit sale possible, since a credit sale with no
-  // named debtor is income nobody can collect.
+  // The session is created HERE, in the main process, and passed to `installIpc`. It starts
+  // empty on every launch, which is the product requirement stated as a fact about the process:
+  // nobody is signed in when the app opens. The renderer reloads, the deep link navigates, the
+  // window is rebuilt after a crash — the session survives all of them, because none of them
+  // restart the process. Restarting the app is what ends a session.
   const identity = resolveLocalIdentity(db.conn)
   const avisoIdentidad = identityWarning(identity)
   if (avisoIdentidad) console.warn(avisoIdentidad)
-  else console.log(`[identity] ${identity.negocioNombre} · ${identity.operadorNombre} (${identity.rol})`)
+  else console.log(`[negocio] ${identity.negocioNombre} · abrito, sin sesión (se pide contraseña al entrar)`)
 
-  registerAuthHandlers(registry, { conn: db.conn })
+  const session = createSession(db.conn)
+
+  registerAuthHandlers(registry, { conn: db.conn, session })
   registerNegocioHandlers(registry, { conn: db.conn })
   registerProductosHandlers(registry, { conn: db.conn })
   registerCategoriasHandlers(registry, { conn: db.conn })
   registerDeudoresHandlers(registry, { conn: db.conn })
   registerProveedoresHandlers(registry, { conn: db.conn })
   registerComprasHandlers(registry, { conn: db.conn })
-  installIpc(registry, identity)
+  installIpc(registry, identity, session)
 
   const win = createWindow({ isPackaged, rendererUrl: url })
 

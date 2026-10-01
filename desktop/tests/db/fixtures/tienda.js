@@ -1,10 +1,12 @@
-import { mkdtempSync, rmSync, copyFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, copyFileSync, readFileSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { bootstrapDatabase } from '../../../src/main/db/bootstrap.js'
 import { openDatabase } from '../../../src/main/db/connection.js'
 import { tablesCreatedBy } from '../../../src/main/db/migrate.js'
 import { abrir } from '../../../src/main/db/repositories/cajas.repo.js'
+import { createSession } from '../../../src/main/auth/session.js'
+import { guardarCredencial } from '../../../src/main/auth/identities.repo.js'
 
 /**
  * A REAL shop database for one test: fully migrated, seeded with the default business and
@@ -47,12 +49,17 @@ if (!existsSync(INIT_SQL)) {
 }
 
 /**
- * The same 20-table census `schema.spec.js` carries, derived from the ACTUAL migration file
- * instead of retyped. If the migration ever creates a 21st table, `bootstrapDatabase` widens the
- * allowlist through `tablesCreatedBy` and the fixture follows automatically — a retyped list is
- * how a census and a migration drift apart.
+ * The table census, derived from the ACTUAL migration files instead of retyped — and from ALL of
+ * them, not just `001_init.sql`. Reading only 001 was a real limit once a second migration
+ * existed: the template database had `user_identidades` (the runner widens the allowlist for every
+ * file it reads) while this fixture's `openDatabase` allowlist did not, so a test that signed in
+ * would have been refused `SQLITE_AUTH: not authorized` on a table the schema plainly has.
+ * A retyped list is how a census and a migration drift apart; a half-read directory is how a
+ * fixture drifts from the schema it opens.
  */
-export const TABLES = tablesCreatedBy(readFileSync(INIT_SQL, 'utf8'))
+export const TABLES = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.toLowerCase().endsWith('.sql'))
+  .flatMap((f) => tablesCreatedBy(readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8')))
 
 let templateDir = null
 let templateDb = null
@@ -81,6 +88,8 @@ export function tienda() {
   return {
     conn,
     dir,
+    /** The database FILE, for the assertions that must read what is actually on disk. */
+    archivo: file,
     /** The seeded default business and operator — the tenant every repository scopes by. */
     negocioId: templateSeed.negocioId,
     usuarioId: templateSeed.userId,
@@ -104,6 +113,25 @@ export function ctxDe(t, negocioId, actorId) {
     negocioId,
     actorId
   }
+}
+
+/**
+ * A shop with somebody ON THE TILL, which is what every screen test needs now.
+ *
+ * The app answers `ACTOR_REQUERIDO` and renders no till when nobody is signed in, so a UI test
+ * that mounted the POS against an empty session was no longer testing the POS — it was testing
+ * the absence of a session, and failed on a missing product card with no obvious cause. This
+ * signs in for real: a credential is DERIVED for the seeded operator and the session is opened
+ * through the same `session.abrir` the sign-in path calls, so the test's operator is a person
+ * with a password rather than a row that happens to exist.
+ *
+ * The password is returned so a test that needs the wrong one has a real wrong value to use.
+ */
+export function iniciarSesion(t, { nombre = 'dueño', password = 'contrasena-de-prueba' } = {}) {
+  const session = createSession(t.conn)
+  guardarCredencial(t.conn, t.usuarioId, nombre, password)
+  session.abrir({ id: t.usuarioId })
+  return { session, nombre, password }
 }
 
 /** Insert a product the tests sell: returns its row. */
