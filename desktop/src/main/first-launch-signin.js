@@ -49,6 +49,17 @@ export async function firmarComoDueño({
 }) {
   const { leer, esperarEn, buscar, tipear, sleep } = base
 
+  // POLL, DO NOT SAMPLE. `App.jsx` renders its loading state as
+  // `<div className="acceso-panel card">Cargando…</div>` — the SAME class as the sign-in panel —
+  // while `auth.me` is still in flight. So a single read taken right after `did-finish-load` can
+  // see `hayPanel: true` with every field missing, and the payment drive failed its first check
+  // with `texto: "Cargando…"` on a run where the app was working perfectly. The other two drives
+  // passed the same second, which is what a race looks like from the outside.
+  //
+  // Waiting for the two INPUTS is not a softer assertion: the check below still demands the panel,
+  // the question and both fields. It just stops measuring the app before it has rendered, which is
+  // the difference between a flaky gate and a real one.
+  const panelListo = await esperarEn(win, `!!document.querySelector('#acceso-nombre')`, 15000)
   const panel = await leer(
     win,
     `(() => {
@@ -64,6 +75,14 @@ export async function firmarComoDueño({
       };
     })()`
   )
+  if (!panelListo) {
+    check(
+      'al abrir, la app pide una contraseña y no entra sola',
+      false,
+      `el panel de acceso no llegó a montarse: panel=${JSON.stringify(panel)}`
+    )
+    return { ok: false, motivo: 'el panel de acceso no llegó a montarse', panel }
+  }
   check(
     'al abrir, la app pide una contraseña y no entra sola',
     Boolean(panel?.hayPanel) && panel?.pregunta && panel?.nombreAcceso && panel?.password,

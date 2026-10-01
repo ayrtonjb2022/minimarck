@@ -26,6 +26,7 @@ import { APP_NAME } from './dataDir.js'
 import { runPaymentDrive } from './payment-drive.js'
 import { runDeudoresDrive } from './deudores-drive.js'
 import { runComprasDrive } from './compras-drive.js'
+import { runHandoverDrive, runHandoverRestartPhase } from './handover-drive.js'
 
 const isPackaged = app.isPackaged
 
@@ -434,6 +435,8 @@ async function main() {
   // A fourth flag, same reason: the purchase drive joins the other two and the probe, and one flag
   // would let a second drive silently reuse the first's single-shot guard.
   let comprasDriveStarted = false
+  let handoverDriveStarted = false
+  let handoverRestartStarted = false
   win.webContents.on('did-finish-load', () => {
     installMenu(() => shell.openPath(db.paths.dataDir))
     if (process.env.MINIMARCK_S0_PROBE && !probeStarted) {
@@ -443,6 +446,48 @@ async function main() {
     // The payment drive, same gating story as the probe above: off unless the env var is set, and
     // it drives THIS window - the real one, with the real preload over the real app:// origin.
     // Its `onReady` resolves `{ ok, total, failed }` and the exit code follows.
+    // The handover drive: the whole first-launch -> add employee -> handover -> employee sells ->
+    // take the till back story, in this window, on real keys. Same gating and same watchdog
+    // discipline as the other three.
+    if (process.env.MINIMARCK_HANDOVER_DRIVE && !handoverDriveStarted) {
+      handoverDriveStarted = true
+      const watchdog = setTimeout(() => {
+        console.error('HANDOVER_DRIVE_ERROR timeout after 240s — the drive never reached finish()')
+        app.exit(1)
+      }, 240_000)
+      runHandoverDrive(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`HANDOVER_DRIVE_PHASE1 ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`HANDOVER_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
+    }
+    // PHASE 2, A SECOND PROCESS. The launcher starts the app a second time on the SAME data
+    // directory with `MINIMARCK_HANDOVER_RESTART=1`, so this is a real relaunch and not a reload:
+    // a fresh OS process, a fresh main process, and therefore no in-memory session to inherit.
+    if (process.env.MINIMARCK_HANDOVER_RESTART && !handoverRestartStarted) {
+      handoverRestartStarted = true
+      const watchdog = setTimeout(() => {
+        console.error('HANDOVER_RESTART_ERROR timeout after 120s')
+        app.exit(1)
+      }, 120_000)
+      runHandoverRestartPhase(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`HANDOVER_DRIVE_PHASE2 ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`HANDOVER_RESTART_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
+    }
     if (process.env.MINIMARCK_PAYMENT_DRIVE && !driveStarted) {
       driveStarted = true
       // A rejection here would otherwise leave the window open and the process alive with no
