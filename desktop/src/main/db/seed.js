@@ -58,13 +58,32 @@ export function seed(conn, { negocio = DEFAULT_NEGOCIO, admin = DEFAULT_ADMIN, n
     return { seeded: false, reason: 'schema_not_present', negocioId: null, userId: null }
   }
 
-  const alreadyNeg = conn.db.prepare('SELECT id FROM negocios WHERE nombre = ?').get(negocio.nombre)
+  // "IS THIS FILE ALREADY SEEDED?" IS NOT A QUESTION ABOUT NAMES.
+  //
+  // This used to ask `SELECT id FROM negocios WHERE nombre = 'Mi Negocio'`, and that is a trap
+  // with a delayed fuse. The owner names their shop at the sign-in panel, which renames the seeded
+  // row — so the row the seed was looking for by name is GONE — and the next launch reads "not
+  // seeded" and INSERTS a second business called `Mi Negocio`. From then on the file holds two
+  // active shops, `resolveLocalIdentity` refuses to pick one (correctly: a shop file is one shop),
+  // and every business operation answers `TENANT_REQUIRED`. The till is bricked, with no error
+  // that points at the cause and no way out but deleting the customer's data.
+  //
+  // Found by the handover drive's SECOND PHASE — a real relaunch of the app on the same file.
+  // 540 unit tests missed it because each one opens a fresh temporary database: none of them ever
+  // renames a business and then bootstraps again.
+  //
+  // The question is "does this file have a shop?", which is the same question `negocioUnico` and
+  // `resolveLocalIdentity` already ask, and the only one whose answer does not change when a
+  // person renames their shop. The seed's job on an existing file is to write nothing at all.
+  const yaHayNegocio = conn.db
+    .prepare(`SELECT id FROM negocios WHERE deleted_at IS NULL ORDER BY id LIMIT 1`)
+    .get()
   const alreadyUser = conn.db.prepare('SELECT id FROM users WHERE email = ?').get(admin.email)
-  if (alreadyNeg && alreadyUser) {
+  if (yaHayNegocio && alreadyUser) {
     return {
       seeded: false,
       reason: 'already_seeded',
-      negocioId: alreadyNeg.id,
+      negocioId: yaHayNegocio.id,
       userId: alreadyUser.id
     }
   }
@@ -99,7 +118,12 @@ export function seed(conn, { negocio = DEFAULT_NEGOCIO, admin = DEFAULT_ADMIN, n
   }
 
   const ids = conn.tx(() => {
-    let negocioId = alreadyNeg ? alreadyNeg.id : null
+    // Re-read INSIDE the transaction: between the check above and here another process could have
+    // opened the same file, and this is the last moment before a second shop becomes permanent.
+    const yaHay = conn.db
+      .prepare(`SELECT id FROM negocios WHERE deleted_at IS NULL ORDER BY id LIMIT 1`)
+      .get()
+    let negocioId = yaHay ? yaHay.id : null
     if (!negocioId) {
       const info = conn.db
         .prepare(

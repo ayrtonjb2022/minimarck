@@ -26,6 +26,20 @@ const MIGRATIONS_DIR = fileURLToPath(new URL('../../src/main/db/migrations', imp
  * The first test below is therefore a named regression, not decoration.
  */
 
+/**
+ * A stand-in for the real schema, and the two places it is allowed to differ are the whole point
+ * of writing it out by hand.
+ *
+ * `negocios.deleted_at` and `users.deleted_at` ARE NOT OPTIONAL EXTRAS HERE. The real schema is
+ * `paranoid` on every table — `tests/db/schema.spec.js` asserts exactly that — and `seed()` asks
+ * "does this file have a shop?" with `WHERE deleted_at IS NULL`, because a soft-deleted shop is
+ * not a shop. Without the column, that query cannot run and the fixture reported a failure that
+ * the real application could never produce.
+ *
+ * Which is the lesson: a hand-written minimal schema that is missing a column does not only test
+ * less, it tests a DIFFERENT PROGRAM. Six tests in this file went red on a query the real database
+ * answers, and the honest reading of that red is "the fixture lied", not "the query is wrong".
+ */
 const MINIMAL_SCHEMA = `
 CREATE TABLE negocios (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +49,8 @@ CREATE TABLE negocios (
   configuracion TEXT NOT NULL DEFAULT '{}',
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
 );
 CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,7 +60,8 @@ CREATE TABLE users (
   activo INTEGER NOT NULL DEFAULT 1,
   negocio_id INTEGER,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
 );
 `
 
