@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNotificaciones } from "../../context/NotificacionContext";
 import HelpModal from "./HelpModal";
+import RelevoTurno from "./RelevoTurno";
 
 const PAGE_TITLES = {
   dashboard: "Dashboard", pos: "Punto de Venta", productos: "Productos",
@@ -74,6 +75,10 @@ const Navbar = ({ currentPage, onToggleSidebar, onNavigate }) => {
           )}
         </div>
         <button className="btn-header" title="Ayuda" onClick={() => setHelpOpen(true)}><i className="fa-regular fa-circle-question"></i></button>
+        {/* Handing the till over. The person who takes it types THEIR password, and the same
+            control is how they give it back to the owner — so there is no second, weaker way to
+            become somebody else. */}
+        <RelevoTurno />
         <div className="avatar-main" title={user?.nombre} onClick={() => onNavigate("perfil")}>
           {(user?.nombre || "U")[0]}
         </div>

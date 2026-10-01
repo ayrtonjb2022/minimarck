@@ -8,6 +8,8 @@ import Ventas from "./pages/Ventas";
 import Deudores from "./pages/Deudores";
 import Proveedores from "./pages/Proveedores";
 import Compras from "./pages/Compras";
+import Acceso from "./pages/Acceso";
+import Usuarios from "./pages/Usuarios";
 
 /**
  * The route tree, cut down to what this build can actually do.
@@ -172,13 +174,56 @@ const PaginaDeudores = () => (
 );
 
 /**
- * The desktop has no login, so there is no ProtectedRoute and no gate: whoever opens the
- * file IS the operator on duty. What IS gated is the till — a sale with no open caja
- * records no movement, so CajaGuard stands in front of the POS instead.
+ * THE GATE IS NOW A PERSON, NOT A FILE.
+ *
+ * This used to say "the desktop has no login, so whoever opens the file IS the operator". That
+ * is exactly what the shopkeeper asked to stop: on a till that four people share, "who rang this
+ * up" answered "whoever switched the machine on", which is not an answer worth keeping in a
+ * sales ledger.
+ *
+ * So `Acceso` is the gate: while `auth.me` answers null, the whole route tree is replaced by the
+ * sign-in panel, and every repository behind it would refuse anyway with `ACTOR_REQUERIDO`
+ * because there is no session. The two agree by construction — the panel is not a decoration in
+ * front of a door that is already open.
+ *
+ * The till guard (`CajaGuard`) stays exactly where it was. It asks a different question: not WHO
+ * is here, but whether the drawer is open. One is about the audit trail, the other is about the
+ * money, and neither replaces the other.
  */
 const App = () => {
+  const { isAuthenticated, loading, puedeAdministrarUsuarios } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="acceso">
+        <div className="acceso-panel card">Cargando…</div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) return <Acceso />;
+
   return (
     <Routes>
+      <Route path="/usuarios" element={
+        puedeAdministrarUsuarios ? (
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Usuarios" />
+              <Usuarios />
+            </main>
+          </div>
+        ) : (
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Usuarios" />
+              <div className="card">
+                <p>Sólo el dueño o un supervisor pueden ver los usuarios.</p>
+              </div>
+            </main>
+          </div>
+        )
+      } />
       {/* A till app opens on the till, not on a menu. */}
       <Route path="/" element={<Navigate to="/pos" replace />} />
       {/* And `/index.html` opens on the till too, because THAT is the URL the app launches with.

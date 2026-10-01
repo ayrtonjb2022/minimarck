@@ -1299,3 +1299,110 @@ body {
   border-color: var(--kanagawa-fg-muted);
   color: var(--kanagawa-fg);
 }
+
+/* ── SIGN-IN PANEL ─────────────────────────────────────────────────────────────────────────
+ * A till machine that has just been switched on must ask who is there. The panel is centred and
+ * deliberately plain: it is the first thing four people a day look at, and the only two things
+ * they ever do on it are "enter" and "create the shop".
+ */
+.acceso {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--kanagawa-bg);
+}
+.acceso-panel {
+  width: 100%;
+  max-width: 400px;
+  padding: 28px;
+}
+.acceso-titulo {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--kanagawa-fg);
+  text-align: center;
+}
+.acceso-subtitulo {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--kanagawa-comment);
+  text-align: center;
+}
+.acceso-pestanas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 4px;
+  background: var(--kanagawa-bg-alt);
+  border-radius: 10px;
+}
+.acceso-pestana {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--kanagawa-fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.acceso-pestana.activa {
+  background: var(--kanagawa-bg);
+  color: var(--kanagawa-fg);
+}
+.acceso-error {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(127, 110, 25, 0.12);
+  border: 1px solid var(--kanagawa-red);
+  color: var(--kanagawa-red);
+  font-size: 13px;
+}
+.acceso-ok {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(158, 206, 106, 0.12);
+  border: 1px solid var(--kanagawa-green);
+  color: var(--kanagawa-green);
+  font-size: 13px;
+}
+.acceso-boton {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+
+/* The handover picker. Every row is a person who can be on the till, so the employee handing the
+ * till back to the owner finds the owner's row in the same list the owner handed over from. */
+.relevo-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--kanagawa-border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.relevo-fila:hover:not(:disabled) {
+  border-color: var(--kanagawa-blue);
+  background: var(--kanagawa-bg-alt);
+}
+.relevo-fila.activa {
+  border-color: var(--kanagawa-blue);
+  background: var(--kanagawa-bg-alt);
+}
+.relevo-fila:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

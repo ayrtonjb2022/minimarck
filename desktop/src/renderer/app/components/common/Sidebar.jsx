@@ -10,6 +10,7 @@ const ICONS = {
   ventas: "fa-solid fa-shopping-cart",
   caja: "fa-solid fa-wallet",
   clientes: "fa-solid fa-users",
+  usuarios: "fa-solid fa-id-badge",
 
   proveedores: "fa-solid fa-truck",
   compras: "fa-solid fa-file-invoice",
@@ -19,7 +20,7 @@ const ICONS = {
 };
 
 const Sidebar = ({ isOpen, onClose, currentPage, onNavigate, collapsed, onToggleCollapse }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, puedeAdministrarUsuarios } = useAuth();
   const { cajaActiva } = useCaja();
 
   const menuItems = [
@@ -34,6 +35,11 @@ const Sidebar = ({ isOpen, onClose, currentPage, onNavigate, collapsed, onToggle
     { page: "clientes", label: "Clientes / Deudores" },
     { page: "proveedores", label: "Proveedores" },
     { page: "compras", label: "Compras" },
+    // The employees module is reachable from the MENU, not only by typing `/usuarios`. A screen
+    // that exists but that nobody can click is a screen that does not exist for the person who
+    // has to hire somebody tomorrow. Hidden for a `vendedor` because the route refuses them too:
+    // showing a link that answers "you may not" teaches the shop that the menu lies.
+    ...(puedeAdministrarUsuarios ? [{ page: "usuarios", label: "Usuarios" }] : []),
     { section: "FINANZAS" },
     { page: "contabilidad", label: "Contabilidad" },
     { section: "REPORTES" },
@@ -76,7 +82,10 @@ const Sidebar = ({ isOpen, onClose, currentPage, onNavigate, collapsed, onToggle
           <div className="avatar-mini">{(user?.nombre || "U")[0]}</div>
           <div className="user-info">
             <div className="name">{user?.nombre || "Usuario"}</div>
-            <div className="email">{user?.email || ""}</div>
+            {/* The sign-in HANDLE, not `users.email`. For the adopted legacy owner the email is
+                `admin@minimarck.local` and the handle is something else entirely; showing the
+                email here would print a name the owner cannot type to sign in. */}
+            <div className="email">{user?.nombreAcceso || ""}</div>
           </div>
           <i className="fa-solid fa-right-from-bracket" style={{ cursor: "pointer", color: "#64748b", fontSize: 16 }} onClick={logout}></i>
         </div>
