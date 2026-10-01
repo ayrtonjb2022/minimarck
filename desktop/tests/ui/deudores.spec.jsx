@@ -37,7 +37,7 @@ import { registerProductosHandlers } from '../../src/main/ipc/productos.js'
 import { registerCategoriasHandlers } from '../../src/main/ipc/categorias.js'
 import { registerDeudoresHandlers } from '../../src/main/ipc/deudores.js'
 
-import { tienda, ctxDe, insertarProducto, insertarDeudor } from '../db/fixtures/tienda.js'
+import { tienda, ctxDe, insertarProducto, insertarDeudor, iniciarSesion } from '../db/fixtures/tienda.js'
 
 import { AuthProvider } from '../../src/renderer/app/context/AuthContext.jsx'
 import { CajaProvider } from '../../src/renderer/app/context/CajaContext.jsx'
@@ -52,7 +52,8 @@ function escenario({ productos = [], deudores = [] } = {}) {
   const registry = createRegistry()
   registerVentasHandlers(registry, { conn: t.conn })
   registerCajasHandlers(registry, { conn: t.conn })
-  registerAuthHandlers(registry, { conn: t.conn })
+  const { session: sesion } = iniciarSesion(t)
+  registerAuthHandlers(registry, { conn: t.conn, session: sesion })
   registerNegocioHandlers(registry, { conn: t.conn })
   registerProductosHandlers(registry, { conn: t.conn })
   registerCategoriasHandlers(registry, { conn: t.conn })

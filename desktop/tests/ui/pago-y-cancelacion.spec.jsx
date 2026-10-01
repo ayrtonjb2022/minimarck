@@ -33,7 +33,7 @@ import { registerProductosHandlers } from '../../src/main/ipc/productos.js'
 import { registerCategoriasHandlers } from '../../src/main/ipc/categorias.js'
 import { registerDeudoresHandlers } from '../../src/main/ipc/deudores.js'
 
-import { tienda, ctxDe, insertarProducto, insertarDeudor, abrirCaja } from '../db/fixtures/tienda.js'
+import { tienda, ctxDe, insertarProducto, insertarDeudor, abrirCaja, iniciarSesion } from '../db/fixtures/tienda.js'
 
 import { AuthProvider } from '../../src/renderer/app/context/AuthContext.jsx'
 import { CajaProvider } from '../../src/renderer/app/context/CajaContext.jsx'
@@ -47,9 +47,12 @@ function escenario({ productos = [] } = {}) {
   const ctx = ctxDe(t, t.negocioId, t.usuarioId)
 
   const registry = createRegistry()
+  // Somebody has to be ON THE TILL: the app answers ACTOR_REQUERIDO and renders no till when the
+  // session is empty, so a POS test without a sign-in was testing the absence of one.
+  const { session: sesion } = iniciarSesion(t)
   registerVentasHandlers(registry, { conn: t.conn })
   registerCajasHandlers(registry, { conn: t.conn })
-  registerAuthHandlers(registry, { conn: t.conn })
+  registerAuthHandlers(registry, { conn: t.conn, session: sesion })
   registerNegocioHandlers(registry, { conn: t.conn })
   registerProductosHandlers(registry, { conn: t.conn })
   registerCategoriasHandlers(registry, { conn: t.conn })
