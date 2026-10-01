@@ -6,6 +6,8 @@ import CajaGuard from "./components/common/CajaGuard";
 import PuntoDeVenta from "./pages/puntoDeVenta";
 import Ventas from "./pages/Ventas";
 import Deudores from "./pages/Deudores";
+import Proveedores from "./pages/Proveedores";
+import Compras from "./pages/Compras";
 
 /**
  * The route tree, cut down to what this build can actually do.
@@ -15,13 +17,13 @@ import Deudores from "./pages/Deudores";
  * Contabilidad, NotFound, ScannerSync. One by one those are not "not finished yet" — most
  * of them cannot work here at all. Login and Register need a server that does not exist.
  * ScannerSync is the phone-side half of the socket.io/QR flow, and the socket is gone
- * because there is no network. Proveedores, Compras, Reportes and Contabilidad depend on
- * IPC operations that the frozen 89-op contract does not contain, and the contract is
- * frozen on purpose.
+ * because there is no network. Reportes, Contabilidad and Configuracion depend on IPC
+ * operations that the frozen 89-op contract does not contain, and the contract is frozen
+ * on purpose.
  *
  * Importing them anyway would have produced a bundle that fails to resolve at startup, so
  * the operator would get a white screen on a build whose tests all pass. Instead the app
- * mounts three real routes, and everything else lands on a page that says plainly what is
+ * mounts five real routes, and everything else lands on a page that says plainly what is
  * and is not there. A missing screen the operator can read is better than a stack trace
  * they cannot.
  *
@@ -29,6 +31,15 @@ import Deudores from "./pages/Deudores";
  * bill at the till, and a place to collect the money afterwards. The POS could name a debtor
  * (`ventas.create` refuses a `credito` sale with no `clienteDeudorId`) but had nowhere to record
  * a payment, so a customer on credit could be created and never closed.
+ *
+ * `Proveedores` and `Compras` joined next, and the comment above used to say they were not here
+ * "because the frozen 89-op contract does not contain them". It DOES contain them: five supplier
+ * operations and five purchase operations, `proveedores.*` and `compras.*`, sitting in
+ * `ipc-contract.js` among the 89 the whole time. This list claimed the contract was missing them
+ * while `scripts/check-contract.mjs` counted all ten as unimplemented 501s — the contract and this
+ * screen agreed with each other and both were wrong, which is worse than either being wrong alone.
+ * The stock already moved without them: a sale can push stock down and nothing could push it back
+ * up, and the average cost a sale was measured against could only be changed by hand.
  */
 
 const PANTALLAS_FALTANTES = [
@@ -36,8 +47,6 @@ const PANTALLAS_FALTANTES = [
   { ruta: "/productos", nombre: "Productos", motivo: "el catalogo se carga, la edicion todavia no" },
   { ruta: "/categorias", nombre: "Categorías", motivo: "el filtro del POS ya las usa" },
   { ruta: "/caja", nombre: "Caja", motivo: "se abre al vender, el arqueo manual no" },
-  { ruta: "/proveedores", nombre: "Proveedores", motivo: "no esta en el contrato de 89 operaciones" },
-  { ruta: "/compras", nombre: "Compras", motivo: "no esta en el contrato de 89 operaciones" },
   { ruta: "/reportes", nombre: "Reportes", motivo: "no esta en el contrato de 89 operaciones" },
   { ruta: "/contabilidad", nombre: "Contabilidad", motivo: "no esta en el contrato de 89 operaciones" },
   { ruta: "/configuracion", nombre: "Configuracion", motivo: "no esta en el contrato de 89 operaciones" },
@@ -71,6 +80,12 @@ const TopBar = ({ titulo }) => {
         </NavLink>
         <NavLink to="/deudores" className={({ isActive }) => (isActive ? "active" : "")}>
           <i className="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Deudores
+        </NavLink>
+        <NavLink to="/proveedores" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-truck-field" aria-hidden="true"></i> Proveedores
+        </NavLink>
+        <NavLink to="/compras" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-cart-plus" aria-hidden="true"></i> Compras
         </NavLink>
       </nav>
 
@@ -202,6 +217,35 @@ const App = () => {
           with a clean slate is on that list too, with a "Debe" of $0,00. */}
       <Route path="/deudores" element={<PaginaDeudores />} />
       <Route path="/clientes" element={<Navigate to="/deudores" replace />} />
+      {/* Suppliers and purchases, in the same chrome and for the same reason `Deudores` is not
+          behind `CajaGuard`: only the CASH method needs the till open, and `compras.create` says
+          so by name — `CAJA_ABIERTA_REQUERIDA`, 409 — on cash and on nothing else. A card or a
+          credit purchase is a bookkeeping act, and refusing to let an operator LOOK at what the
+          shop owes its suppliers because the drawer happens to be closed would be the guard
+          backwards. The guard exists so a cashier cannot sell into a closed till by accident;
+          nobody sells by browsing this list. */}
+      <Route
+        path="/proveedores"
+        element={
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Proveedores" />
+              <Proveedores />
+            </main>
+          </div>
+        }
+      />
+      <Route
+        path="/compras"
+        element={
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Compras" />
+              <Compras />
+            </main>
+          </div>
+        }
+      />
       <Route path="*" element={<NoDisponible />} />
     </Routes>
   );

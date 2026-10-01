@@ -136,6 +136,13 @@ allow('✓✔✗✘', 'check and cross marks used in verdict strings')
 allow('€$¢', 'currency symbols: euro, dollar, cent')
 allow('•', 'bullet, used in the product demo catalogue copy')
 allow('\u00A0', 'non-breaking space, occasionally wanted in UI copy')
+// A NAME IN A SCRIPT THAT IS NOT LATIN. Not decoration: `proveedores.spec.js` searches for a
+// supplier named "Café 100%是的" to prove that a non-ASCII name still matches LITERALLY through the
+// escaped `LIKE`, and that the `%` in it is a character to find rather than a wildcard. An
+// implementation that lowercased, normalised or truncated the needle would mangle the CJK before
+// the escape ran, and only a genuinely non-Latin name catches that. The characters are the
+// two simplest ones, chosen so the fixture stays readable if a test ever fails in the open.
+allow('是的', 'CJK characters, a supplier name that is not Latin at all must still be searchable')
 allow('\u200B\u200C\u200D\uFEFF', 'zero-width and BOM control characters, when used on purpose')
 allow('\u2018\u2019\u201A\u201B\u201C\u201D\u201E', 'all eight curly quote codepoints')
 // Emoji and pictographs, with their variation selectors. These are UI glyphs chosen on purpose

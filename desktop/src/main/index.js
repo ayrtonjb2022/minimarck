@@ -13,12 +13,15 @@ import { registerNegocioHandlers } from './ipc/negocio.js'
 import { registerProductosHandlers } from './ipc/productos.js'
 import { registerCategoriasHandlers } from './ipc/categorias.js'
 import { registerDeudoresHandlers } from './ipc/deudores.js'
+import { registerProveedoresHandlers } from './ipc/proveedores.js'
+import { registerComprasHandlers } from './ipc/compras.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
 import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { handleSecondInstance, planRendererRecovery, runBeforeQuit } from './lifecycle.js'
 import { APP_NAME } from './dataDir.js'
 import { runPaymentDrive } from './payment-drive.js'
 import { runDeudoresDrive } from './deudores-drive.js'
+import { runComprasDrive } from './compras-drive.js'
 
 const isPackaged = app.isPackaged
 
@@ -318,6 +321,8 @@ async function main() {
   registerProductosHandlers(registry, { conn: db.conn })
   registerCategoriasHandlers(registry, { conn: db.conn })
   registerDeudoresHandlers(registry, { conn: db.conn })
+  registerProveedoresHandlers(registry, { conn: db.conn })
+  registerComprasHandlers(registry, { conn: db.conn })
   installIpc(registry, identity)
 
   const win = createWindow({ isPackaged, rendererUrl: url })
@@ -349,6 +354,9 @@ async function main() {
   // drive and the launch probe can all be requested in one run and one flag would let the second
   // silently reuse the first's guard.
   let deudoresDriveStarted = false
+  // A fourth flag, same reason: the purchase drive joins the other two and the probe, and one flag
+  // would let a second drive silently reuse the first's single-shot guard.
+  let comprasDriveStarted = false
   win.webContents.on('did-finish-load', () => {
     installMenu(() => shell.openPath(db.paths.dataDir))
     if (process.env.MINIMARCK_S0_PROBE && !probeStarted) {
@@ -397,6 +405,30 @@ async function main() {
         .catch((err) => {
           clearTimeout(watchdog)
           console.error(`DEUDORES_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
+    }
+
+    // The supplier and purchase drive: create a supplier, buy a FRACTIONAL quantity in cash, buy
+    // again by card and on credit, watch the three methods move three different accounts, cancel
+    // one purchase, and prove that a cash purchase CANNOT be cancelled with the till closed without
+    // losing the money. Same gating and same watchdog discipline as the two above, and it drives
+    // THIS window.
+    if (process.env.MINIMARCK_COMPRAS_DRIVE && !comprasDriveStarted) {
+      comprasDriveStarted = true
+      const watchdog = setTimeout(() => {
+        console.error('COMPRAS_DRIVE_ERROR timeout after 240s — the drive never reached finish()')
+        app.exit(1)
+      }, 240_000)
+      runComprasDrive(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`COMPRAS_DRIVE_RESULT ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`COMPRAS_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
           app.exit(1)
         })
     }

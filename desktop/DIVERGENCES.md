@@ -240,7 +240,64 @@ them come straight back.
 
 ---
 
-## 10. `verify:offline` allows three hosts, but only where it can prove they are inert
+## 10. A purchase posts a balanced entry, a moving average and an audit line — the web does none of the three
+
+**Web**: `compra.controller.js` inserts the header, the lines and a `MovimientoCaja` row, and
+stops. There is no journal entry, so the purchase never reaches `asientos_contables` and never
+touches `1.2.01 Mercaderías`; the goods arrive and the balance sheet is not told. It does not
+update `productos.precio_compra_centavos` either, so the cost a shop sells at afterwards is
+whatever the catalogue was seeded with. And a credit purchase — the one where nobody has paid —
+posts nothing at all to a payable, so the amount the shop owes its supplier exists only as an
+undelivered order. The web's cash test is a boolean field on the line, not a drawer movement.
+
+**Desktop**: `compras.repo.js` writes the stock, the weighted average, the `auditoria` line, the
+balanced entry and the drawer movement in ONE transaction, or none of them. `1.2.01` is debited,
+`1.1.01`/`1.1.02`/`2.1.01` credited by method, and the drawer moves only for cash — the split that
+`1.1.02` was added for in the first place. A sale made afterwards is measured against the cost this
+purchase actually set, and `ventas_detalles.costo_unitario_centavos` freezes that cost so the
+margin reported is the margin earned.
+
+Two consequences worth stating plainly rather than hiding:
+
+- **A credit purchase is a payable that cannot be settled.** There is no `compras.pagar` in the
+  frozen 89-op contract and none was invented, so a purchase bought on credit stays `pendiente`
+  and `2.1.01` keeps growing. The supplier screen shows what is owed; there is no screen yet that
+  pays it. This is a real gap in the product, not a rounding of the port.
+- **Cancelling gives cash back only into an OPEN till**, and refuses otherwise with
+  `CAJA_ABIERTA_REQUERIDA`. A closed drawer cannot prove it is holding anything, the same argument
+  `deudores.addPayment` makes. The alternative — posting the reversal entry and skipping the
+  movement — was written, tested away, and left a ledger that said the money returned while the
+  drawer said it did not.
+
+**Status**: willed. The web's purchase is an order form; this one is an accounting event.
+
+---
+
+## 11. A purchase is reversible, and only while it still is
+
+**Web**: `compra.controller.js` `destroy()` sets `estado = 'cancelada'` and stops. The stock stays
+on the shelf, the cost stays folded into the average, the journal entry this port writes stays
+posted, and the cash stays out of the drawer. The purchase reads as cancelled in every list while
+the goods are still being sold.
+
+**Desktop**: `compras.cancelar` reads the per-line `auditoria` snapshot this purchase wrote, puts
+the stock and the cost back, mirrors the entry on the other side, returns the cash to the till, and
+records a `DELETE` line. The cost it can restore is EXACT only while no later live purchase folded
+its lot into the same product's average, so a purchase with a successor is refused with
+`COMPRA_NO_REVERSIBLE` and the message says to cancel in reverse order. It also refuses if the
+stock or the cost has since been corrected by hand (`COMPRA_STOCK_MOVIDO`, `COMPRA_COSTO_MOVIDO`)
+rather than restoring a snapshot over a correction the operator made deliberately.
+
+The supplier is a separate story: `proveedores.remove` refuses with a 409 while a purchase points
+at them, and the answer offered is to deactivate. The web calls `proveedor.destroy()` with no such
+check, leaving purchases naming a counterparty that no longer appears in any list.
+
+**Status**: willed. Reversibility is bounded, and the bounds are named instead of being papered
+over with a status flip.
+
+---
+
+## 12. `verify:offline` allows three hosts, but only where it can prove they are inert
 
 **Web**: the offline guarantee is "the bundle contains no reference to a CDN" — a property of how
 the assets were produced, checked by a human reading the build output.

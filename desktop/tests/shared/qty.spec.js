@@ -3,6 +3,7 @@ import {
   QTY_SCALE,
   QtyError,
   assertMilli,
+  costoPromedioCentavos,
   escalaUnidad,
   formatMilli,
   isMilli,
@@ -124,6 +125,95 @@ describe('lineTotalCentavos — the price of one line', () => {
   it('keeps a whole number of units behaving like units', () => {
     // 1 kg of a $2.000 product, and 1 unit of a $2.000 product, are the same number of centavos.
     expect(lineTotalCentavos(20000, QTY_SCALE)).toBe(20000)
+  })
+})
+
+/**
+ * The moving average a purchase folds into `productos.precio_compra_centavos`.
+ *
+ * The invariant under test is NOT "the arithmetic matches the formula" — the formula is in the
+ * implementation and copying it into a test proves nothing. The invariants are the three that
+ * actually decide whether a shop's cost of goods is true:
+ *
+ *   1. WEIGHTED, NOT LAST-PRICE. Receiving a cheaper lot must drag the average DOWN towards it,
+ *      and by the fraction the lot represents of the pile. A last-price-wins cost passes a test
+ *      that only checks the new price landed, and then misreports the margin of everything already
+ *      on the shelf.
+ *   2. EXACT AT THE TOP OF THE RANGE. `stock_milli` reaches 1e12 and a cost 1e15, so the product
+ *      is 1e27. In doubles that is a different number, not a rounded one.
+ *   3. HALF AWAY FROM ZERO, once, named. The same rule as every other centavo in this codebase.
+ */
+describe('costoPromedioCentavos — the moving average a purchase writes', () => {
+
+  it('weights the new lot against the stock already on the shelf', () => {
+    // 3 units at 12000, then 2 at 15000 -> (3*12000 + 2*15000) / 5 = 13200.
+    expect(costoPromedioCentavos(3 * QTY_SCALE, 12000, 2 * QTY_SCALE, 15000)).toBe(13200)
+    // The same numbers weighted the other way round is a DIFFERENT answer, and that is the point:
+    // 2 units at 15000 and 3 at 12000, restocked in that order, still equals 13200.
+    expect(costoPromedioCentavos(2 * QTY_SCALE, 15000, 3 * QTY_SCALE, 12000)).toBe(13200)
+  })
+
+  it('drags the average towards a cheaper lot without pretending the shelf was never bought', () => {
+    // 1 unit at 12000, receive 3 at 8000 -> (12000 + 3*8000)/4 = 9000, NOT 8000.
+    const promedio = costoPromedioCentavos(QTY_SCALE, 12000, 3 * QTY_SCALE, 8000)
+    expect(promedio).toBe(9000)
+    expect(promedio).not.toBe(8000)
+    // A lot too small to move the average moves it only a little: +1 at 0 on a 1000-unit pile.
+    expect(costoPromedioCentavos(1000 * QTY_SCALE, 10000, QTY_SCALE, 0)).toBe(9990)
+  })
+
+  it('is the new price itself on an empty shelf, and leaves a full one alone on no movement', () => {
+    // Nothing on the shelf: the pile cost exactly what this lot cost.
+    expect(costoPromedioCentavos(0, 0, 5 * QTY_SCALE, 7400)).toBe(7400)
+    // Same price twice in a row is the identity, which is the regression guard for "fold the lot
+    // in" having become "overwrite the cost".
+    expect(costoPromedioCentavos(7 * QTY_SCALE, 7400, 3 * QTY_SCALE, 7400)).toBe(7400)
+  })
+
+  it('stays exact where a double silently loses a centavo', () => {
+    // A real pair of legal inputs, found by search over the schema's own ranges. The exact
+    // average is ...107 and the double arithmetic gives ...108: ONE centavo, in the cost of
+    // goods, on stock that never existed in any real shop but IS permitted by the schema.
+    const stock = 175369461060
+    const costoAntes = 146392909492051
+    const cantidad = 696125
+    const costoNuevo = 455817
+    expect(costoPromedioCentavos(stock, costoAntes, cantidad, costoNuevo)).toBe(146392328391107)
+
+    // The naive double version, side by side, so the test cannot pass by luck. NOTE: doubles and
+    // the exact answer AGREE on plenty of extreme inputs — the first values tried here agreed to
+    // the centavo. That is the whole argument for not relying on it: the error is not a visible
+    // failure, it is a coin flip that lands wrong sometimes, and "sometimes" is not a property a
+    // shop's margin can be built on.
+    const ingenuo = Math.round(
+      (stock * costoAntes + cantidad * costoNuevo) / (stock + cantidad)
+    )
+    expect(ingenuo).toBe(146392328391108)
+    expect(ingenuo).not.toBe(146392328391107)
+
+    // The top of both schema ranges still answers, exactly, without throwing on the range check.
+    expect(costoPromedioCentavos(1e12, 1e15, 1, 1e15)).toBe(1e15)
+  })
+
+  it('rounds one half away from zero, the same way as every other centavo', () => {
+    // 1 milli at 1000 + 1 milli at 1001, over 2 milli: exactly 1000.5 cents.
+    // 1001 here; `Math.round` agrees, and this case exists to pin the RULE the next one breaks.
+    expect(costoPromedioCentavos(1, 1000, 1, 1001)).toBe(1001)
+    // 3 milli at 1000 + 1 milli at 1001, over 4 milli: 1000.25 -> 1000.
+    expect(costoPromedioCentavos(3, 1000, 1, 1001)).toBe(1000)
+    // And the half that distinguishes the two rules: 1000.5 must NOT land on the even 1000.
+    expect(costoPromedioCentavos(1, 1000, 1, 1001)).not.toBe(1000)
+  })
+
+  it('refuses the inputs that have no average, rather than answering with a division by zero', () => {
+    expect(() => costoPromedioCentavos(0, 0, 0, 1000)).toThrow(QtyError)
+    expect(() => costoPromedioCentavos(0, 0, 0, 1000)).toThrow(/mayor a cero/)
+    // A negative balance is not a "lower average", it is a corrupted stock column.
+    expect(() => costoPromedioCentavos(-QTY_SCALE, 1000, QTY_SCALE, 1000)).toThrow(QtyError)
+    expect(() => costoPromedioCentavos(QTY_SCALE, -1, QTY_SCALE, 1000)).toThrow(QtyError)
+    // And the type boundary is the same one the rest of the module keeps.
+    expect(() => costoPromedioCentavos(1000.5, 1000, QTY_SCALE, 1000)).toThrow(QtyError)
+    expect(() => costoPromedioCentavos(QTY_SCALE, '1000', QTY_SCALE, 1000)).toThrow(QtyError)
   })
 })
 

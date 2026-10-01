@@ -230,6 +230,86 @@ export function escalaUnidad(unidad) {
   return scale
 }
 
+/**
+ * The MOVING AVERAGE cost of a product, after receiving a lot at a new price.
+ *
+ *   nuevo = (stockAntes * costoAntes + cantidad * costoNuevo) / (stockAntes + cantidad)
+ *
+ * This is the weighted average, and it is the right one for a shop that restocks the same goods:
+ * the stock on the shelf is made of several lots bought at several prices, and the only number
+ * that describes the whole pile is the average of what the pile cost. Last-price-wins
+ * (`costoAntes = costoNuevo`) would value the whole shelf at the price of the last crate and
+ * report a margin nobody earned.
+ *
+ * WHY IT LIVES HERE AND NOT IN THE PURCHASE REPOSITORY: it is a pure function of three integers
+ * and a rounding rule, it is the arithmetic half of `lineTotalCentavos` above, and it is the one
+ * piece of this feature that deserves to be unit-tested without a database. Putting it in the
+ * repository would mean proving a rounding rule through a transaction.
+ *
+ * THE DENOMINATOR CANNOT BE ZERO. `cantidadMilli` is asserted `>= 1` below and the caller is
+ * required to send a real line, so `stockAntes + cantidadMilli >= 1`. A "buy nothing" call is
+ * refused rather than answered with a division by zero, because a purchase of zero units is not a
+ * purchase and the caller has a bug worth seeing.
+ *
+ * ROUNDING: the quotient is cents, but rarely an integer one. 3 units at 12000 plus 2 at 15000 is
+ * exactly 13200; 1 unit at 1000 plus 1 at 1001 is 1000.5, which is 1001 here and 1000 under
+ * banker's rounding. Same rule as everywhere else in this codebase, same reason: the answer must
+ * not depend on which side of zero the number fell.
+ *
+ * THE INTERMEDIATE PRODUCT OVERFLOWS A DOUBLE, SO IT IS NOT COMPUTED IN ONE.
+ * `stock_milli` is bounded by the schema at 1e12 and a cost at 1e15 cents, so `stock * costo` is
+ * 1e27 — a thousand times past `Number.MAX_SAFE_INTEGER`. Done in doubles that product is a
+ * different number, and the error does not announce itself: on the first extreme values tried it
+ * agreed to the centavo, and on a search over the legal range it is off by exactly one centavo on
+ * a share of inputs. A rounding error that is sometimes invisible is the reason the numerator, the
+ * division and the rounding are all `BigInt` here, with the result coming back to a `Number` only
+ * after it has been proven to be a safe, non-negative integer. A shop will never restock a million
+ * tonnes of anything; what matters is that the CODE is correct at every value the schema permits,
+ * and `BigInt` is the cheapest way to be correct at all of them.
+ */
+export function costoPromedioCentavos(
+  stockMilliAntes,
+  costoCentavosAntes,
+  cantidadMilli,
+  costoCentavosNuevo,
+  { label = 'costo promedio' } = {}
+) {
+  const stock = assertMilli(stockMilliAntes, `${label}: stock anterior`)
+  const costoAntes = assertCentsLike(costoCentavosAntes, `${label}: costo anterior`)
+  const cantidad = assertMilli(cantidadMilli, `${label}: cantidad`)
+  const costoNuevo = assertCentsLike(costoCentavosNuevo, `${label}: costo nuevo`)
+  if (cantidad < 1) {
+    throw new QtyError(
+      'QTY_PROMEDIO_CANTIDAD',
+      `${label}: la cantidad recibida debe ser mayor a cero`
+    )
+  }
+  if (stock < 0) {
+    throw new QtyError('QTY_PROMEDIO_STOCK', `${label}: el stock anterior no puede ser negativo`)
+  }
+  if (costoAntes < 0 || costoNuevo < 0) {
+    throw new QtyError('QTY_PROMEDIO_COSTO', `${label}: los costos no pueden ser negativos`)
+  }
+
+  const valor = BigInt(stock) * BigInt(costoAntes) + BigInt(cantidad) * BigInt(costoNuevo)
+  const unidades = BigInt(stock + cantidad)
+
+  // Half away from zero, done in integers: round up when the remainder is at least half the
+  // divisor. Sign first, so the rule is the symmetric one and not a `Math.round` that would treat
+  // -1000.5 and +1000.5 differently.
+  const negativo = valor < 0n
+  const absValor = negativo ? -valor : valor
+  let cociente = absValor / unidades
+  const resto = absValor % unidades
+  if (resto * 2n >= unidades) cociente += 1n
+  const promedio = Number(negativo ? -cociente : cociente)
+
+  if (!Number.isSafeInteger(promedio) || promedio < 0) {
+    throw new QtyError('QTY_PROMEDIO_RANGO', `${label}: el promedio excede el rango seguro`)
+  }
+  return promedio
+}
+
 /** The sub-unit used when a quantity is BELOW one whole of its own unit: `g` for `kg`, `ml` for `l`. */
 const UNIDAD_SUB = Object.freeze({ kg: 'g', l: 'ml' })
 

@@ -1045,6 +1045,17 @@ export default function PuntoDeVenta() {
             Abrir caja
           </button>
         </div>
+
+        {/* El modal va AQUÍ también, y aunque hoy no se llegue, es un error real.
+         *
+         * `/pos` está envuelto en `CajaGuard` (`App.jsx:198`), así que con la caja cerrada el POS
+         * no llega a renderizarse: quien responde es el guard, con su propia pantalla "Caja
+         * Cerrada". Esta rama es la que queda si alguna vez se saca el guard de `/pos`, y ahí el
+         * botón no abría nada — el modal se renderizaba más abajo, en la rama de la caja activa.
+         *
+         * Se deja escrito en el sitio donde el error estaba, no en un ticket: es la clase de fallo
+         * que sobrevive años porque el código del botón se lee perfecto y nunca se ejecuta. */}
+        {modalAperturaCaja && <ModalAperturaCaja onConfirm={abrirCaja} onClose={() => setModalAperturaCaja(false)} />}
       </div>
     );
   }
@@ -1123,6 +1134,27 @@ export default function PuntoDeVenta() {
                 el mismo NavLink, por el mismo motivo. */}
             <NavLink to="/deudores" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
               <i className="fa-solid fa-user-clock" aria-hidden="true"></i> Deudores
+            </NavLink>
+            {/* Y el MISMO argumento para Proveedores y Compras, que es donde esta vez se notó
+                porque el recorrido de compras las encontró inalcanzables. Las dos pantallas
+                existen, tienen su ruta, su barra superior y su entrada en la barra lateral — y el
+                cajero que las necesita está parado acá, en `/pos`, que es donde abre la app y la
+                única pantalla SIN barra lateral. El recorrido automático intentó hacer clic en
+                `a[href="/compras"]` desde el POS y volcó los enlaces que había en pantalla:
+                `/ventas /deudores`. Ni una compra ni un proveedor alcanzables, con las dos
+                pantallas escritas y compiladas.
+
+                Es el mismo agujero que el comentario de arriba describe para Ventas y Deudores, en
+                la dirección opuesta: allí faltaba la SALIDA del POS y había que abrir una; aquí
+                faltaba la ENTRADA y había que cerrarlo. La diferencia es que las dos pantallas
+                nuevas compran stock, y el stock se repone en el mostrador, con el cliente
+                esperando. No puede ser una pantalla a la que se llega por un menú lateral que
+                este layout no tiene. */}
+            <NavLink to="/proveedores" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
+              <i className="fa-solid fa-truck-field" aria-hidden="true"></i> Proveedores
+            </NavLink>
+            <NavLink to="/compras" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
+              <i className="fa-solid fa-cart-plus" aria-hidden="true"></i> Compras
             </NavLink>
             {/* El botón de «escanear desde el celular» y su punto rojo/verde se fueron con el
                 socket: no hay servidor al que conectarse, y un punto rojo fijo en la barra del POS

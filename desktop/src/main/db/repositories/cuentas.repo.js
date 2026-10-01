@@ -71,7 +71,13 @@ export const CUENTA = Object.freeze({
   // nothing yet — and not another asset, which would move the gap rather than close it.
   CAPITAL: '3.1.01',
   VENTAS: '4.1.01',
-  CMV: '5.1.01'
+  CMV: '5.1.01',
+  // The account a purchase ON CREDIT lands in. Already in the seeded chart above as a `pasivo`
+  // ("Proveedores (Acreedores)"), so crediting a supplier's goods posts to an existing account
+  // and no migration is needed. It is deliberately the mirror of `1.3.01 Clientes (Deudores)`:
+  // a sale on credit makes the CUSTOMER owe the shop, a purchase on credit makes the SHOP owe the
+  // SUPPLIER, and the second is a real liability rather than a negative asset.
+  PROVEEDORES: '2.1.01'
 })
 
 /**

@@ -26,6 +26,8 @@ import { registerNegocioHandlers } from '../src/main/ipc/negocio.js'
 import { registerProductosHandlers } from '../src/main/ipc/productos.js'
 import { registerCategoriasHandlers } from '../src/main/ipc/categorias.js'
 import { registerDeudoresHandlers } from '../src/main/ipc/deudores.js'
+import { registerProveedoresHandlers } from '../src/main/ipc/proveedores.js'
+import { registerComprasHandlers } from '../src/main/ipc/compras.js'
 
 // A real migrated+seeded database, so the repositories behind those handlers are real too.
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'minimarck-contract-'))
@@ -45,6 +47,12 @@ registerCategoriasHandlers(registry, { conn: db.conn })
 // whoever reads it that operations are missing when the real problem is the check.
 // The four still missing are the real ones: `get`, `update`, `remove`, `addPayment`.
 registerDeudoresHandlers(registry, { conn: db.conn })
+// Same reason, one step further: `proveedores` and `compras` were absent from this gate AND from the
+// app, and the report then listed all ten of their operations as 501. They were in the frozen
+// contract the whole time — `App.jsx` even printed "no esta en el contrato de 89 operaciones" on the
+// two screens, which was wrong twice over. All five of each are now implemented.
+registerProveedoresHandlers(registry, { conn: db.conn })
+registerComprasHandlers(registry, { conn: db.conn })
 
 const contract = []
 for (const [group, ops] of Object.entries(OPS)) for (const op of ops) contract.push({ group, op })
