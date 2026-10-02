@@ -25,7 +25,7 @@
  * With no argument it falls back to `release`, and if no package is found it says so and skips
  * rather than passing quietly — a skipped check that reads as a green one is how (4) went missing.
  */
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as asar from '@electron/asar'
@@ -34,7 +34,38 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const SRC = path.join(root, 'src', 'main', 'db', 'migrations')
 const OUT = path.join(root, 'out', 'main', 'migrations')
-const RELEASE = process.argv[2] ? path.resolve(root, process.argv[2]) : path.join(root, 'release')
+
+/**
+ * WHICH ARCHIVE TO READ, AND WHY THE OBVIOUS PATH WAS WRONG.
+ *
+ * `npm run pack:dir` stages into a DATED directory (`release/build-YYYY-MM-DD_HHMMSS`) and leaves
+ * the previous ones on disk so two builds can be compared. `release/win-unpacked` is what the FIRST
+ * run on a machine leaves behind, and nothing writes it again. This script read that fixed path, so
+ * on any machine with build history its asar checks described an archive from whenever the history
+ * started — and it reported `003_ultimo_admin.sql` "not inside the asar" while that file was in
+ * fact inside the archive the shop would install. The sibling verifier `verify-package.mjs` reads
+ * the same path and stayed green through it, because it checks that SOME migration SQL is present
+ * rather than comparing the SET against source.
+ *
+ * Resolution, in order: an explicit argument, then the newest dated build, then `release/win-unpacked`
+ * for a machine that has only ever run the installer. Naming the newest is the point: the question
+ * this script exists to answer is "would the build the user is about to receive carry this SQL",
+ * and only the newest build answers that.
+ */
+function releaseDelUsuario() {
+  if (process.argv[2]) return path.resolve(root, process.argv[2])
+  const release = path.join(root, 'release')
+  if (!existsSync(release)) return release
+  const fechas = readdirSync(release, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && /^build-\d{4}-\d{2}-\d{2}_\d{6}$/.test(d.name))
+    .map((d) => path.join(release, d.name))
+    .sort()
+  // The names are timestamps in a fixed format, so sorting them as STRINGS is chronological and
+  // needs no stat(), no locale and no timezone: no chance of two builds comparing "wrong" here.
+  return fechas.length > 0 ? fechas[fechas.length - 1] : release
+}
+
+const RELEASE = releaseDelUsuario()
 
 const checks = []
 const skips = []
@@ -138,6 +169,32 @@ if (!existsSync(asarPath)) {
   )
 } else {
   const ASAR_MIGRATIONS = 'out/main/migrations'
+
+  /**
+   * Is this archive NEWER than the newest migration in source?
+   *
+   * The set comparison below is already the real check — a migration added today and a package
+   * built last week disagree about the set, so it goes red on its own. This check exists for the
+   * case where they agree by accident: a migration EDITED in place keeps its name, an older archive
+   * still has the file, and the byte-for-byte comparison then passes against SQL the user will never
+   * receive. An archive older than the newest source SQL cannot be evidence about it, and saying so
+   * with both dates is worth more than a tick that means nothing.
+   */
+  await check('the packaged archive is not older than the newest migration', () => {
+    const sql = sqlFiles(SRC)
+    const newestSql = sql.reduce((a, f) =>
+      statSync(path.join(SRC, f)).mtimeMs > statSync(path.join(SRC, a)).mtimeMs ? f : a
+    , sql[0])
+    const sqlMs = statSync(path.join(SRC, newestSql)).mtimeMs
+    const asarMs = statSync(asarPath).mtimeMs
+    if (asarMs < sqlMs) {
+      throw new Error(
+        `${path.relative(root, asarPath)} was built ${new Date(asarMs).toISOString()}, ` +
+          `BEFORE ${newestSql} was written (${new Date(sqlMs).toISOString()}). ` +
+          'This archive cannot say anything about that migration — re-run `npm run pack:dir`.'
+      )
+    }
+  })
   // `@electron/asar` lists archive paths with the HOST separator and a leading one, so on Windows an
   // entry is `\out\main\migrations\001_init.sql`. The archive is a ZIP and its internal names are
   // always POSIX; the separators are added by the listing call. Canonicalise before comparing, or

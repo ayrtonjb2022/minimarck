@@ -10,9 +10,14 @@
  * WHY A SCRIPT AND NOT A CHECKLIST. Each step below was a claim this project had never tested, and
  * every one of them turned out to hide a surprise:
  *
- *   - A fresh profile has to produce a database with the migration applied. It does — 20 tables,
- *     user_version 1 — but only because the SQL travels INSIDE the asar at a path the bundle's own
- *     geometry can resolve. Nothing about that is visible from the repo.
+ *   - A fresh profile has to produce a database with every migration applied — 20 tables, and a
+ *     `user_version` equal to the number of migration files that shipped — but only because the SQL
+ *     travels INSIDE the asar at a path the bundle's own geometry can resolve. Nothing about that
+ *     is visible from the repo. The expected version is DERIVED from `src/main/db/migrations`
+ *     rather than typed: this assertion read `uv === 1` long after `002_identidades.sql` existed,
+ *     so it had been reporting a failure that did not exist — and would have reported one that did
+ *     exist the moment `003_ultimo_admin.sql` shipped. A version a human retypes is a version that
+ *     quietly stops describing the build.
  *   - The first run has an EMPTY catalogue. It does. Which meant the POS opened on a grid that said
  *     "No se encontraron productos" and offered no way forward, and that is what motivated the
  *     first-run panel and the opt-in demo catalogue.
@@ -381,7 +386,16 @@ if (!existsSync(DB)) {
   db.close()
 
   record('the first launch created the database', true, DB)
-  record('the migration ran from inside the asar', uv === 1 && missing.length === 0, `user_version ${uv}, ${applied} applied, ${missing.length} missing`)
+  // Derived, not typed: the installed app must be at the version THIS repository ships. Typing it
+  // meant `uv === 1` outlived migration 002 and was one migration away from blaming the packaging
+  // for a number that had simply been forgotten.
+  const esperadas = readdirSync(path.join(root, 'src', 'main', 'db', 'migrations'))
+    .filter((f) => f.endsWith('.sql')).length
+  record(
+    'the migration ran from inside the asar',
+    uv === esperadas && missing.length === 0,
+    `user_version ${uv} (esperada ${esperadas}), ${applied} applied, ${missing.length} missing`
+  )
   record('a first run starts with an EMPTY catalogue', products === 0, `${products} products`)
 }
 
