@@ -1,6 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tienda, ctxDe, insertarProducto, abrirCaja, insertarDeudor } from './fixtures/tienda.js'
 import { crear as crearVenta } from '../../src/main/db/repositories/ventas.repo.js'
+import {
+  actualizar as actualizarProducto,
+  eliminar as eliminarProducto
+} from '../../src/main/db/repositories/productos.repo.js'
 import { crear as crearProveedor } from '../../src/main/db/repositories/proveedores.repo.js'
 import { crear as crearCompra } from '../../src/main/db/repositories/compras.repo.js'
 import { registrarMovimiento, abrir } from '../../src/main/db/repositories/cajas.repo.js'
@@ -52,6 +56,11 @@ const DIA = '2026-10-01'
 const HOY = DIA
 const reloj = { hoyLocal: HOY, offsetMin: ARG }
 const RANGO = { fechaInicio: DIA, fechaFin: DIA }
+// Noon in Argentina (UTC-3) on the spec's fixed day. `crearVenta` stamps `new Date().toISOString()`,
+// and the reports filter `fecha` against `RANGO`, so the clock has to be the one the window names.
+// Without this the file is a time bomb: it is green on 2026-10-01 and red at every other midnight,
+// which is exactly how it was found. See the `beforeEach`.
+const AHORA = new Date('2026-10-01T15:00:00.000Z')
 
 let t
 let ctx
@@ -70,6 +79,11 @@ function vender(producto, cantidad) {
 }
 
 beforeEach(() => {
+  // Freeze ONLY `Date`, so every sale in the scenario is stamped inside `RANGO` no matter what day
+  // the suite is run. `toFake: ['Date']` leaves timers, promises and SQLite alone on purpose: the
+  // repositories are synchronous and a faked scheduler would prove nothing about them.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(AHORA)
   t = tienda()
   ctx = ctxDe(t, t.negocioId, t.usuarioId)
   caja = abrirCaja(t, { negocioId: t.negocioId, usuarioId: t.usuarioId }) // 500,00 float
@@ -96,7 +110,10 @@ beforeEach(() => {
   vender(gaseosa, '1')
 })
 
-afterEach(() => t.cerrar())
+afterEach(() => {
+  t.cerrar()
+  vi.useRealTimers()
+})
 
 // =============================================================================
 
@@ -788,5 +805,77 @@ describe('cross-tenant — the other shop\'s money is not this shop\'s money', (
     expect(() => reporteCaja(ctx, { cajaId: ajena.id })).toThrow(/No existe la caja/)
     // And the refusal is not a side effect of an empty shop: our own till still reports.
     expect(reporteCaja(ctx, { cajaId: caja.id }).caja.id).toBe(caja.id)
+  })
+})
+
+// =============================================================================
+// The catalogue is the PRESENT; a sale keeps its own past.
+// =============================================================================
+
+/**
+ * Two claims that only mean something together, and that the deletion rules from the CRUD batch
+ * turn from trivia into a security property:
+ *
+ *   1. Editing a product's cost must not reach backwards. The cost that belongs to a sale is the
+ *      one recorded on its line the moment it was posted (`ventas_detalles.costo_unitario_centavos`),
+ *      not whatever the product row says today. If a report re-read the product, yesterday's margin
+ *      would rewrite itself every time the owner fixed a price — and the owner would be reconciling
+ *      against a moving target.
+ *
+ *   2. A product that SOLD and is later retired must still be readable in history. `productos.eliminar`
+ *      deactivates rather than deletes when there are sales (and a hard delete is impossible for the
+ *      same reason: the FK would be dangling), so the reports that join `productos` must keep
+ *      resolving its name — and `reporteStock` must keep LISTING the row, flagged inactive and out
+ *      of the restock alerts, rather than dropping a product the shop demonstrably owned.
+ */
+describe('the catalogue is the present, the sale is the past', () => {
+  it('a purchase-price change does not rewrite the margin of a sale already made', () => {
+    // Take one of the queso lines posted in `beforeEach`: 12000/kg was its cost OF RECORD.
+    const vieja = t.conn.db
+      .prepare(
+        `SELECT d.venta_id, d.costo_unitario_centavos AS c
+           FROM ventas_detalles d JOIN ventas v ON v.id = d.venta_id
+          WHERE v.negocio_id = ? AND d.producto_id = ?
+          ORDER BY d.id LIMIT 1`
+      )
+      .get(t.negocioId, queso.id)
+    expect(vieja.c).toBe(12000)
+
+    // The owner corrects the purchase price to 200,00/kg, and tops the stock up so a new sale fits.
+    actualizarProducto(ctx, queso.id, { precioCompra: '200', stock: '5' })
+
+    // The line already posted is untouched, to the centavo.
+    const tras = t.conn.db
+      .prepare('SELECT costo_unitario_centavos AS c FROM ventas_detalles WHERE venta_id = ? AND producto_id = ?')
+      .get(vieja.venta_id, queso.id)
+    expect(tras.c).toBe(12000)
+
+    // And the NEXT sale takes the new cost — so the change is real, it is just not retroactive.
+    const nueva = vender(queso, '1')
+    const linea = t.conn.db
+      .prepare('SELECT costo_unitario_centavos AS c FROM ventas_detalles WHERE venta_id = ?')
+      .get(nueva.id)
+    expect(linea.c).toBe(20000)
+  })
+
+  it('a report still reads a product that sold and was later deactivated', () => {
+    expect(eliminarProducto(ctx, queso.id)).toEqual({ id: queso.id, desactivado: true })
+
+    // History keeps it: the row is inactive, NOT deleted, so the join still names it and its 2 kg
+    // of sales still count. A hard delete would have left the report printing "Producto".
+    const fila = reporteProductosMasVendidos(ctx, RANGO, reloj).detalle.find((d) => d.productoId === queso.id)
+    expect(fila).toBeTruthy()
+    expect(fila.nombre).toBe('Queso artesanal')
+    expect(fila.cantidadVendidaMilli).toBe(2000)
+
+    // `reporteStock` keeps it too, but FLAGS it rather than losing it: the row still names the
+    // product and still counts its inventory value, while the active count drops and the restock
+    // alerts (which are about what to BUY) stop nagging about a line that is no longer sold.
+    const stock = reporteStock(ctx)
+    const enStock = stock.list.find((p) => p.id === queso.id)
+    expect(enStock?.nombre).toBe('Queso artesanal')
+    expect(enStock?.activo).toBe(false)
+    expect(stock.resumen.activos).toBe(1)
+    expect(stock.resumen.inactivos).toBe(1)
   })
 })
