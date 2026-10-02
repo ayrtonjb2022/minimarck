@@ -545,3 +545,174 @@ export function registrarPago(ctx, deudorId, body) {
     }
   })
 }
+
+// =============================================================================
+// get / update / remove — managing the debtor list itself
+// =============================================================================
+
+/** A nullable text field, trimmed; a blank is `null`. Mirrors the shape `crear` inserts. */
+function textoOpcionalDeudor(valor) {
+  return valor === null || valor === undefined || String(valor).trim() === '' ? null : String(valor).trim()
+}
+
+/**
+ * One debtor with the VIEW's live balances, or a 404. The view is still the single source of the
+ * two balance numbers — this is the same read `listar` and `registrarPago` use.
+ */
+export function obtener(ctx, id) {
+  requireTenant(ctx.negocioId)
+  const deudorId = Number(id)
+  if (!Number.isSafeInteger(deudorId) || deudorId < 1) {
+    throw new IpcError('DEUDOR_ID_INVALIDO', 400, `Id de deudor inválido: ${id}`)
+  }
+  const row = leerConSaldos(ctx.db, ctx.negocioId, deudorId)
+  if (!row) {
+    throw new IpcError('DEUDOR_NO_ENCONTRADO', 404, 'Deudor no encontrado')
+  }
+  return row
+}
+
+/**
+ * Update a debtor. PATCH semantics, and the document stays unique per shop.
+ *
+ * `limiteCredito` is PESOS on the way in and `null` means "no limit" — the same convention
+ * `crear` uses, and the same one the web's controller uses. The duplicate-document check excludes
+ * this row, because an edit that leaves the document unchanged is not a duplicate of itself.
+ *
+ * NOTHING HERE TOUCHES A BALANCE. `deuda_total` / `deuda_pendiente` are the view's; editing a name
+ * or a limit must not move them, and this function never writes a balance column because none
+ * exists.
+ */
+export function actualizar(ctx, id, body) {
+  requireTenant(ctx.negocioId)
+  if (!ctx.actorId) {
+    throw new IpcError('ACTOR_REQUERIDO', 401, 'La operación necesita un usuario en sesión')
+  }
+  const deudorId = Number(id)
+  if (!Number.isSafeInteger(deudorId) || deudorId < 1) {
+    throw new IpcError('DEUDOR_ID_INVALIDO', 400, `Id de deudor inválido: ${id}`)
+  }
+  const actual = leerConSaldos(ctx.db, ctx.negocioId, deudorId)
+  if (!actual) {
+    throw new IpcError('DEUDOR_NO_ENCONTRADO', 404, 'Deudor no encontrado')
+  }
+  const b = body ?? {}
+  const nombre = b.nombre === undefined ? actual.nombre : textoOpcionalDeudor(b.nombre)
+  if (!nombre) {
+    throw new IpcError('DEUDOR_NOMBRE_REQUERIDO', 400, 'El deudor necesita un nombre')
+  }
+  const documento = b.documento === undefined ? actual.documento : textoOpcionalDeudor(b.documento)
+  const email = b.email === undefined ? actual.email : textoOpcionalDeudor(b.email)?.toLowerCase() ?? null
+  const limiteCreditoCentavos = b.limiteCredito === undefined
+    ? actual.limiteCreditoCentavos
+    : textoOpcionalDeudor(b.limiteCredito) === null
+      ? null
+      : assertLimite(assertCents(toCents(b.limiteCredito, 'límite de crédito'), 'límite de crédito'))
+  const activo = b.activo === undefined ? (actual.activo ? 1 : 0) : b.activo ? 1 : 0
+
+  if (documento && documento !== actual.documento) {
+    const repetido = ctx.db
+      .prepare('SELECT id FROM clientes_deudores WHERE documento = ? AND negocio_id = ? AND id != ?')
+      .get(documento, ctx.negocioId, deudorId)
+    if (repetido) {
+      throw new IpcError('DEUDOR_DOCUMENTO_DUPLICADO', 400, `El documento "${documento}" ya existe en esta tienda`)
+    }
+  }
+  const ts = new Date().toISOString()
+
+  return ctx.tx(() => {
+    try {
+      ctx.db
+        .prepare(
+          `UPDATE clientes_deudores
+              SET nombre = ?, documento = ?, telefono = ?, email = ?, direccion = ?,
+                  limite_credito_centavos = ?, notas = ?, activo = ?, updated_at = ?
+            WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL`
+        )
+        .run(
+          nombre,
+          documento,
+          b.telefono === undefined ? actual.telefono : textoOpcionalDeudor(b.telefono),
+          email,
+          b.direccion === undefined ? actual.direccion : textoOpcionalDeudor(b.direccion),
+          limiteCreditoCentavos,
+          b.notas === undefined ? actual.notas : textoOpcionalDeudor(b.notas),
+          activo,
+          ts,
+          deudorId,
+          ctx.negocioId
+        )
+    } catch (err) {
+      if (esViolacionUnicaEn(err, 'clientes_deudores.documento', 'clientes_deudores.negocio_id')) {
+        throw new IpcError('DEUDOR_DOCUMENTO_DUPLICADO', 400, `El documento "${documento}" ya existe en esta tienda`)
+      }
+      throw err
+    }
+    ctx.db
+      .prepare(
+        `INSERT INTO auditoria (tabla, registro_id, accion, valores_anteriores, valores_nuevos, user_id, negocio_id, created_at, updated_at)
+         VALUES ('clientes_deudores', ?, 'UPDATE', ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        deudorId,
+        JSON.stringify({ nombre: actual.nombre, documento: actual.documento }),
+        JSON.stringify({ nombre, documento }),
+        ctx.actorId,
+        ctx.negocioId,
+        ts,
+        ts
+      )
+    return leerConSaldos(ctx.db, ctx.negocioId, deudorId)
+  })
+}
+
+/**
+ * Remove a debtor — REFUSED while a balance is outstanding.
+ *
+ * A debtor who owes money is a RECEIVABLE: `1.3.01 Clientes` on the ledger is the sum of what the
+ * shop is owed, and `pagos_deuda` is the history under it. Deleting the customer would leave that
+ * money attached to nobody: the receivable would still be on the books, the payment history would
+ * point at a deleted row, and the next report could not name who owed it. So the deletion is
+ * refused with the amount in the message and a code the UI can branch on.
+ *
+ * A debtor with a CLEAN slate has nothing to desynchronise, and is soft-deleted.
+ *
+ * THE WEB DOES NOT CHECK. `deudor.controller.js` calls `destroy()` with no balance test at all,
+ * which is the hole the desktop closes on purpose. `DIVERGENCES.md` records it.
+ */
+export function eliminar(ctx, id) {
+  requireTenant(ctx.negocioId)
+  if (!ctx.actorId) {
+    throw new IpcError('ACTOR_REQUERIDO', 401, 'La operación necesita un usuario en sesión')
+  }
+  const deudorId = Number(id)
+  if (!Number.isSafeInteger(deudorId) || deudorId < 1) {
+    throw new IpcError('DEUDOR_ID_INVALIDO', 400, `Id de deudor inválido: ${id}`)
+  }
+  const actual = leerConSaldos(ctx.db, ctx.negocioId, deudorId)
+  if (!actual) {
+    throw new IpcError('DEUDOR_NO_ENCONTRADO', 404, 'Deudor no encontrado')
+  }
+  const pendiente = Number(actual.deudaPendienteCentavos ?? 0)
+  if (pendiente > 0) {
+    throw new IpcError(
+      'DEUDOR_CON_SALDO',
+      400,
+      `No se puede eliminar a ${actual.nombre}: debe ${formatCents(pendiente)}`
+    )
+  }
+  const ts = new Date().toISOString()
+
+  return ctx.tx(() => {
+    ctx.db
+      .prepare('UPDATE clientes_deudores SET deleted_at = ?, updated_at = ? WHERE id = ? AND negocio_id = ?')
+      .run(ts, ts, deudorId, ctx.negocioId)
+    ctx.db
+      .prepare(
+        `INSERT INTO auditoria (tabla, registro_id, accion, valores_anteriores, valores_nuevos, user_id, negocio_id, created_at, updated_at)
+         VALUES ('clientes_deudores', ?, 'DELETE', ?, NULL, ?, ?, ?, ?)`
+      )
+      .run(deudorId, JSON.stringify({ nombre: actual.nombre }), ctx.actorId, ctx.negocioId, ts, ts)
+    return { id: deudorId }
+  })
+}

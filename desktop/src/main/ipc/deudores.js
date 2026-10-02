@@ -3,12 +3,16 @@ import { requireTenant } from '../db/seed.js'
 import {
   crear as crearDeudor,
   listar as listarDeudores,
+  obtener as obtenerDeudor,
+  actualizar as actualizarDeudor,
+  eliminar as eliminarDeudor,
   pagos as pagosDeudor,
   registrarPago as registrarPagoDeudor
 } from '../db/repositories/deudores.repo.js'
 
 /**
- * The `deudores.*` handlers. Four of seven: `list`, `create`, `payments` and `addPayment`.
+ * The `deudores.*` handlers. All SEVEN: `list`, `get`, `create`, `update`, `remove`, `payments`
+ * and `addPayment`.
  *
  * WHY `list` AND `create` ARE ENOUGH FOR A SALE. `ventas.repo.js` refuses a `credito` sale with
  * no `clienteDeudorId` (`VENTA_CREDITO_SIN_DEUDOR`), and that refusal is correct: a credit sale
@@ -29,8 +33,10 @@ import {
  * in the frozen 89 before anyone wrote it, and an accounting event that exists only as a bespoke
  * channel is an accounting event no review ever reads.
  *
- * Still 501, on purpose: `get`/`update`/`remove` to manage the debtor list itself. Editing a
- * limit or a name is a screen this build does not have yet; answering 501 is the honest answer.
+ * `get`/`update`/`remove` complete the list-management side. `update` is how a limit or a name is
+ * corrected, and `remove` is deliberately NOT a plain delete: the repository refuses while a
+ * balance is outstanding, because a receivable attached to nobody is money the shop can no longer
+ * name. `update` never touches a balance — those are the view's, not a column an edit may write.
  *
  * The balances in the response come from `v_clientes_deudores`, never from arithmetic in this
  * process: the view is the single copy of that invariant, and the web's two hand-maintained
@@ -54,7 +60,16 @@ export function registerDeudoresHandlers(registry, { conn }) {
       })
     },
 
+    get: (payload, reqCtx) => {
+      requireTenant(reqCtx?.negocioId)
+      return obtenerDeudor(ctx(reqCtx), payload?.id)
+    },
+
     create: (payload, reqCtx) => crearDeudor(ctx(reqCtx), payload),
+
+    update: (payload, reqCtx) => actualizarDeudor(ctx(reqCtx), payload?.id, payload),
+
+    remove: (payload, reqCtx) => eliminarDeudor(ctx(reqCtx), payload?.id),
 
     /**
      * The payments recorded against one debtor, newest first. Read-only: the balance on the

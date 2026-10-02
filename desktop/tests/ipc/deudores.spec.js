@@ -7,8 +7,10 @@
  *
  *   1. `requireTenant` is called by the HANDLER, so a caller that forgot the tenant marker is
  *      refused at the door — not after it has read somebody else's customers.
- *   2. The 501s stay 501s. `get`/`update`/`remove` were in the frozen 89 before anyone wrote them,
- *      and a screen this build does not have must not be reachable by guessing a name.
+ *   2. The three that used to be 501s are HANDLED. `get`/`update`/`remove` were named in the
+ *      frozen 89 long before the list-management screen existed; now that the screen exists, the
+ *      boundary must reach the repository rather than answering NOT_IMPLEMENTED — a group that
+ *      quietly slips back to "named but not built" is what these tests refuse to let happen.
  *   3. `monto` is PESOS at this boundary too. The renderer converts once; a handler that also
  *      converted would be a factor of a hundred, and the renderer cannot even see the difference.
  *   4. The balances that come back are the VIEW's. This is asserted against the database rather
@@ -95,25 +97,35 @@ describe('the tenant marker is checked at the door', () => {
   })
 })
 
-describe('the operations this build has not built stay honestly unavailable', () => {
-  it('answers 501 with a code, for the three that are named but not implemented', () => {
+describe('all seven deudores operations are handled, never a silent 501', () => {
+  it('reaches the repository for get, update and remove instead of answering NOT_IMPLEMENTED', () => {
+    // `get` on a missing id is a 404 that came from the repository; `update`/`remove` on a
+    // malformed id are 400s from the same place. The code is what proves the boundary called
+    // through rather than tripping the registry's 501 fallback.
+    expect(() => deudores('get')({ id: 999999 }, ctx)).toThrowError(
+      expect.objectContaining({ code: 'DEUDOR_NO_ENCONTRADO', status: 404 })
+    )
+    expect(() => deudores('update')({ id: 'x', nombre: 'x' }, ctx)).toThrowError(
+      expect.objectContaining({ code: 'DEUDOR_ID_INVALIDO', status: 400 })
+    )
+    expect(() => deudores('remove')({ id: 'x' }, ctx)).toThrowError(
+      expect.objectContaining({ code: 'DEUDOR_ID_INVALIDO', status: 400 })
+    )
+
     for (const op of ['get', 'update', 'remove']) {
       let err = null
       try {
-        deudores(op)({ deudorId: 1, nombre: 'x' }, ctx)
+        deudores(op)({ id: 999999, nombre: 'x' }, ctx)
       } catch (e) {
         err = e
       }
-      // A 501 is a promise to come back. An unregistered op that throws "handler not found" is a
-      // 500 wearing a disguise, and a renderer catching it shows the operator an error instead of
-      // an honest "not yet".
-      expect(err, `${op} should refuse`).not.toBeNull()
-      expect([404, 501, 405], `${op} status`).toContain(err.status)
-      expect(err.message, `${op} message`).toBeTruthy()
+      expect(err, `${op} should answer deliberately`).not.toBeNull()
+      expect(err.code, `${op} must not be a 501`).not.toBe('NOT_IMPLEMENTED')
+      expect(err.status).not.toBe(501)
     }
   })
 
-  it('every deudores operation in the frozen contract is either handled or refused, never missing', () => {
+  it('every deudores operation in the frozen contract is handled or refused, never missing', () => {
     const delGrupo = [...OPS.deudores]
     expect(delGrupo.length).toBe(7)
     for (const op of delGrupo) {
@@ -121,11 +133,12 @@ describe('the operations this build has not built stay honestly unavailable', ()
       // for all seven, so a missing handler can never be mistaken for a finished feature.
       let status = 200
       try {
-        deudores(op)({ deudorId: 1, nombre: 'x', monto: '10' }, ctx)
+        deudores(op)({ deudorId: 1, id: 1, nombre: 'x', monto: '10' }, ctx)
       } catch (e) {
         status = e.status ?? 500
       }
-      expect([200, 400, 404, 501, 405], `deudores.${op} answered ${status}`).toContain(status)
+      // 501 is deliberately NOT in this set: there is no unimplemented operation left in the group.
+      expect([200, 400, 404, 405], `deudores.${op} answered ${status}`).toContain(status)
     }
   })
 })
@@ -162,5 +175,50 @@ describe('addPayment crosses the boundary in the units the renderer speaks', () 
     // print the wrong thing, because a zero balance is also what a bug produces.
     expect(total.pagadoCompleto).toBe(true)
     expect(total.deudor.deudaPendienteCentavos).toBe(0)
+  })
+})
+
+describe('get / update / remove cross the boundary too', () => {
+  it('get returns the same balance the list would, and 404s for an unknown id', () => {
+    const { deudor } = deudorQueDebe()
+
+    const uno = deudores('get')({ id: deudor.id }, ctx)
+    expect(uno.id).toBe(deudor.id)
+    expect(uno.deudaPendienteCentavos).toBe(30000)
+    expect(deudores('list')({}, ctx).filas[0].deudaPendienteCentavos).toBe(uno.deudaPendienteCentavos)
+
+    expect(() => deudores('get')({ id: 999999 }, ctx)).toThrowError(
+      expect.objectContaining({ code: 'DEUDOR_NO_ENCONTRADO', status: 404 })
+    )
+  })
+
+  it('update takes the limit in PESOS and never moves the balance', () => {
+    const { deudor } = deudorQueDebe()
+
+    const r = deudores('update')({ id: deudor.id, limiteCredito: '2500' }, ctx)
+
+    expect(r.limiteCreditoCentavos).toBe(250000)
+    // The receivable is the view's: an edit to a limit is not a payment.
+    expect(r.deudaPendienteCentavos).toBe(30000)
+  })
+
+  it('remove refuses a debtor who owes, and soft-deletes one who does not', () => {
+    const { deudor } = deudorQueDebe()
+    expect(() => deudores('remove')({ id: deudor.id }, ctx)).toThrowError(
+      expect.objectContaining({ code: 'DEUDOR_CON_SALDO', status: 400 })
+    )
+
+    const limpio = insertarDeudor(t, { negocioId: t.negocioId, usuarioId: t.usuarioId, nombre: 'Al día' })
+    expect(deudores('remove')({ id: limpio.id }, ctx)).toEqual({ id: limpio.id })
+    expect(deudores('list')({}, ctx).filas.map((d) => d.id)).not.toContain(limpio.id)
+  })
+
+  it('the tenant marker is checked on all three before they touch a row', () => {
+    const { deudor } = deudorQueDebe()
+    for (const op of ['get', 'update', 'remove']) {
+      expect(() => deudores(op)({ id: deudor.id, nombre: 'x' }, {})).toThrowError(
+        expect.objectContaining({ code: 'TENANT_REQUIRED' })
+      )
+    }
   })
 })

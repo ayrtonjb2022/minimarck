@@ -3,8 +3,11 @@ import { crear as crearVenta } from '../../src/main/db/repositories/ventas.repo.
 import { cerrar, saldoCaja } from '../../src/main/db/repositories/cajas.repo.js'
 import { balanceGeneral, CUENTA } from '../../src/main/db/repositories/cuentas.repo.js'
 import {
+  actualizar as actualizarDeudor,
   crear as crearDeudor,
+  eliminar as eliminarDeudor,
   listar,
+  obtener as obtenerDeudor,
   pagos,
   registrarPago
 } from '../../src/main/db/repositories/deudores.repo.js'
@@ -707,5 +710,153 @@ describe('the till and the receivable agree with the drawer', () => {
 
     expect(cerrada.estado).toBe('cerrada')
     expect(cerrada.saldo_final_centavos).toBe(caja.saldo_inicial_centavos + 100000)
+  })
+})
+
+/** A second business in the same file, so tenant isolation is tested against a real row. */
+function otroNegocioDeudor(t) {
+  const ts = '2026-01-01T00:00:00.000Z'
+  const info = t.conn.db
+    .prepare('INSERT INTO negocios (nombre, tipo_comercio, created_at, updated_at) VALUES (?, ?, ?, ?)')
+    .run('Tienda vecina', 'kiosco', ts, ts)
+  return Number(info.lastInsertRowid)
+}
+
+describe('obtener — one debtor with the view\'s live balances', () => {
+  it('answers with the same numbers the list would', () => {
+    const { t, ctx, deudor } = deudorConDeuda()
+
+    const uno = obtenerDeudor(ctx, deudor.id)
+
+    expect(uno.id).toBe(deudor.id)
+    expect(uno.deudaPendienteCentavos).toBe(1000000)
+    // Same read the list makes, so the two cannot disagree about the same customer.
+    expect(listar(ctx, {}).filas[0].deudaPendienteCentavos).toBe(uno.deudaPendienteCentavos)
+    expect(t.conn.db.prepare('SELECT deuda_pendiente_centavos AS n FROM v_clientes_deudores WHERE id = ?').get(deudor.id).n).toBe(uno.deudaPendienteCentavos)
+  })
+
+  it('answers 404 for an unknown id and for another business\'s debtor', () => {
+    const { t, ctx, deudor } = deudorConDeuda()
+
+    expect(() => obtenerDeudor(ctx, 999999)).toThrow(
+      expect.objectContaining({ code: 'DEUDOR_NO_ENCONTRADO', status: 404 })
+    )
+    expect(() => obtenerDeudor({ ...ctx, negocioId: otroNegocioDeudor(t) }, deudor.id)).toThrow(
+      expect.objectContaining({ code: 'DEUDOR_NO_ENCONTRADO' })
+    )
+  })
+})
+
+describe('actualizar — correcting a name or a limit never moves a balance', () => {
+  it('is PATCH: the fields not sent survive, and the view keeps the debt intact', () => {
+    const { ctx, deudor } = deudorConDeuda()
+
+    const r = actualizarDeudor(ctx, deudor.id, { telefono: '11-5555-0000' })
+
+    expect(r.nombre).toBe(deudor.nombre)
+    expect(r.telefono).toBe('11-5555-0000')
+    expect(r.limiteCreditoCentavos).toBe(1000000)
+    // The whole point of a separate `actualizar`: editing a phone number is not a payment and must
+    // not touch the receivable. The balance is the view's and it is unchanged.
+    expect(r.deudaPendienteCentavos).toBe(1000000)
+    expect(r.deudaTotalCentavos).toBe(1000000)
+  })
+
+  it('takes the credit limit in PESOS, and null means "no limit"', () => {
+    const { ctx, deudor } = deudorConDeuda()
+
+    expect(actualizarDeudor(ctx, deudor.id, { limiteCredito: '25000' }).limiteCreditoCentavos).toBe(2500000)
+    // `null` is a real setting — a customer with no ceiling — and must not become a zero limit that
+    // refuses every future credit sale.
+    expect(actualizarDeudor(ctx, deudor.id, { limiteCredito: null }).limiteCreditoCentavos).toBeNull()
+  })
+
+  it('refuses a duplicate document but allows its own unchanged one', () => {
+    const { ctx } = escenario()
+    const uno = crearDeudor(ctx, { nombre: 'Uno', documento: '11222333' })
+    const dos = crearDeudor(ctx, { nombre: 'Dos', documento: '44555666' })
+
+    expect(() => actualizarDeudor(ctx, dos.id, { documento: '11222333' })).toThrow(
+      expect.objectContaining({ code: 'DEUDOR_DOCUMENTO_DUPLICADO', status: 400 })
+    )
+    expect(actualizarDeudor(ctx, uno.id, { nombre: 'Uno corregido' }).documento).toBe('11222333')
+  })
+
+  it('refuses a blank name, a negative limit and another business\'s id', () => {
+    const { t, ctx, deudor } = deudorConDeuda()
+
+    expect(() => actualizarDeudor(ctx, deudor.id, { nombre: '  ' })).toThrow(
+      expect.objectContaining({ code: 'DEUDOR_NOMBRE_REQUERIDO', status: 400 })
+    )
+    expect(() => actualizarDeudor(ctx, deudor.id, { limiteCredito: -1 })).toThrow(/negativo/i)
+    expect(() => actualizarDeudor({ ...ctx, negocioId: otroNegocioDeudor(t) }, deudor.id, { nombre: 'X' })).toThrow(
+      expect.objectContaining({ code: 'DEUDOR_NO_ENCONTRADO', status: 404 })
+    )
+  })
+
+  it('requires an operator, and writes an audit row when it succeeds', () => {
+    const { t, ctx, deudor } = deudorConDeuda()
+
+    expect(() => actualizarDeudor({ ...ctx, actorId: null }, deudor.id, { nombre: 'X' })).toThrow(
+      expect.objectContaining({ code: 'ACTOR_REQUERIDO', status: 401 })
+    )
+
+    actualizarDeudor(ctx, deudor.id, { nombre: 'Nombre corregido' })
+    const fila = t.conn.db
+      .prepare("SELECT * FROM auditoria WHERE tabla = 'clientes_deudores' AND registro_id = ? AND accion = 'UPDATE'")
+      .get(deudor.id)
+    expect(fila).toBeTruthy()
+    expect(JSON.parse(fila.valores_nuevos).nombre).toBe('Nombre corregido')
+  })
+})
+
+describe('eliminar — a receivable attached to nobody is not allowed', () => {
+  it('REFUSES to remove a debtor who still owes, and names the amount', () => {
+    const { t, ctx, deudor } = deudorConDeuda() // owes $10.000
+
+    let err = null
+    try {
+      eliminarDeudor(ctx, deudor.id)
+    } catch (e) {
+      err = e
+    }
+    expect(err).toMatchObject({ code: 'DEUDOR_CON_SALDO', status: 400 })
+    // The sentence an owner reads has to carry the number, or "cannot delete" is unactionable.
+    expect(err.message).toMatch(/\$10\.000,00|10000|10\.000/i)
+
+    // The row is untouched: 1.3.01 still has a named owner and the history still resolves.
+    expect(t.conn.db.prepare('SELECT deleted_at FROM clientes_deudores WHERE id = ?').get(deudor.id).deleted_at).toBeNull()
+    expect(listar(ctx, {}).filas.map((d) => d.id)).toContain(deudor.id)
+  })
+
+  it('soft-deletes a debtor with a clean slate, and hides them from the list', () => {
+    const { t, ctx } = escenario()
+    const limpio = crearDeudor(ctx, { nombre: 'Al día' })
+
+    expect(eliminarDeudor(ctx, limpio.id)).toEqual({ id: limpio.id })
+    expect(t.conn.db.prepare('SELECT deleted_at FROM clientes_deudores WHERE id = ?').get(limpio.id).deleted_at).toBeTruthy()
+    expect(listar(ctx, {}).filas.map((d) => d.id)).not.toContain(limpio.id)
+  })
+
+  it('becomes removable once the debt is paid in full', () => {
+    const { t, ctx, deudor } = deudorConDeuda()
+    registrarPago(ctx, deudor.id, { monto: '10000', metodoPago: 'efectivo' })
+
+    expect(obtenerDeudor(ctx, deudor.id).deudaPendienteCentavos).toBe(0)
+    expect(eliminarDeudor(ctx, deudor.id)).toEqual({ id: deudor.id })
+    expect(t.conn.db.prepare('SELECT deleted_at FROM clientes_deudores WHERE id = ?').get(deudor.id).deleted_at).toBeTruthy()
+  })
+
+  it('is tenant-scoped and refuses without an operator', () => {
+    const { t, ctx } = escenario()
+    const limpio = crearDeudor(ctx, { nombre: 'Al día' })
+
+    expect(() => eliminarDeudor({ ...ctx, negocioId: otroNegocioDeudor(t) }, limpio.id)).toThrow(
+      expect.objectContaining({ code: 'DEUDOR_NO_ENCONTRADO', status: 404 })
+    )
+    expect(() => eliminarDeudor({ ...ctx, actorId: null }, limpio.id)).toThrow(
+      expect.objectContaining({ code: 'ACTOR_REQUERIDO', status: 401 })
+    )
+    expect(t.conn.db.prepare('SELECT deleted_at FROM clientes_deudores WHERE id = ?').get(limpio.id).deleted_at).toBeNull()
   })
 })
