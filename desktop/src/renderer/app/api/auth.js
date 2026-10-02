@@ -19,7 +19,19 @@ export const authAPI = {
   me: () => llamar('auth', 'me'),
   login: (nombre, password) => llamar('auth', 'login', { nombre, password }),
   register: (datos) => llamar('auth', 'register', datos),
-  changePassword: (actualPassword, password) =>
-    llamar('auth', 'changePassword', { actualPassword, password }),
+  /**
+   * Your own password, or — when `usuarioId` is somebody else's — the OWNER resetting an employee
+   * who forgot theirs. The target rides on the payload and the branch is decided in MAIN by the
+   * role in the session, so this function cannot aim the operation at a person it should not be
+   * able to: the field is sent and the main process refuses. `usuarioId` is OMITTED rather than
+   * sent as `null` when it is not given, because "no target" and "target null" are easier to get
+   * wrong on the wire than they are to read.
+   */
+  changePassword: (actualPassword, password, usuarioId) =>
+    llamar('auth', 'changePassword', {
+      actualPassword,
+      password,
+      ...(usuarioId === undefined || usuarioId === null ? {} : { usuarioId })
+    }),
   logout: () => llamar('auth', 'logout')
 }

@@ -54,6 +54,7 @@ import {
   marcarAcceso,
   negocioUnico,
   nombreDeAcceso,
+  usuarioPorId,
   actualizarSiProcede
 } from './identities.repo.js'
 import { MIN_PASSWORD } from './passwords.js'
@@ -305,19 +306,104 @@ export function crearEmpleado(conn, session, body = {}) {
 }
 
 /**
- * `auth.changePassword` — the signed-in person changes their OWN password.
+ * WHOSE PASSWORD A CALL IS AIMED AT, or `null` when it is aimed at the caller.
  *
- * THE CURRENT PASSWORD IS REQUIRED, and that is the reason this is safe. Without it, someone who
- * found an unlocked till could permanently lock the owner out, which turns a convenience into a
- * denial of service against the shop. With it, changing a password needs the same credential as
- * signing in — and the check reuses `autenticar`, so a wrong current password is byte for byte
- * the same 401 as a wrong sign-in and leaks nothing about the new one.
+ * ── WHY THERE IS NO SIXTH OPERATION ──────────────────────────────────────────────────────────
+ *
+ * §L is frozen at 89 names and `auth.changePassword` is one of them. A `auth.resetPassword` would
+ * move the count to 90, which is a decision for review rather than for a feature branch — and it
+ * would not be a different thing to ask of the database anyway. Both paths end in
+ * `guardarCredencial`: the same derived key, the same retired old row, the same handle. What
+ * differs is only WHERE the target id comes from, and a target is a FIELD, not a new operation.
+ *
+ * ── WHY THE OLD PASSWORD IS STILL REQUIRED FOR YOURSELF ───────────────────────────────────────
+ *
+ * This is the part that must not be quietly relaxed, because the test that pins it is a security
+ * claim and not a detail: an admin who is signed in CAN change their own password here without
+ * typing the old one, because the session already proved who they are. That was tried and
+ * reverted — it breaks exactly the guarantee the operation exists for. Somebody who finds a
+ * logged-in till open would then type one field and permanently lock the shop out, with nothing
+ * ever having been checked against the credential. So `usuarioId` pointing at YOUR OWN id is the
+ * self path, old password required, always — and the owner's own forgotten password is the CLI's
+ * job, which is a different trust boundary on purpose.
+ *
+ * ── WHY ONLY THE OWNER ────────────────────────────────────────────────────────────────────────
+ *
+ * `ROLES_QUE_ADMINISTRAN_USUARIOS` already answers "who may run the usuarios module", and it
+ * deliberately includes `supervisor` — a supervisor is trusted with the shop. A PASSWORD is the
+ * keys to it, not the shop: a supervisor who can read every margin and every debt may not
+ * rewrite an employee's secret, and least of all the owner's. So the reset branch asks for
+ * `admin` and nothing else, and a supervisor's attempt gets the same 403 as a `vendedor`'s.
+ */
+function objetivoDeOtro(conn, actual, body) {
+  const pedido = body.usuarioId ?? body.userId
+  if (pedido === undefined || pedido === null || pedido === '') return null
+
+  const id = Number(pedido)
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new IpcError('DATO_INVALIDO', 400, 'Ese usuario no existe')
+  }
+  // Your own id is the SELF path, not a reset of yourself. Routing it here would be the same
+  // weakening described above under a different spelling.
+  if (id === actual.id) return null
+
+  if (actual.rol !== 'admin') {
+    throw new IpcError(
+      'SIN_PERMISO', 403,
+      'Sólo el dueño puede cambiar la contraseña de otra persona'
+    )
+  }
+
+  const fila = usuarioPorId(conn, id)
+  // ONE refusal for "no such id", "deleted" and "belongs to another shop". Three different
+  // answers would turn this into a way to ask what user ids exist in a file the caller cannot
+  // otherwise see, and a shop file has exactly one business in it.
+  if (!fila || fila.activo !== 1 || fila.negocio_id !== actual.negocioId) {
+    throw new IpcError('USUARIO_NO_ENCONTRADO', 404, 'Ese usuario no está en este negocio')
+  }
+
+  const nombreAcceso = nombreDeAcceso(conn, id)
+  if (!nombreAcceso) {
+    // Somebody with no credential has no password to replace. Saying so is more useful than
+    // silently creating one, because it is the difference between "reset" and "set up".
+    throw new IpcError('SIN_CREDENCIAL', 409, 'Esa cuenta todavía no tiene contraseña')
+  }
+
+  return { id, nombreAcceso, nombre: fila.nombre }
+}
+
+/**
+ * `auth.changePassword` — your own password, and — for the owner only — somebody else's.
+ *
+ * THE CURRENT PASSWORD IS REQUIRED for your own, and that is the reason this is safe. Without it,
+ * someone who found an unlocked till could permanently lock the owner out, which turns a
+ * convenience into a denial of service against the shop. With it, changing a password needs the
+ * same credential as signing in — and the check reuses `autenticar`, so a wrong current password
+ * is byte for byte the same 401 as a wrong sign-in and leaks nothing about the new one.
+ *
+ * THE OWNER'S RESET OF SOMEONE ELSE is the second half, and it needs no old password because the
+ * session already proved who is asking. It exists for the ordinary case this app had no answer to:
+ * an employee forgot the password they were given at hiring, and the shop cannot call them and
+ * cannot let anybody else take the till under a secret only two people know.
  */
 export function changePassword(conn, session, body = {}) {
   const actual = session.exigir()
   const nuevo = exigirPassword(body.password)
-  const actualPlano = typeof body.actualPassword === 'string' ? body.actualPassword : ''
+  const objetivo = objetivoDeOtro(conn, actual, body)
 
+  if (objetivo) {
+    guardarCredencial(conn, objetivo.id, objetivo.nombreAcceso, nuevo)
+    return {
+      ok: true,
+      usuarioId: objetivo.id,
+      // The renderer uses this to say WHO was changed, so a person is not left wondering whether
+      // the password they just typed went to their own account.
+      restablecida: true,
+      nombre: objetivo.nombre
+    }
+  }
+
+  const actualPlano = typeof body.actualPassword === 'string' ? body.actualPassword : ''
   const nombreActual = nombreDeAcceso(conn, actual.id)
   if (!nombreActual) {
     throw new IpcError('SIN_CREDENCIAL', 409, 'Esta cuenta no tiene contraseña configurada')
@@ -328,7 +414,7 @@ export function changePassword(conn, session, body = {}) {
     throw new IpcError('CONTRASENA_IGUAL', 400, 'La nueva contraseña es la misma que la actual')
   }
   guardarCredencial(conn, actual.id, nombreActual, nuevo)
-  return { ok: true, usuarioId: actual.id }
+  return { ok: true, usuarioId: actual.id, restablecida: false }
 }
 
 /** `auth.logout` — end the session. Nothing is stored, so there is nothing to revoke. */

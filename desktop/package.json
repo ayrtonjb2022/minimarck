@@ -42,6 +42,7 @@
     "verify:installed": "node scripts/verify-installed-e2e.mjs",
     "verify:s0": "npm run spike && npm run verify:contract && npm test && npm run build && npm run verify:preload && npm run verify:migrations && npm run verify:encoding && npm run verify:bundle && npm run verify:offline && npm run verify:licences && npm run probe:launch && npm run drive:payment && npm run drive:deudores && npm run drive:compras && npm run drive:handover && npm run drive:reportes",
     "mutate:handover": "node scripts/mutate-handover-password.mjs",
+    "mutate:reset": "node scripts/mutate-reset-admin.mjs",
     "mutate:attribution": "node scripts/mutate-attribution.mjs",
     "mutate:expense": "node scripts/mutate-expense-ledger.mjs",
     "drive:handover": "node scripts/drive-handover.mjs"

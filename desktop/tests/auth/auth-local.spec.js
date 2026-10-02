@@ -254,6 +254,163 @@ describe('auth: changing a password', () => {
   it('refuses to sign in without a session at all', async () => {
     expect(falla(await e.call('auth', 'changePassword', { actualPassword: PASSWORD, password: 'la-nueva-clave' })).code).toBe('ACTOR_REQUERIDO')
   })
+
+  it('will NOT let a signed-in owner skip the old password on their OWN account', async () => {
+    // The regression this pins is a WEAKENING that was tried and reverted. Routing `usuarioId`
+    // at yourself into the reset branch would make "I am an admin" enough to rewrite your own
+    // secret without typing it — so a till found open with a session on it becomes a one-field
+    // permanent lockout, which is precisely the denial of service the operation refuses.
+    ok(await e.call('auth', 'register', { nombre: 'Dueño', negocioNombre: 'Tienda', nombreAcceso: 'dueño', password: PASSWORD }))
+    ok(await e.call('auth', 'login', { nombre: 'dueño', password: PASSWORD }))
+
+    // No `usuarioId` at all.
+    expect(falla(await e.call('auth', 'changePassword', { password: 'la-nueva-clave' })).code).toBe('CREDENCIALES_INVALIDAS')
+    // And `usuarioId` pointing at yourself, which is the SAME path and not a privileged one.
+    expect(falla(await e.call('auth', 'changePassword', { usuarioId: e.t.usuarioId, password: 'la-nueva-clave' })).code).toBe('CREDENCIALES_INVALIDAS')
+
+    // The old password still opens the account afterwards: nothing was changed by either refusal.
+    ok(await e.call('auth', 'login', { nombre: 'dueño', password: PASSWORD }))
+  })
+})
+
+describe('auth: the owner resetting somebody else', () => {
+  let e
+  beforeEach(() => { e = escenario() })
+  afterEach(() => e.t.cerrar())
+
+  const dueno = { nombre: 'Dueño', negocioNombre: 'Tienda', nombreAcceso: 'dueño', password: PASSWORD }
+
+  /** The owner, signed in, with one `vendedor` already on the till. */
+  async function conEmpleado() {
+    ok(await e.call('auth', 'register', dueno))
+    ok(await e.call('auth', 'login', { nombre: 'dueño', password: PASSWORD }))
+    const emp = ok(await e.call('auth', 'register', {
+      nombre: 'Ana Ruiz', rol: 'vendedor', nombreAcceso: 'ana', password: 'clave-de-ana'
+    }))
+    ok(await e.call('auth', 'login', { nombre: 'dueño', password: PASSWORD }))
+    return emp
+  }
+
+  it('replaces an employee password WITHOUT the old one, and the employee signs in with it', async () => {
+    const emp = await conEmpleado()
+
+    // No `actualPassword` is sent, and none is needed: the session already proved the owner.
+    const r = ok(await e.call('auth', 'changePassword', { usuarioId: emp.id, password: 'clave-nueva-de-ana' }))
+    expect(r).toMatchObject({ ok: true, usuarioId: emp.id, restablecida: true, nombre: 'Ana Ruiz' })
+
+    ok(await e.call('auth', 'login', { nombre: 'ana', password: 'clave-nueva-de-ana' }))
+    expect((await e.call('auth', 'me')).user).toMatchObject({ nombre: 'Ana Ruiz' })
+    // And the password they were given at hiring no longer opens anything.
+    expect(falla(await e.call('auth', 'login', { nombre: 'ana', password: 'clave-de-ana' })).code).toBe('CREDENCIALES_INVALIDAS')
+  })
+
+  it('keeps the sign-in handle, retires the old credential, and leaves the session alone', async () => {
+    const emp = await conEmpleado()
+    ok(await e.call('auth', 'changePassword', { usuarioId: emp.id, password: 'clave-nueva-de-ana' }))
+
+    const filas = e.t.conn.db
+      .prepare('SELECT external_id, activo, deleted_at FROM user_identidades WHERE user_id = ? ORDER BY id')
+      .all(emp.id)
+    // Two rows, same handle both times — the same shape a self-service change produces.
+    expect(filas).toHaveLength(2)
+    expect(filas[0].external_id).toBe('ana')
+    expect(filas[0].activo).toBe(0)
+    expect(filas[1].external_id).toBe('ana')
+    expect(filas[1].activo).toBe(1)
+
+    // Resetting somebody else's password must NOT log the owner out or hand them the till.
+    expect((await e.call('auth', 'me')).user).toMatchObject({ id: e.t.usuarioId, rol: 'admin' })
+  })
+
+  it('never writes the plaintext, anywhere in the file', async () => {
+    const emp = await conEmpleado()
+    const NUEVA = 'clave-nueva-de-ana'
+    ok(await e.call('auth', 'changePassword', { usuarioId: emp.id, password: NUEVA }))
+    e.t.conn.db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+
+    const archivo = readFileSync(e.t.archivo, 'latin1')
+    expect(archivo).not.toContain(NUEVA)
+    // And the row is a scrypt row under the current policy, not a copy of the string.
+    const fila = e.t.conn.db
+      .prepare('SELECT algoritmo, secret FROM user_identidades WHERE user_id = ? AND activo = 1')
+      .get(emp.id)
+    expect(fila.algoritmo).toBe('scrypt')
+    expect(fila.secret).not.toBe(NUEVA)
+  })
+
+  it('refuses a supervisor and a vendedor, and says the same thing to both', async () => {
+    await conEmpleado()
+    ok(await e.call('auth', 'register', { nombre: 'Sofi', rol: 'supervisor', nombreAcceso: 'sofi', password: 'clave-de-sofi' }))
+    ok(await e.call('auth', 'login', { nombre: 'sofi', password: 'clave-de-sofi' }))
+    const ana = e.t.conn.db.prepare(`SELECT id FROM users WHERE rol = 'vendedor' ORDER BY id LIMIT 1`).get()
+
+    const supervisor = falla(await e.call('auth', 'changePassword', { usuarioId: ana.id, password: 'la-nueva-clave' }))
+    expect(supervisor.code).toBe('SIN_PERMISO')
+
+    ok(await e.call('auth', 'login', { nombre: 'ana', password: 'clave-de-ana' }))
+    const vendedor = falla(await e.call('auth', 'changePassword', { usuarioId: e.t.usuarioId, password: 'la-nueva-clave' }))
+    expect(vendedor.code).toBe('SIN_PERMISO')
+    // A password is the keys to the shop, not the shop: a supervisor may not rewrite one.
+    expect(supervisor.message).toBe(vendedor.message)
+    // Both refusals changed nothing.
+    ok(await e.call('auth', 'login', { nombre: 'ana', password: 'clave-de-ana' }))
+  })
+
+  it('gives ONE refusal for an id that does not exist, one that is deleted and one in another shop', async () => {
+    await conEmpleado()
+    const inexistente = falla(await e.call('auth', 'changePassword', { usuarioId: 999999, password: 'la-nueva-clave' }))
+    expect(inexistente.code).toBe('USUARIO_NO_ENCONTRADO')
+
+    // A person in ANOTHER business: the same answer, because a 404 that only exists in this
+    // shop's file is still an oracle for what other files contain.
+    const otro = Number(e.t.conn.db
+      .prepare(
+        `INSERT INTO negocios (nombre, ruc, tipo_comercio, configuracion, activo, created_at, updated_at)
+         VALUES ('Vecina', NULL, 'otro', '{}', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`
+      )
+      .run().lastInsertRowid)
+    const extrana = Number(e.t.conn.db
+      .prepare(
+        `INSERT INTO users (nombre, email, rol, activo, negocio_id, created_at, updated_at)
+         VALUES ('Otra Dueña', 'otra@minimarck.local', 'admin', 1, ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`
+      )
+      .run(otro).lastInsertRowid)
+    const ajena = falla(await e.call('auth', 'changePassword', { usuarioId: extrana, password: 'la-nueva-clave' }))
+    expect(ajena).toEqual(inexistente)
+
+    // And a deleted one answers the same, byte for byte.
+    const ana = e.t.conn.db.prepare(`SELECT id FROM users WHERE rol = 'vendedor' ORDER BY id LIMIT 1`).get()
+    e.t.conn.db.prepare('UPDATE users SET deleted_at = ? WHERE id = ?').run('2026-01-01T00:00:00.000Z', ana.id)
+    expect(falla(await e.call('auth', 'changePassword', { usuarioId: ana.id, password: 'la-nueva-clave' }))).toEqual(inexistente)
+  })
+
+  it('says SIN_CREDENCIAL, not "ok", for somebody who never had a password', async () => {
+    await conEmpleado()
+    // A user row with no identity is a real state this schema allows and `auth.me` already
+    // renders as "sin contraseña". Resetting a password it does not have would be creating one.
+    const sinClave = Number(e.t.conn.db
+      .prepare(
+        `INSERT INTO users (nombre, email, rol, activo, negocio_id, created_at, updated_at)
+         VALUES ('Recién hired', 'nuevo@minimarck.local', 'vendedor', 1, ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`
+      )
+      .run(e.t.negocioId).lastInsertRowid)
+    expect(falla(await e.call('auth', 'changePassword', { usuarioId: sinClave, password: 'la-nueva-clave' })).code).toBe('SIN_CREDENCIAL')
+    expect(e.t.conn.db.prepare('SELECT COUNT(*) AS n FROM user_identidades WHERE user_id = ?').get(sinClave).n).toBe(0)
+  })
+
+  it('rejects a short new password, and a target that is not an id', async () => {
+    await conEmpleado()
+    const ana = e.t.conn.db.prepare(`SELECT id FROM users WHERE rol = 'vendedor' ORDER BY id LIMIT 1`).get()
+    expect(falla(await e.call('auth', 'changePassword', { usuarioId: ana.id, password: 'corta' })).code).toBe('CONTRASENA_CORTA')
+    for (const usuarioId of ['abc', -1, 0, 1.5, {}]) {
+      expect(falla(await e.call('auth', 'changePassword', { usuarioId, password: 'la-nueva-clave' })).code).toBe('DATO_INVALIDO')
+    }
+  })
+
+  it('refuses with no session, before it looks at anything', async () => {
+    const err = falla(await e.call('auth', 'changePassword', { usuarioId: 1, password: 'la-nueva-clave' }))
+    expect(err.code).toBe('ACTOR_REQUERIDO')
+  })
 })
 
 describe('auth: employees', () => {

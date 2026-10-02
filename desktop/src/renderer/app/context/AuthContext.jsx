@@ -87,6 +87,23 @@ export const AuthProvider = ({ children }) => {
     return estado;
   };
 
+  /**
+   * `auth.changePassword`, aimed at somebody else.
+   *
+   * This is the owner setting an employee's password because the employee forgot the one they
+   * were given at hiring. It carries NO current password on purpose: the session is the proof that
+   * the owner is who they say they are, and requiring the old password here would mean the owner
+   * has to know an employee's password in order to replace it — which is the opposite of the point.
+   *
+   * Main decides whether the call is allowed, from the role in the session. A supervisor calling
+   * this gets a 403 and the reason arrives here as a message the users module already knows how to
+   * show, so the refusal is visible where the button was pressed rather than swallowed.
+   */
+  const restablecerPassword = async (usuarioId, password) => {
+    setError(null);
+    return authAPI.changePassword(undefined, password, usuarioId);
+  };
+
   /** End the session. The panel comes back, and the next launch starts here too. */
   const logout = async () => {
     await authAPI.logout();
@@ -111,6 +128,7 @@ export const AuthProvider = ({ children }) => {
     hasRole: (role) => user?.rol === role,
     login,
     register,
+    restablecerPassword,
     logout,
     refrescar
   };
