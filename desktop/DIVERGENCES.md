@@ -470,6 +470,65 @@ reads a report where the drawer and the ledger disagree has been told a number t
 
 ---
 
+## 17. "Eliminar" retires a row, it does not destroy one — and two of the three refusals are named
+
+**Web**: `producto.controller.js` answers 400 when a product has sales (and deactivates silently
+only in development); `categoria.controller.js` refuses a category with active products;
+`deudor.destroy()` deletes a debtor with NO check at all, so a person who still owes money simply
+disappears from the screen that was tracking the debt.
+
+**Desktop**: one rule, applied three ways, and the shape of it is "a row that history joins is never
+destroyed":
+
+- **`productos.eliminar`** — a product with `ventas_detalles` lines is **DEACTIVATED** (`activo = 0`,
+  returns `{ id, desactivado: true }`); a product that never sold is soft-deleted (`deleted_at`,
+  returns `{ id, desactivado: false }`). The web refuses in production; the desktop deactivates,
+  because the operator asked to remove it from the grid and nothing that sold changes either way.
+- **`categorias.eliminar`** — **REFUSES** with `CATEGORIA_CON_PRODUCTOS` while it still groups an
+  active, live product; otherwise soft-deletes. This matches the web's production behaviour rather
+  than inventing a softer one: leaving products pointing at a category that no longer resolves would
+  show a filter row whose count is permanently zero.
+- **`deudores.eliminar`** — **REFUSES** with `DEUDOR_CON_SALDO` while `deuda_pendiente_centavos > 0`,
+  and the message names the amount (`formatCents`); otherwise soft-deletes. The web has no such
+  check, so this is the one place the port deliberately turns a working web delete into a refusal:
+  the whole point of the debtors screen is to not lose a debt.
+
+Every path writes an `auditoria` row, and the deactivation path records `motivo:
+'ventas_asociadas'` so the reason is legible later rather than inferred from an `activo` flag.
+
+**Why nothing is ever hard-deleted**: the schema is `paranoid` on every table (`tests/db/schema.spec.js`
+asserts `deleted_at`), and a hard `DELETE` from a row a ticket, a report or a ledger entry joins is
+the FK-dangling failure this whole file warns about. Soft-delete and deactivate are the only two
+verbs that keep the past readable, so they are the only two the port has.
+
+**Status**: willed. Products diverge softly (deactivate instead of refuse); categories match; debtors
+diverge by ADDING a refusal the web lacks.
+
+---
+
+## 18. Report day-windows are resolved in the main process from the HOST offset — port vs web
+
+**Web**: report queries bound their ranges with SQL `DATE(fecha)` and the database/server's own
+local time, so the "day" is whatever timezone the server happens to run in.
+
+**Desktop**: the boundary is computed once, in main, by `src/main/db/reportes/fechas.js`
+(`offsetMinutos` + `hoyLocal`), and the IPC layer passes `{ hoyLocal, offsetMin }` down to every
+report. The renderer never chooses a date and never sends a timezone: it asks for a period, and
+main decides what that period means on this host.
+
+**Why it matters, concretely**: `fecha` is stored as an ISO-8601 **UTC** string, and Argentina is
+UTC-3. A sale rung up at 21:30 local is the NEXT DAY in UTC. A window built from UTC midnights
+would therefore drop the evening's sales from "today" and put them in tomorrow — the busiest hours
+of a shop's day, in the wrong report. The window is `fecha >= desde AND fecha < hasta` with both
+bounds shifted by the host offset, so the day starts at local midnight and the sale at 21:30 local
+lands inside it.
+
+**Status**: willed. The desktop is stricter than the web (one resolved clock, passed by value,
+never re-derived per query) and correct in a fixed-offset shop where the web's server-local
+`DATE()` would be right only by coincidence.
+
+---
+
 ## Internal notes (not user-visible, kept for the reviewer)
 
 
@@ -528,3 +587,20 @@ reads a report where the drawer and the ledger disagree has been told a number t
   script printed `RESTAURADO OK` having verified only half its claim. Both hashes are now captured
   BEFORE the mutation and compared to those. A restore check that cannot fail is a comment — the
   same standard the mutation script exists to apply to everything else.
+- **The reports suite was a time bomb, and the day it detonated is the point.** `tests/db/reportes.spec.js`
+  pins its scenario to `2026-10-01` and derives every expected figure by hand for that day, but
+  `ventas.repo.js#crear` stamps `fecha = new Date().toISOString()` — the REAL clock. So the file was
+  green on 2026-10-01 and red at every other midnight, and the first run on 2026-10-02 produced 23
+  failures that all read `expected +0 to be 41000`: the reports found no sales because the sales were
+  stamped a day outside `RANGO`. Nothing was wrong with the reports — the spec was testing the
+  calendar. The fix freezes ONLY `Date` (`vi.useFakeTimers({ toFake: ['Date'] })` +
+  `vi.setSystemTime(AHORA)`, noon in Argentina on `DIA`) inside `beforeEach`, and restores real timers
+  in `afterEach`. `toFake: ['Date']` is deliberate: the repositories are synchronous, so faking the
+  scheduler would prove nothing about them and could mask a real timer dependency. A spec that
+  hardcodes a day has to own the clock; if it does not, it will lie for twenty-three hours a day.
+- **A "still 501" test names the wrong member the moment the work lands.** `demo-catalogue.spec.js`
+  proved `NOT_IMPLEMENTED` by calling `productos.update` — true while that member had no handler, and
+  false the instant the CRUD batch gave it one, at which point the same call returned
+  `PRODUCTO_NO_ENCONTRADO` (404) and the test went red for the RIGHT reason. It now calls
+  `backup.create`, which is in the frozen contract and still has no handler, and the comment points
+  the next reader at `scripts/check-contract.mjs` so the member can be moved again without guessing.
