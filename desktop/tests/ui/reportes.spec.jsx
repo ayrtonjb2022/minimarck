@@ -753,6 +753,67 @@ describe('las rutas, como llega un enlace profundo', () => {
     }
   })
 
+  it('cambiar de pestaña con un reporte YA consultado no mezcla datos ni borra la pantalla', async () => {
+    const { t } = escenario()
+    stores.push(t)
+    await _shop(t)
+    // The render result is kept on purpose: `container` is the node React mounted into, and an
+    // unmounted tree is exactly an empty one. That is what the assertion below checks.
+    const vista = montarReporte('ventas')
+    await consultarRango(user)
+    await listo()
+    expect(screen.queryByTestId('sin-consultar')).toBeNull()
+    expect(screen.getByTestId('total-ingresos').textContent).not.toBe('$0,00')
+
+    // THE RULE. The screen keeps the consulted answer in `datos` and which report it belongs to in
+    // `datosTab`, and `datosDeEsta` only hands the answer to a body when those two agree. Without
+    // that pairing the NEW report's component is rendered with the PREVIOUS report's payload — and
+    // those payloads are not interchangeable: `ventas` carries `movimientos` while `gastos` reads
+    // `detalle`, so a crossed answer is not "wrong numbers", it is a body reading a field that
+    // isn't there.
+    //
+    // WHAT THIS TEST DOES AND DOES NOT PROVE, because it is worth being exact. In a real window
+    // the crossed render is fatal: the body threw, and the till's screen went blank. That is what
+    // `npm run drive:reportes` saw, and it is the gate that covers it — it drives the actual
+    // Electron window and clicks real tabs.
+    //
+    // This test cannot reproduce the crash, and claiming otherwise would be a lie in a comment:
+    // under `act()`, React coalesces the router update and the clearing effect, so the crossed
+    // frame never commits here — a probe on `Tabla` confirms it is never even called with an
+    // undefined `filas`. So this asserts the INVARIANT the guard exists to keep, which is what jsdom
+    // can see honestly: each tab shows its own answer, no other report's figures leak onto it, and
+    // the tree survives the switch in both directions.
+    await user.click(screen.getByTestId('tab-gastos'))
+
+    // The new tab says it has not been consulted yet — not "here are the sales figures".
+    await waitFor(() => expect(screen.queryByTestId('sin-consultar')).toBeTruthy())
+    expect(screen.queryByTestId('total-ingresos')).toBeNull()
+    expect(screen.queryByTestId('tabla-ventas')).toBeNull()
+    // The tab strip is still a whole screen, not a fragment of one.
+    expect(vista.container.children.length).toBeGreaterThan(0)
+    expect(screen.getByTestId('tab-gastos')).toBeTruthy()
+
+    // Consult the SECOND report and go back: now both tabs hold an answer, which is the case where
+    // a stale pairing would show one report's numbers under the other's name.
+    await consultar(user)
+    await listo()
+    expect(screen.queryByTestId('sin-consultar')).toBeNull()
+    expect(screen.getByTestId('total-gastos').textContent).not.toBe('$0,00')
+
+    await user.click(screen.getByTestId('tab-ventas'))
+    await waitFor(() => expect(screen.queryByTestId('sin-consultar')).toBeTruthy())
+    expect(screen.queryByTestId('total-gastos')).toBeNull()
+    expect(vista.container.children.length).toBeGreaterThan(0)
+
+    // ...and going forward once more brings the FIRST answer back, intact and its own.
+    await consultarRango(user)
+    await listo()
+    expect(screen.getByTestId('total-ingresos').textContent).not.toBe('$0,00')
+    expect(screen.queryByTestId('total-gastos')).toBeNull()
+
+    sinBasura()
+  })
+
   it('una ruta que no es un reporte cae en Ventas en vez de mostrar una pantalla vacía', () => {
     const { t } = escenario()
     stores.push(t)

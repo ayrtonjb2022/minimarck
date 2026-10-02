@@ -636,6 +636,21 @@ const Reportes = () => {
   const [desde, setDesde] = useState(inicioDeMes());
   const [hasta, setHasta] = useState(hoyLocal());
   const [datos, setDatos] = useState(null);
+  /**
+   * WHICH report `datos` belongs to. Not decoration: without it, changing tabs renders the NEW
+   * report's body against the PREVIOUS report's numbers.
+   *
+   * `useEffect(() => setDatos(null), [tab])` below clears the data — but an effect runs AFTER the
+   * render that already happened. On the frame where `tab` is already `caja`, `Cuerpo` is already
+   * `CUERPOS.caja` while `datos` is still the `productos` answer, so `<Cuerpo {...datos} />` runs
+   * the caja body over another report's object: `d.movimientos` is `undefined`, `Tabla` does
+   * `filas.length`, and with no error boundary React unmounts the whole window. Opening Caja after
+   * any other report did not show an empty table — it took the till's screen down with it.
+   *
+   * So the data says which screen it is for, and a report is only drawn while its own tab is being
+   * read. That is the rule the whole screen wanted all along.
+   */
+  const [datosTab, setDatosTab] = useState(null);
   const [consultando, setConsultando] = useState(false);
 
   const consultar = useCallback(async () => {
@@ -655,8 +670,10 @@ const Reportes = () => {
         case "resultados": setDatos(await reportesAPI.estadoResultados(r)); break;
         default: setDatos(null);
       }
+      setDatosTab(tab);
     } catch (err) {
       setDatos(null);
+      setDatosTab(null);
       toast.error(mensajeDeError(err, "No se pudo consultar el reporte"));
     } finally {
       setConsultando(false);
@@ -667,12 +684,15 @@ const Reportes = () => {
   // dates an operator already typed instead of resetting them under their fingers, and each
   // screen's Consultar is explicit. A report that refetched on every keystroke would also re-query
   // while somebody is still choosing the month.
-  useEffect(() => { setDatos(null); }, [tab]);
+  useEffect(() => { setDatos(null); setDatosTab(null); }, [tab]);
+
+  /** The answer on screen, but only when it is the answer to the question THIS tab is asking. */
+  const datosDeEsta = datosTab === tab ? datos : null;
 
   const Cuerpo = CUERPOS[tab];
   const periodo = conRango
-    ? datos?.periodo
-      ? `${formatDateShort(datos.periodo.fechaInicio)} al ${formatDateShort(datos.periodo.fechaFin)}`
+    ? datosDeEsta?.periodo
+      ? `${formatDateShort(datosDeEsta.periodo.fechaInicio)} al ${formatDateShort(datosDeEsta.periodo.fechaFin)}`
       : "Elegí el período y presioná Consultar"
     : "Este reporte no usa fechas";
 
@@ -727,8 +747,8 @@ const Reportes = () => {
         </div>
       </div>
 
-      {consultando && !datos ? <Loader /> : null}
-      {!consultando && !datos ? (
+      {consultando && !datosDeEsta ? <Loader /> : null}
+      {!consultando && !datosDeEsta ? (
         <div className="card" data-testid="sin-consultar">
           <p style={{ margin: 0, color: "var(--kanagawa-fg-muted)", fontSize: 14 }}>
             Todavía no consultaste este reporte. Elegí el período y presioná <strong>Consultar</strong>.
@@ -740,7 +760,7 @@ const Reportes = () => {
           as a `datos` prop instead would hand every body `{ datos: {...} }`, and the first
           `d.resumen.totalIngresosCentavos` would be `undefined` on ten screens at once — a blank
           page per tab, from a line that looks correct. */}
-      {datos ? <Cuerpo {...datos} /> : null}
+      {datosDeEsta ? <Cuerpo {...datosDeEsta} /> : null}
     </div>
   );
 };
