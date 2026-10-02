@@ -16,17 +16,17 @@
  * drive:handover` is a real gate, not a report.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import electronPath from 'electron'
+import { FLAGS_ELECTRON, entornoElectron, dirDePrueba } from './electron-runner.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const desktopRoot = join(here, '..')
 const mainEntry = join('out', 'main', 'index.js')
 
-const dataDir = mkdtempSync(join(tmpdir(), 'minimarck-relevo-'))
+const dataDir = dirDePrueba('drive-handover')
 console.log(`drive:handover — using throwaway data dir ${dataDir}`)
 
 /** Pull `HANDOVER_DRIVE_PHASE1 {...}` out of the child's combined output. */
@@ -40,11 +40,14 @@ const leerFase = (stdout, etiqueta) => {
   }
 }
 
+// `FLAGS_ELECTRON` and `entornoElectron` are imported from `electron-runner.mjs` rather than
+// spelled out here, because this is the one drive that cannot use `correrElectron`: it needs to
+// CAPTURE the child's stdout to read its report line, and `correrElectron` inherits stdio.
 const correr = (env) =>
-  spawnSync(electronPath, [mainEntry], {
+  spawnSync(electronPath, [...FLAGS_ELECTRON, mainEntry], {
     cwd: desktopRoot,
     encoding: 'utf8',
-    env: { ...process.env, MINIMARCK_DATA_DIR: dataDir, ...env }
+    env: entornoElectron({ MINIMARCK_DATA_DIR: dataDir, MINIMARCK_USER_DATA_DIR: dataDir, ...env })
   })
 
 // `stdio: 'inherit'` cannot be combined with capturing output, and the drive's report IS its
@@ -70,7 +73,7 @@ if (fase1.status === 0 && r1?.ok) {
 try {
   rmSync(dataDir, { recursive: true, force: true })
 } catch {
-  /* locked by a dead process — the temp dir will be reaped by the OS */
+  /* locked by a dead process — `desktop/run/` is gitignored and a later run makes a new one */
 }
 
 if (fase1.error || fase2?.error) {

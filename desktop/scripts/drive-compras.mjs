@@ -10,27 +10,25 @@
  *
  * Exit code is the drive's: 0 only if every check passed. `npm run drive:compras` is a real gate.
  */
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import electronPath from 'electron'
+import { correrElectron, codigoDeSalida, dirDePrueba } from './electron-runner.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const desktopRoot = join(here, '..')
 const mainEntry = join('out', 'main', 'index.js')
 
-const dataDir = mkdtempSync(join(tmpdir(), 'minimarck-compras-'))
+const dataDir = dirDePrueba('drive-compras')
 console.log(`drive:compras — using throwaway data dir ${dataDir}`)
 
-const result = spawnSync(electronPath, [mainEntry], {
+const result = correrElectron(electronPath, mainEntry, {
   cwd: desktopRoot,
-  stdio: 'inherit',
   env: {
-    ...process.env,
     MINIMARCK_COMPRAS_DRIVE: '1',
-    MINIMARCK_DATA_DIR: dataDir
+    MINIMARCK_DATA_DIR: dataDir,
+    MINIMARCK_USER_DATA_DIR: dataDir
   }
 })
 
@@ -39,11 +37,7 @@ const result = spawnSync(electronPath, [mainEntry], {
 try {
   rmSync(dataDir, { recursive: true, force: true })
 } catch {
-  /* locked by a dead process — the temp dir will be reaped by the OS */
+  /* locked by a dead process — `desktop/run/` is gitignored and a later run makes a new one */
 }
 
-if (result.error) {
-  console.error(`drive:compras — could not start ${electronPath}: ${result.error.message}`)
-  process.exit(1)
-}
-process.exit(result.status === null ? 1 : result.status)
+process.exit(codigoDeSalida(result))

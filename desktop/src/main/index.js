@@ -50,10 +50,31 @@ app.setName(APP_NAME)
 // first, so every run is a genuine first launch. This is set here, right after `setName`, because
 // everything downstream — `app.getPath('userData')` at the bootstrap, the single-instance lock's
 // sibling window — reads it, and `setPath` after a read is the exact bug PLAT-2 is about.
+//
+// WHY `MINIMARCK_USER_DATA_DIR` EXISTS, AND WHY IT IS SEPARATE FROM `MINIMARCK_DATA_DIR`.
+// `userData` is Chromium's own profile, and two things about it are not the shop's business:
+// `requestSingleInstanceLock()` below writes a LOCK FILE inside it, and the GPU process writes a
+// cache inside it. On a shell with no interactive desktop session — the one every gate script here
+// is run from — Chromium cannot write anywhere outside the repository, so the lock cannot be
+// created, `requestSingleInstanceLock()` answers false, and the app quits before it opens a
+// window. The failure is silent: no window, no dialog, an exit code that says nothing.
+//
+// `MINIMARCK_DATA_DIR` already moved the DATABASE for exactly that reason, but it deliberately
+// does NOT move the Chromium profile (see `dataDir.js`), so it cannot fix this. Hence a second,
+// throwaway-only override that the seven gate scripts set and that the shipped app never has.
+// With no override — a shopkeeper double clicking the installer — nothing changes.
+const perfilBase = process.env.MINIMARCK_USER_DATA_DIR || app.getPath('userData')
+
+// WHY THE PROBE'S PROFILE IS NESTED UNDER IT. The probe removes its profile on every run, so it
+// needs a directory that is ITS to delete: a shared base would be the developer's real profile.
+// `s0-probe` under the throwaway base is removed and recreated, which makes every probe run a
+// genuine first launch — the claim the deep-link step depends on.
 if (process.env.MINIMARCK_S0_PROBE) {
-  const perfil = path.join(app.getPath('temp'), 'minimarck-s0-probe')
+  const perfil = path.join(perfilBase, 's0-probe')
   fs.rmSync(perfil, { recursive: true, force: true })
   app.setPath('userData', perfil)
+} else if (process.env.MINIMARCK_USER_DATA_DIR) {
+  app.setPath('userData', perfilBase)
 }
 
 // The `app` scheme must be declared privileged BEFORE the app is ready (design §B.1).

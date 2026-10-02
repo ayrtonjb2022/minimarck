@@ -7,23 +7,40 @@
  * so `npm run probe:launch` IS the probe whether or not you set the variable yourself —
  * setting it is still harmless, so the documented command keeps working.
  */
-import { spawnSync } from 'node:child_process'
+import { rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import electronPath from 'electron'
+import { correrElectron, codigoDeSalida, dirDePrueba } from './electron-runner.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const desktopRoot = join(here, '..')
 const mainEntry = join('out', 'main', 'index.js')
 
-const result = spawnSync(electronPath, [mainEntry], {
+// A throwaway base per run, so the probe never touches the shop's real profile and a half-written
+// one from a killed run cannot make the next probe fail for the wrong reason.
+//
+// It is created HERE by THIS process, under `desktop/run/`, rather than by the Electron child in
+// `%TEMP%`. Both halves are measured and both are documented in `electron-runner.mjs`: a Chromium
+// main process on a shell with no interactive desktop session cannot write outside the repository
+// at all. One directory carries the whole probe — the app reads `MINIMARCK_DATA_DIR` for BOTH the
+// shop file and the throwaway `userData` profile, so nothing here can reach a real shop.
+const dataDir = dirDePrueba('probe')
+console.log(`probe:launch — using throwaway data dir ${dataDir}`)
+
+const result = correrElectron(electronPath, mainEntry, {
   cwd: desktopRoot,
-  stdio: 'inherit',
-  env: { ...process.env, MINIMARCK_S0_PROBE: '1' }
+  env: {
+    MINIMARCK_S0_PROBE: '1',
+    MINIMARCK_DATA_DIR: dataDir,
+    MINIMARCK_USER_DATA_DIR: dataDir
+  }
 })
 
-if (result.error) {
-  console.error(`probe:launch — could not start ${electronPath}: ${result.error.message}`)
-  process.exit(1)
+try {
+  rmSync(dataDir, { recursive: true, force: true })
+} catch {
+  /* locked by a dead process — `desktop/run/` is gitignored and a later run makes a new one */
 }
-process.exit(result.status === null ? 1 : result.status)
+
+process.exit(codigoDeSalida(result))

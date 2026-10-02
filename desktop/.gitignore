@@ -17,3 +17,7 @@ release/
 .DS_Store
 Thumbs.db
 .vite/
+
+# Perfil de PRUEBA y artefactos de lanzamiento local (run/perfil-prueba/data/minimarck.db).
+# Es una base de datos de taller con credenciales conocidas: nunca debe viajar en el repo.
+run/

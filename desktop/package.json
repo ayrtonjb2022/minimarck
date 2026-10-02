@@ -12,7 +12,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "launch": "npm run build && electron out/main/index.js",
-    "spike": "electron src/main/spike/node-sqlite.spike.js",
+    "spike": "node scripts/spike.mjs",
     "probe:launch": "node scripts/probe-launch.mjs",
     "drive:payment": "node scripts/drive-payment.mjs",
     "drive:deudores": "node scripts/drive-deudores.mjs",

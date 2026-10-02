@@ -61,7 +61,20 @@ else fail(`module export backup() missing or wrong arity (got ${typeof backup}, 
 // ------------------------------------ 3. a real DB file, table, insert, read back
 // Plus the two claims design §C.5 rests on: WAL is actually applied, and a committed
 // write is visible from a SECOND independent read handle.
-const dir = mkdtempSync(join(tmpdir(), 'mm-spike-'))
+// `MINIMARCK_SPIKE_TMP` is set by `scripts/spike.mjs`, which created it with the PARENT process's
+// `mkdtempSync`. The fallback below is the original behaviour and still correct on a developer
+// machine; the override exists because an Electron main process cannot always create an entry
+// directly inside `%TEMP%` — it answers EPERM on a shell with no interactive desktop session, and
+// the gate is run from exactly that kind of shell. See `scripts/electron-runner.mjs`.
+//
+// `dirEsPropio` decides who cleans up, and it has to be the same decision in both directions: an
+// Electron main process can create an entry INSIDE a directory it was given but cannot REMOVE one
+// from `%TEMP%`, so a handed-over directory is deleted by the parent that created it. A `finally`
+// that tried anyway threw EPERM out of the cleanup, Electron's default app swallowed it as "threw
+// an error during load", and the process then sat there forever with no exit code — a gate that
+// cannot report a failure is a gate that proves nothing.
+const dir = process.env.MINIMARCK_SPIKE_TMP || mkdtempSync(join(tmpdir(), 'mm-spike-'))
+const dirEsPropio = !process.env.MINIMARCK_SPIKE_TMP
 const file = join(dir, 'spike.db')
 const backupFile = join(dir, 'spike-backup.db')
 try {
@@ -109,7 +122,7 @@ try {
 } catch (e) {
   fail(`sqlite file operation threw: ${e && e.message}`)
 } finally {
-  rmSync(dir, { recursive: true, force: true })
+  if (dirEsPropio) rmSync(dir, { recursive: true, force: true })
 }
 
 console.log('--- results ---')
