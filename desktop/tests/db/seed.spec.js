@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { seed } from '../../src/main/db/seed.js'
 import { resolveLocalIdentity, identityWarning } from '../../src/main/db/identity.js'
 import { negocioUnico } from '../../src/main/auth/identities.repo.js'
-import { tienda } from './fixtures/tienda.js'
+import { tienda, tiendaVacia } from './fixtures/tienda.js'
 
 /**
  * THE SEED, ON A FILE THAT HAS ALREADY BEEN SEEDED.
@@ -35,8 +35,8 @@ afterEach(() => {
 })
 
 /** Every business still in the file, in the order the app would read them. */
-function negocios(t) {
-  return t.conn.db
+function negocios(conn) {
+  return conn.db
     .prepare(`SELECT id, nombre FROM negocios WHERE deleted_at IS NULL ORDER BY id`)
     .all()
 }
@@ -55,10 +55,10 @@ describe('REGRESSION: a RENAMED shop is not seeded a second time', () => {
 
     expect(segunda.seeded).toBe(false)
     expect(segunda.reason).toBe('already_seeded')
-    expect(negocios(t)).toHaveLength(1)
-    expect(negocios(t)[0].nombre).toBe('Tienda del Recorrido')
+    expect(negocios(t.conn)).toHaveLength(1)
+    expect(negocios(t.conn)[0].nombre).toBe('Tienda del Recorrido')
     // The name the owner chose is data, not a default: re-seeding must not put it back either.
-    expect(negocios(t)[0].id).toBe(t.negocioId)
+    expect(negocios(t.conn)[0].id).toBe(t.negocioId)
   })
 
   it('and the app can still tell which shop the file is, with nobody signed in', () => {
@@ -95,17 +95,32 @@ describe('the seed still seeds a file that has no shop', () => {
   it('creates the business and the admin on an empty-but-migrated file', () => {
     // The other half, so the fix cannot be "never seed anything": a fresh install still has to
     // come up with a shop and somebody who can open it.
-    const t = tienda()
+    //
+    // This used to ask the question of a SEEDED shop with `DELETE FROM negocios` and
+    // `DELETE FROM users` laid on top. That was never the same thing — the seed's identity row,
+    // its catalogue and everything it had touched were all still there — and since
+    // 003_ultimo_admin.sql it is also IMPOSSIBLE, because the engine now refuses to delete the
+    // only owner. A test that needs a shop with nobody in it can no longer be written by emptying
+    // one, and that is the correct state of affairs: the answer to "how do I get an empty shop?"
+    // is a profile directory that has never been opened, which is what `tiendaVacia()` is.
+    const t = tiendaVacia()
     stores.push(t)
-    t.conn.db.prepare(`DELETE FROM negocios`).run()
-    t.conn.db.prepare(`DELETE FROM users`).run()
+
+    expect(negocios(t.conn)).toHaveLength(0)
+    expect(t.conn.db.prepare(`SELECT COUNT(*) AS n FROM users`).get().n).toBe(0)
 
     const primera = seed(t.conn)
 
     expect(primera.seeded).toBe(true)
     expect(primera.reason).toBe('seeded')
-    expect(negocios(t)).toHaveLength(1)
-    expect(negocios(t)[0].nombre).toBe('Mi Negocio')
+    expect(negocios(t.conn)).toHaveLength(1)
+    expect(negocios(t.conn)[0].nombre).toBe('Mi Negocio')
     expect(t.conn.db.prepare(`SELECT COUNT(*) AS n FROM users`).get().n).toBe(1)
+    // And the shop it just made is openable: an admin, active, in that business.
+    expect(
+      t.conn.db
+        .prepare(`SELECT rol, activo FROM users WHERE negocio_id = ?`)
+        .get(negocios(t.conn)[0].id)
+    ).toEqual({ rol: 'admin', activo: 1 })
   })
 })

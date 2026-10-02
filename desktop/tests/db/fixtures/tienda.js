@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { bootstrapDatabase } from '../../../src/main/db/bootstrap.js'
 import { openDatabase } from '../../../src/main/db/connection.js'
-import { tablesCreatedBy } from '../../../src/main/db/migrate.js'
+import { tablesCreatedBy, migrate } from '../../../src/main/db/migrate.js'
 import { abrir } from '../../../src/main/db/repositories/cajas.repo.js'
 import { createSession } from '../../../src/main/auth/session.js'
 import { guardarCredencial } from '../../../src/main/auth/identities.repo.js'
@@ -94,6 +94,46 @@ export function tienda() {
     negocioId: templateSeed.negocioId,
     usuarioId: templateSeed.userId,
     /** Checkpoint + close + delete. Call in `afterEach`. */
+    cerrar() {
+      try {
+        conn.checkpointAndClose()
+      } catch {
+        /* the assertion, not the close, is what the test is about */
+      }
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+}
+
+/**
+ * A shop file that has been MIGRATED and nothing else: no business, no users, no catalogue.
+ *
+ * WHY THIS EXISTS NOW AND NOT BEFORE. Until `003_ultimo_admin.sql` a test that wanted an empty
+ * shop took `tienda()` and ran `DELETE FROM negocios` / `DELETE FROM users` on top of it. That was
+ * always a lie about what "empty" means — the seed's rows were gone but so was nothing else that a
+ * fresh install would not have, and nothing about the file was one production had not already
+ * written. It became an outright impossible lie the moment the engine started refusing to delete
+ * the only owner: the two lines that built the fixture were now a way to make a shop nobody can
+ * sign in to, which is a bug, not a test.
+ *
+ * So the honest way to ask "what does a fresh install do?" is a fresh install: this opens a new
+ * directory, migrates it, and stops. `negocioId` and `usuarioId` are `null` rather than a guess,
+ * because there is nothing to guess at — a caller that needs a shop to be openable has to seed it,
+ * which is the whole point of the file above.
+ */
+export function tiendaVacia() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'mm-vacia-'))
+  const file = path.join(dir, 'tienda.db')
+  const conn = openDatabase(file, { walFile: `${file}-wal`, tables: [...TABLES] })
+  migrate(conn, { dir: MIGRATIONS_DIR })
+  return {
+    conn,
+    dir,
+    /** The database FILE, for the assertions that read what is actually on disk. */
+    archivo: file,
+    /** Nothing has been seeded, so there is no tenant and no operator to hand out. */
+    negocioId: null,
+    usuarioId: null,
     cerrar() {
       try {
         conn.checkpointAndClose()

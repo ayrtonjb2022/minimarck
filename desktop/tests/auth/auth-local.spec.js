@@ -208,6 +208,18 @@ describe('auth: the session', () => {
   it('stops working the moment the user is deactivated, without waiting for a new sign-in', async () => {
     ok(await e.call('auth', 'register', { nombre: 'Dueño', negocioNombre: 'Tienda', nombreAcceso: 'dueño', password: PASSWORD }))
     ok(await e.call('auth', 'login', { nombre: 'dueño', password: PASSWORD }))
+    // A second owner, so that deactivating the first one is a thing the shop is ALLOWED to do.
+    // This test used to deactivate the only admin, which since 003_ultimo_admin.sql the engine
+    // refuses — and the fix is not to make an exception for the test: the situation this test
+    // describes (an owner taking an employee off the till) always involved somebody else still
+    // holding the keys. A shop with one owner and no employee cannot produce it at all.
+    const ts = '2026-01-01T00:00:00.000Z'
+    e.t.conn.db
+      .prepare(
+        `INSERT INTO users (nombre, email, rol, activo, negocio_id, created_at, updated_at)
+         VALUES ('Segundo Dueño', 'segundo@minimarck.local', 'admin', 1, ?, ?, ?)`
+      )
+      .run(e.t.negocioId, ts, ts)
     e.t.conn.db.prepare('UPDATE users SET activo = 0 WHERE id = ?').run(e.t.usuarioId)
     // The session is a snapshot; it is re-validated on every use precisely so this is immediate.
     expect(await e.call('auth', 'me')).toBeNull()

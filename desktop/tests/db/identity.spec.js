@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { identityWarning, resolveLocalIdentity } from '../../src/main/db/identity.js'
 import { openDatabase } from '../../src/main/db/connection.js'
-import { tienda } from './fixtures/tienda.js'
+import { tienda, tiendaVacia } from './fixtures/tienda.js'
 
 /**
  * The local identity (design #275: no login, no session, no token), on REAL sqlite.
@@ -100,8 +100,33 @@ describe('resolveLocalIdentity — the business and the operator', () => {
   })
 
   it('reports sin_operador when the business has no active user', () => {
-    const t = abrirTienda()
-    t.conn.db.prepare('UPDATE users SET activo = 0 WHERE negocio_id = ?').run(t.negocioId)
+    // This used to deactivate the seeded admin on a seeded shop. Since 003_ultimo_admin.sql the
+    // engine refuses that — correctly, since a shop with no active owner is a shop nobody can open
+    // — so the state under test is now built the only honest way: a business whose only employee
+    // was never an admin. "No active operator" and "no active ADMIN" are the same answer here,
+    // which is precisely why the rule and this test do not contradict each other.
+    // A second business would answer `negocios_multiples` first, so the shop this needs is built
+    // in its own file rather than beside the seeded one.
+    const t = tiendaVacia()
+    stores.push(t)
+    const ts = '2026-01-01T00:00:00.000Z'
+    t.conn.db
+      .prepare(
+        `INSERT INTO negocios (nombre, ruc, tipo_comercio, configuracion, activo, created_at, updated_at)
+         VALUES ('Sin Operador', NULL, 'otro', '{}', 1, ?, ?)`
+      )
+      .run(ts, ts)
+    t.conn.db
+      .prepare(
+        `INSERT INTO users (nombre, email, rol, activo, negocio_id, created_at, updated_at)
+         VALUES ('Empleado', 'empleado@minimarck.local', 'vendedor', 1, 1, ?, ?)`
+      )
+      .run(ts, ts)
+
+    // Active: still an operator.
+    expect(resolveLocalIdentity(t.conn).actorId).not.toBeNull()
+
+    t.conn.db.prepare('UPDATE users SET activo = 0').run()
     esperarNinguno(resolveLocalIdentity(t.conn), 'sin_operador')
   })
 

@@ -70,3 +70,19 @@ export function esViolacionUnicaEn(err, ...columnas) {
   const msg = String(err?.message ?? '')
   return columnas.every((columna) => msg.includes(columna))
 }
+
+/**
+ * Did the `ULTIMO_ADMIN` trigger refuse to let a business lose its last active owner?
+ *
+ * WHY A PREFIX INSTEAD OF A CODE. `RAISE(ABORT, '…')` in a trigger reports the TEXT as the error
+ * message, and this project runs `node:sqlite`, which wraps every SQLite error in
+ * `ERR_SQLITE_ERROR` — a NOT NULL violation, a syntax error and a trigger refusal all arrive with
+ * the same wrapper code. The only stable thing left to match on is a marker the author committed
+ * to, which is why `003_ultimo_admin.sql` puts `ULTIMO_ADMIN:` at the front of both messages. A
+ * predicate that accepted the wrapper code would answer `true` for every SQLite error in the app,
+ * which is the exact mistake documented above in this file.
+ */
+export function esUltimoAdmin(err) {
+  if (err == null) return false
+  return /(^|\W)ULTIMO_ADMIN:/.test(String(err?.message ?? ''))
+}
