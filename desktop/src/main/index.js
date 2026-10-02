@@ -27,6 +27,7 @@ import { APP_NAME } from './dataDir.js'
 import { runPaymentDrive } from './payment-drive.js'
 import { runDeudoresDrive } from './deudores-drive.js'
 import { runComprasDrive } from './compras-drive.js'
+import { runReportesDrive } from './reportes-drive.js'
 import { runHandoverDrive, runHandoverRestartPhase } from './handover-drive.js'
 
 const isPackaged = app.isPackaged
@@ -438,6 +439,10 @@ async function main() {
   // A fourth flag, same reason: the purchase drive joins the other two and the probe, and one flag
   // would let a second drive silently reuse the first's single-shot guard.
   let comprasDriveStarted = false
+  // And one per drive, for the same reason, all the way down: the reports drive is a fifth
+  // single-shot gate alongside the handover drive, and one shared flag would let a second
+  // silently reuse the first's guard.
+  let reportesDriveStarted = false
   let handoverDriveStarted = false
   let handoverRestartStarted = false
   win.webContents.on('did-finish-load', () => {
@@ -554,6 +559,29 @@ async function main() {
         .catch((err) => {
           clearTimeout(watchdog)
           console.error(`COMPRAS_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
+    }
+
+    // The reports drive: the ten report screens and the panel, every figure read off the window and
+    // reconciled against the same file the reports read. The three drives above prove the money
+    // MOVES; this one proves the numbers the shop PRINTS are those numbers. Same gating, same
+    // watchdog discipline, and it drives THIS window.
+    if (process.env.MINIMARCK_REPORTES_DRIVE && !reportesDriveStarted) {
+      reportesDriveStarted = true
+      const watchdog = setTimeout(() => {
+        console.error('REPORTES_DRIVE_ERROR timeout after 300s — the drive never reached finish()')
+        app.exit(1)
+      }, 300_000)
+      runReportesDrive(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`REPORTES_DRIVE_RESULT ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`REPORTES_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
           app.exit(1)
         })
     }
