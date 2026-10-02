@@ -204,9 +204,18 @@ export default defineConfig({
     },
     build: {
       outDir: 'out/renderer',
-      // 'app://bundle' is the scheme root; the protocol handler supplies index.html for
-      // any path with no file behind it, so BrowserRouter deep-links keep working.
-      base: '/'
+      // NO `base` HERE, ON PURPOSE. electron-vite UNCONDITIONALLY overwrites the renderer's
+      // `base` with './' in production (its `electronRendererVitePlugin` runs an `enforce: 'pre'`
+      // config hook that assigns `config.base = './'` when mode is production), so a value set
+      // here — top-level or nested, it makes no difference — is discarded without a word and the
+      // build exits 0. The emitted index.html therefore references `./assets/<hash>.js`.
+      //
+      // That is FINE for a document at the scheme root, and WRONG for this app's nested routes:
+      // a relative URL resolves against the document's DIRECTORY, so serving the same shell at
+      // `app://bundle/reportes/gastos` asks for `app://bundle/reportes/assets/<hash>.js`, which
+      // 404s, and the window comes up blank with no console error to explain it. `protocol.js`
+      // fixes it where it can actually be fixed — when the shell is served for a route, it
+      // rewrites those URLs to the scheme root. Do not try to solve it here.
     }
   }
 })

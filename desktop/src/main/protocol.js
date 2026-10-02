@@ -90,6 +90,57 @@ export function registerAppSchemePrivileges() {
   ])
 }
 
+/**
+ * The SPA shell, with its asset URLs pinned to the scheme ROOT — only when the route is nested.
+ *
+ * WHY THIS EXISTS. The SPA fallback serves index.html for any extensionless path, which is what
+ * makes BrowserRouter deep links work. But index.html references its bundle RELATIVELY
+ * (`./assets/<hash>.js`) — electron-vite hard-writes `base: './'` for the renderer in production,
+ * and a `base` set in electron.vite.config.js is silently discarded — and a relative URL resolves
+ * against the document's DIRECTORY. So the same bytes are only correct when that directory IS the
+ * root:
+ *
+ *   app://bundle/index.html       + ./assets/app.js  ->  app://bundle/assets/app.js          ok
+ *   app://bundle/reportes        + ./assets/app.js  ->  app://bundle/assets/app.js          ok
+ *   app://bundle/reportes/gastos + ./assets/app.js  ->  app://bundle/reportes/assets/app.js  404
+ *
+ * The third line is the whole bug, and it is silent in the worst way: the bundle 404s, the module
+ * never executes, `#root` stays empty and there is NO console error, because nothing threw — React
+ * simply never ran. On a till that reads as a white screen after a window reload.
+ *
+ * WHY IT SURVIVED THE GATES. Every deep link the launch probe checks is a SINGLE segment
+ * (`/ventas`, `/caja`, ...), and for a single segment the route's directory IS the root, so those
+ * all resolve correctly. NAV-3 also navigates client-side inside one document, so the relative URL
+ * is never re-resolved at all. The class of route that breaks is a MULTI-segment one —
+ * `/reportes/gastos` and every other nested screen in this app — which no existing check loaded
+ * as a real document.
+ *
+ * WHY REWRITE INSTEAD OF `<base href>` OR A CONFIG FLAG. Both were tried first and neither works:
+ *  - `<base>` is IGNORED by Chromium here even when it is the first element in `<head>` and even
+ *    written as an absolute `app://bundle/`; `document.baseURI` stays the document URL. So the
+ *    document cannot be told to change its own base.
+ *  - `base` in the build config is overwritten by electron-vite before Vite reads it.
+ *
+ * So the one place that still has control — the handler that serves the bytes for a ROUTE —
+ * rewrites them. `/` and `/index.html` keep the file byte-for-byte: nothing needs changing there,
+ * and leaving the built file untouched keeps `verify:bundle` / `verify:package` comparing the real
+ * artifact rather than a rewritten copy of it.
+ *
+ * PURE function of (html, pathname) so the rewrite and its "leave the root alone" rule are
+ * unit-testable without Electron.
+ */
+export function shellHtmlForRoute(html, pathname) {
+  const rel = String(pathname || '/').replace(/^\/+/, '')
+  // A path with no directory component (`''`, `index.html`, `ventas`) already resolves to the
+  // root, so it is served verbatim. Anything else (`reportes/gastos`) needs the rewrite.
+  if (!rel.includes('/')) return html
+  const source = String(html)
+  // The quote character is captured and re-emitted rather than assumed. Rewriting `='./assets/`
+  // without carrying the closing quote over would emit `src=/assets/app.js'` and turn the fix
+  // into broken HTML on exactly the documents it was meant to repair.
+  return source.replace(/(src|href)=(["'])\.\/(assets\/)/g, '$1=$2/$3')
+}
+
 /** Resolve the renderer root relative to this file's output dir (out/main -> out/renderer). */
 export function resolveRendererRoot() {
   return path.join(__dirname, '..', 'renderer')
@@ -114,8 +165,10 @@ export function registerAppProtocol(rendererRoot) {
       // SPA fallback for a route; a 404 for a missing asset, so a wrong path is a wrong
       // path and not a MIME error inside the module loader.
       if (!isNavigationRequest(pathname)) return new Response('not found', { status: 404 })
-      const shell = await readFile(indexHtml)
-      return new Response(shell, { headers: { 'content-type': MIME['.html'] } })
+      const shell = await readFile(indexHtml, 'utf8')
+      return new Response(shellHtmlForRoute(shell, pathname), {
+        headers: { 'content-type': MIME['.html'] }
+      })
     }
     const body = await readFile(file)
     return new Response(body, {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildWebPreferences, resolvePreloadPath } from '../src/main/window.js'
 import { buildCsp, assertTrustedSender, isTrustedOrigin, canonicalOrigin } from '../src/main/security.js'
-import { resolveBundlePath, rendererUrl, isNavigationRequest, registerAppSchemePrivileges } from '../src/main/protocol.js'
+import { resolveBundlePath, rendererUrl, isNavigationRequest, registerAppSchemePrivileges, shellHtmlForRoute } from '../src/main/protocol.js'
 import { resolveDataPaths, ensureDataDirs, APP_NAME } from '../src/main/dataDir.js'
 import { protocol } from 'electron'
 import path from 'node:path'
@@ -284,6 +284,66 @@ describe('OFFL-3 app:// bundle path resolution', () => {
     expect(isNavigationRequest('/assets/app-DPCrIakP.js')).toBe(false)
     expect(isNavigationRequest('/assets/styles.css')).toBe(false)
     expect(isNavigationRequest('/favicon.ico')).toBe(false)
+  })
+
+  it('serves the SPA shell with root-absolute asset URLs ONLY for a nested route', () => {
+    // THE BUG THIS PINS. index.html references its bundle RELATIVELY (`./assets/<hash>.js`),
+    // because electron-vite hard-writes `base: './'` for the renderer in production. A relative
+    // URL resolves against the document's DIRECTORY, so the very same bytes are only correct
+    // when that directory is the scheme root:
+    //
+    //   app://bundle/reportes        + ./assets/app.js -> app://bundle/assets/app.js         ok
+    //   app://bundle/reportes/gastos + ./assets/app.js -> app://bundle/reportes/assets/app.js 404
+    //
+    // On the second one the bundle 404s, the module never runs, #root stays empty, and there is
+    // NO console error: nothing threw, React simply never started. A till sees a white window
+    // after a reload. Every deep link the launch probe checks is a SINGLE segment, so it never
+    // hit this; multi-segment routes like /reportes/gastos are the whole affected class.
+    const shell = [
+      '<script type="module" crossorigin src="./assets/index-B6xHv9AO.js"></script>',
+      '<link rel="stylesheet" crossorigin href="./assets/index-BGot50dE.css">'
+    ].join('\n')
+
+    // A NESTED route gets the rewrite: the bundle must be asked for at the root.
+    const nested = shellHtmlForRoute(shell, '/reportes/gastos')
+    expect(nested).toContain('src="/assets/index-B6xHv9AO.js"')
+    expect(nested).toContain('href="/assets/index-BGot50dE.css"')
+    expect(nested).not.toContain('./assets/')
+
+    // The ROOT document is served byte-for-byte, so the packaging gates keep comparing the real
+    // build artifact and not a rewritten copy of it.
+    expect(shellHtmlForRoute(shell, '/')).toBe(shell)
+    expect(shellHtmlForRoute(shell, '/index.html')).toBe(shell)
+    // A single-segment route's directory IS the root, so relative already resolves correctly.
+    expect(shellHtmlForRoute(shell, '/reportes')).toBe(shell)
+    expect(shellHtmlForRoute(shell, '/ventas')).toBe(shell)
+
+    // Depth is not special-cased: any number of segments needs the root.
+    const deep = shellHtmlForRoute(shell, '/a/b/c/d')
+    expect(deep).toContain('src="/assets/index-B6xHv9AO.js"')
+
+    // Single quotes keep their closing quote: dropping it would emit `src=/assets/a.js'` and
+    // turn the repair into broken HTML on the very documents it was meant to fix.
+    expect(shellHtmlForRoute("<script src='./assets/a.js'></script>", '/x/y')).toBe(
+      '<script src=\'/assets/a.js\'></script>'
+    )
+    expect(shellHtmlForRoute(Buffer.from(shell), '/x/y')).toContain('src="/assets/')
+    expect(shellHtmlForRoute(null, '/x/y')).toBe('null')
+
+    // A Buffer (what readFile hands back without an encoding) works, and an unparseable input
+    // is returned untouched rather than mangled.
+    expect(shellHtmlForRoute(Buffer.from(shell), '/x/y')).toContain('src="/assets/')
+    expect(shellHtmlForRoute(null, '/x/y')).toBe('null')
+
+    // Only the assets directory is rewritten. A relative URL to something else keeps its
+    // meaning, so this can never silently repoint an unrelated reference at the scheme root.
+    expect(shellHtmlForRoute('<a href="./otra/cosa.html">x</a>', '/x/y')).toBe(
+      '<a href="./otra/cosa.html">x</a>'
+    )
+    // An already-absolute or root-relative reference is left alone.
+    expect(shellHtmlForRoute('<script src="/assets/a.js"></script>', '/x/y')).toBe(
+      '<script src="/assets/a.js"></script>'
+    )
   })
 
   it('registers app:// as a standard, secure scheme WITHOUT CORS', () => {
