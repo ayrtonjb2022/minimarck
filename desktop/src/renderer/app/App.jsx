@@ -66,7 +66,7 @@ const PANTALLAS_FALTANTES = [
  * mount points, so there is a single definition to keep honest.
  */
 const TopBar = ({ titulo }) => {
-  const { user, negocio } = useAuth();
+  const { user, negocio, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -122,6 +122,23 @@ const TopBar = ({ titulo }) => {
         >
           <i className={`fa-solid ${theme === "light" ? "fa-moon" : "fa-sun"}`} aria-hidden="true"></i>
         </button>
+        {/* The way out of the session, in the chrome this route tree actually renders.
+            It used to live only in `Navbar`/`Sidebar`, which `App.jsx` never mounts — a feature
+            defined and unreachable, the same trap `ControlesDeTurno`'s comment records for the
+            handover. `AuthContext.logout` clears the session and `isAuthenticated` flips, so the
+            shell swaps `<Routes>` for `<Acceso />`; the button is the operator's half of it. */}
+        {user ? (
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={logout}
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+            data-testid="cerrar-sesion"
+          >
+            <i className="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+          </button>
+        ) : null}
       </div>
     </header>
   );

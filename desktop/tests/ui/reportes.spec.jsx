@@ -930,6 +930,28 @@ describe('el negocio, y quién tiene derecho a preguntar por él', () => {
     expect(document.body.textContent).not.toContain('$700,00')
   })
 
+  it('cerrar sesión desde la barra devuelve al panel de acceso y cierra la sesión de verdad', async () => {
+    const { t } = escenario()
+    stores.push(t)
+    await _shop(t)
+    await montarApp('/reportes/ventas')
+    await waitFor(() => expect(document.querySelector('[data-testid="tab-ventas"]')).toBeTruthy())
+
+    // THE CONTROL THE OPERATOR CLICKS. The logout icon used to exist only in `Navbar`/`Sidebar`,
+    // which this route tree never renders — so this test drives the button in `TopBar`, found by
+    // its test id, exactly as a hand would.
+    const salir = await screen.findByTestId('cerrar-sesion')
+    await userEvent.click(salir)
+
+    // The shell swaps `<Routes>` for `<Acceso />`: the report is GONE, not merely covered.
+    await waitFor(() => expect(document.querySelector('input[type="password"]')).toBeTruthy())
+    expect(document.querySelector('[data-testid="tab-ventas"]')).toBeNull()
+
+    // And the session is closed behind it, not just React state: `auth.me` answers null, which is
+    // the same fact every repository checks before it will write a row.
+    expect(await globalThis.minimarck.call('auth', 'me', {})).toBeNull()
+  })
+
   it('con sesión, el mismo shell monta el reporte que la URL pidió', async () => {
     const { t } = escenario()
     stores.push(t)
