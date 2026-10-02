@@ -481,3 +481,331 @@ export function crearCategoria(ctx, body) {
     return mapCategoria(ctx.db.prepare('SELECT * FROM categorias WHERE id = ?').get(id))
   })
 }
+
+// =============================================================================
+// product update / remove, and the category CRUD the contract always named
+// =============================================================================
+
+/**
+ * Update a product. PATCH semantics: a field the form did not send keeps its current value.
+ *
+ * WHY `!== undefined` AND NOT TRUTHINESS. `activo: false` and `stock: 0` are VALUES an operator
+ * deliberately set, not absences. `if (body.activo)` would switch a deactivated product back on;
+ * `body.stock || actual.stock` would ignore a stock of zero. So every field is tested against
+ * `undefined` — the one thing a JSON payload cannot carry — and an explicit `null`/`''` means
+ * "clear this", which is what an emptied text field means.
+ *
+ * The amount/stock fields arrive in the RENDERER's language (`precio` in pesos, `stock` in decimal
+ * units, `iva`/`margen` as percentages), exactly like `crear`, so the form that creates a product
+ * and the form that edits one speak the same dialect. `es_pesable` is never written: it is a
+ * GENERATED column that follows `unidad_medida`.
+ */
+export function actualizar(ctx, id, body) {
+  requireTenant(ctx.negocioId)
+  if (!ctx.actorId) {
+    throw new IpcError('ACTOR_REQUERIDO', 401, 'La operación necesita un usuario en sesión')
+  }
+  const productoId = Number(id)
+  if (!Number.isSafeInteger(productoId) || productoId < 1) {
+    throw new IpcError('PRODUCTO_ID_INVALIDO', 400, `Id de producto inválido: ${id}`)
+  }
+  const actual = ctx.db
+    .prepare('SELECT * FROM productos WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL')
+    .get(productoId, ctx.negocioId)
+  if (!actual) {
+    throw new IpcError('PRODUCTO_NO_ENCONTRADO', 404, 'Producto no encontrado')
+  }
+
+  const b = body ?? {}
+  const nombre = b.nombre === undefined ? actual.nombre : textoOpcional(b.nombre)
+  if (!nombre) {
+    throw new IpcError('PRODUCTO_NOMBRE_REQUERIDO', 400, 'El producto necesita un nombre')
+  }
+  const unidadCruda = b.unidadMedida === undefined ? actual.unidad_medida : textoOpcional(b.unidadMedida)
+  const unidadMedida = (unidadCruda ?? 'unidad').toLowerCase()
+  if (!UNIDADES.includes(unidadMedida)) {
+    throw new IpcError(
+      'PRODUCTO_UNIDAD_INVALIDA',
+      400,
+      `Unidad de medida inválida: ${unidadMedida}. Permitidas: ${UNIDADES.join(', ')}`
+    )
+  }
+  const precioCentavos = b.precio === undefined
+    ? actual.precio_centavos
+    : assertNoNegativo(assertCents(toCents(b.precio, 'precio'), 'precio'), 'precio')
+  const precioCompraCentavos = b.precioCompra === undefined
+    ? actual.precio_compra_centavos
+    : assertNoNegativo(assertCents(toCents(b.precioCompra, 'precio de compra'), 'precio de compra'), 'precio de compra')
+  const stockMilli = b.stock === undefined
+    ? actual.stock_milli
+    : assertNoNegativo(assertMilli(toMilli(b.stock, 'stock'), 'stock'), 'stock')
+  const stockMinimoMilli = b.stockMinimo === undefined
+    ? actual.stock_minimo_milli
+    : assertNoNegativo(assertMilli(toMilli(b.stockMinimo, 'stock mínimo'), 'stock mínimo'), 'stock mínimo')
+  const codigo = b.codigo === undefined ? actual.codigo : textoOpcional(b.codigo)
+  // The category is only re-resolved when the form named one. An UNCHANGED category is kept even
+  // if it was soft-deleted later: re-validating it would make editing an unrelated field fail on a
+  // category the product already belongs to, which is not a rule anyone set.
+  const categoria = b.categoriaId === undefined
+    ? actual.categoria_id
+    : exigirCategoria(ctx, b.categoriaId === null || b.categoriaId === '' ? null : Number(b.categoriaId))
+  const tieneIva = b.tieneIva === undefined ? actual.tiene_iva : b.tieneIva ? 1 : 0
+  const ivaCruda = b.iva !== undefined ? b.iva : b.ivaPorcentaje
+  const ivaPorcentaje = ivaCruda === undefined
+    ? actual.iva_porcentaje
+    : ivaCruda === null || ivaCruda === ''
+      ? null
+      : toRate(ivaCruda, 'IVA')
+  const margen = b.margen === undefined
+    ? actual.margen
+    : b.margen === null || b.margen === ''
+      ? null
+      : toRate(b.margen, 'margen')
+  const activo = b.activo === undefined ? actual.activo : b.activo ? 1 : 0
+
+  if (codigo && codigo !== actual.codigo) {
+    const repetido = ctx.db
+      .prepare('SELECT id FROM productos WHERE codigo = ? COLLATE NOCASE AND negocio_id = ? AND id != ?')
+      .get(codigo, ctx.negocioId, productoId)
+    if (repetido) {
+      throw new IpcError('PRODUCTO_CODIGO_DUPLICADO', 400, `El código "${codigo}" ya existe en esta tienda`)
+    }
+  }
+  const ts = new Date().toISOString()
+
+  return ctx.tx(() => {
+    try {
+      ctx.db
+        .prepare(
+          `UPDATE productos
+              SET nombre = ?, descripcion = ?, codigo = ?, precio_centavos = ?, precio_compra_centavos = ?,
+                  stock_milli = ?, stock_minimo_milli = ?, categoria_id = ?, activo = ?, imagen = ?,
+                  tiene_iva = ?, iva_porcentaje = ?, margen = ?, unidad_medida = ?, updated_at = ?
+            WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL`
+        )
+        .run(
+          nombre,
+          b.descripcion === undefined ? actual.descripcion : textoOpcional(b.descripcion),
+          codigo,
+          precioCentavos,
+          precioCompraCentavos,
+          stockMilli,
+          stockMinimoMilli,
+          categoria,
+          activo,
+          b.imagen === undefined ? actual.imagen : textoOpcional(b.imagen),
+          tieneIva,
+          ivaPorcentaje,
+          margen,
+          unidadMedida,
+          ts,
+          productoId,
+          ctx.negocioId
+        )
+    } catch (err) {
+      if (esViolacionUnicaEn(err, 'productos.codigo', 'productos.negocio_id')) {
+        throw new IpcError('PRODUCTO_CODIGO_DUPLICADO', 400, `El código "${codigo}" ya existe en esta tienda`)
+      }
+      throw err
+    }
+    ctx.db
+      .prepare(
+        `INSERT INTO auditoria (tabla, registro_id, accion, valores_anteriores, valores_nuevos, user_id, negocio_id, created_at, updated_at)
+         VALUES ('productos', ?, 'UPDATE', ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        productoId,
+        JSON.stringify({ nombre: actual.nombre, codigo: actual.codigo, precioCentavos: actual.precio_centavos, stockMilli: actual.stock_milli }),
+        JSON.stringify({ nombre, codigo, precioCentavos, stockMilli }),
+        ctx.actorId,
+        ctx.negocioId,
+        ts,
+        ts
+      )
+    return mapProducto(ctx.db.prepare('SELECT * FROM productos WHERE id = ?').get(productoId))
+  })
+}
+
+/**
+ * Remove a product from the catalogue WITHOUT destroying what it sold.
+ *
+ * TWO PATHS, AND THE DIFFERENCE IS HISTORY. A product with no sales has no history to protect, so
+ * it is soft-deleted (`deleted_at` set, every read filters it out). A product that HAS sales is
+ * only DEACTIVATED (`activo = 0`), never deleted. `ventas_detalles` keeps its own copy of the name
+ * and the unit price, so a historical ticket still prints — but the PRODUCT row is what a later
+ * report joins to for its current price and stock. Deleting it would make that join dangle: the
+ * product would vanish from every catalogue read and the report would have to say "unknown product"
+ * about something the shop demonstrably sold.
+ *
+ * THE WEB REFUSES INSTEAD. `producto.controller.js` answers 400 when a product has sales (outside
+ * development, where it deactivates silently). Deactivation is the same safety with a usable UI:
+ * the operator's "eliminar" removes it from the grid either way, and nothing ever sold changes.
+ * This is a deliberate divergence; `DIVERGENCES.md` records it.
+ */
+export function eliminar(ctx, id) {
+  requireTenant(ctx.negocioId)
+  if (!ctx.actorId) {
+    throw new IpcError('ACTOR_REQUERIDO', 401, 'La operación necesita un usuario en sesión')
+  }
+  const productoId = Number(id)
+  if (!Number.isSafeInteger(productoId) || productoId < 1) {
+    throw new IpcError('PRODUCTO_ID_INVALIDO', 400, `Id de producto inválido: ${id}`)
+  }
+  const actual = ctx.db
+    .prepare('SELECT * FROM productos WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL')
+    .get(productoId, ctx.negocioId)
+  if (!actual) {
+    throw new IpcError('PRODUCTO_NO_ENCONTRADO', 404, 'Producto no encontrado')
+  }
+  // `ventas_detalles` has NO `negocio_id`; the product id is already tenant-scoped by the read
+  // above, so the count cannot reach another shop's lines.
+  const ventas = ctx.db
+    .prepare('SELECT COUNT(*) AS n FROM ventas_detalles WHERE producto_id = ?')
+    .get(productoId).n
+  const ts = new Date().toISOString()
+
+  return ctx.tx(() => {
+    if (ventas > 0) {
+      ctx.db
+        .prepare('UPDATE productos SET activo = 0, updated_at = ? WHERE id = ? AND negocio_id = ?')
+        .run(ts, productoId, ctx.negocioId)
+      ctx.db
+        .prepare(
+          `INSERT INTO auditoria (tabla, registro_id, accion, valores_anteriores, valores_nuevos, user_id, negocio_id, created_at, updated_at)
+           VALUES ('productos', ?, 'UPDATE', ?, ?, ?, ?, ?, ?)`
+        )
+        .run(productoId, JSON.stringify({ activo: 1 }), JSON.stringify({ activo: 0, motivo: 'ventas_asociadas' }), ctx.actorId, ctx.negocioId, ts, ts)
+      return { id: productoId, desactivado: true }
+    }
+    ctx.db
+      .prepare('UPDATE productos SET deleted_at = ?, updated_at = ? WHERE id = ? AND negocio_id = ?')
+      .run(ts, ts, productoId, ctx.negocioId)
+    ctx.db
+      .prepare(
+        `INSERT INTO auditoria (tabla, registro_id, accion, valores_anteriores, valores_nuevos, user_id, negocio_id, created_at, updated_at)
+         VALUES ('productos', ?, 'DELETE', ?, NULL, ?, ?, ?, ?)`
+      )
+      .run(productoId, JSON.stringify({ nombre: actual.nombre }), ctx.actorId, ctx.negocioId, ts, ts)
+    return { id: productoId, desactivado: false }
+  })
+}
+
+/** One category, scoped by business: another tenant's id is a 404, not a 200. */
+export function obtenerCategoria(ctx, id) {
+  requireTenant(ctx.negocioId)
+  const categoriaId = Number(id)
+  if (!Number.isSafeInteger(categoriaId) || categoriaId < 1) {
+    throw new IpcError('CATEGORIA_ID_INVALIDO', 400, `Id de categoría inválido: ${id}`)
+  }
+  const row = ctx.db
+    .prepare('SELECT * FROM categorias WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL')
+    .get(categoriaId, ctx.negocioId)
+  if (!row) {
+    throw new IpcError('CATEGORIA_NO_ENCONTRADA', 404, 'Categoría no encontrada')
+  }
+  return mapCategoria(row)
+}
+
+/**
+ * Update a category. Same PATCH semantics and the same case-insensitive duplicate refusal as
+ * `crearCategoria`: `ux_categorias_nombre_negocio` compares with BINARY, so "Bebidas" and
+ * "bebidas" would otherwise coexist in one shop and split the filter row in two.
+ */
+export function actualizarCategoria(ctx, id, body) {
+  requireTenant(ctx.negocioId)
+  if (!ctx.actorId) {
+    throw new IpcError('ACTOR_REQUERIDO', 401, 'La operación necesita un usuario en sesión')
+  }
+  const categoriaId = Number(id)
+  if (!Number.isSafeInteger(categoriaId) || categoriaId < 1) {
+    throw new IpcError('CATEGORIA_ID_INVALIDO', 400, `Id de categoría inválido: ${id}`)
+  }
+  const actual = ctx.db
+    .prepare('SELECT * FROM categorias WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL')
+    .get(categoriaId, ctx.negocioId)
+  if (!actual) {
+    throw new IpcError('CATEGORIA_NO_ENCONTRADA', 404, 'Categoría no encontrada')
+  }
+  const b = body ?? {}
+  const nombre = b.nombre === undefined ? actual.nombre : textoOpcional(b.nombre)
+  if (!nombre) {
+    throw new IpcError('CATEGORIA_NOMBRE_REQUERIDO', 400, 'La categoría necesita un nombre')
+  }
+  const descripcion = b.descripcion === undefined ? actual.descripcion : textoOpcional(b.descripcion)
+  const activo = b.activo === undefined ? actual.activo : b.activo ? 1 : 0
+  if (nombre !== actual.nombre) {
+    const repetida = ctx.db
+      .prepare('SELECT id FROM categorias WHERE nombre = ? COLLATE NOCASE AND negocio_id = ? AND id != ?')
+      .get(nombre, ctx.negocioId, categoriaId)
+    if (repetida) {
+      throw new IpcError('CATEGORIA_NOMBRE_DUPLICADO', 400, `La categoría "${nombre}" ya existe en esta tienda`)
+    }
+  }
+  const ts = new Date().toISOString()
+
+  return ctx.tx(() => {
+    try {
+      ctx.db
+        .prepare('UPDATE categorias SET nombre = ?, descripcion = ?, activo = ?, updated_at = ? WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL')
+        .run(nombre, descripcion, activo, ts, categoriaId, ctx.negocioId)
+    } catch (err) {
+      if (esViolacionUnicaEn(err, 'categorias.nombre', 'categorias.negocio_id')) {
+        throw new IpcError('CATEGORIA_NOMBRE_DUPLICADO', 400, `La categoría "${nombre}" ya existe en esta tienda`)
+      }
+      throw err
+    }
+    ctx.db
+      .prepare(
+        `INSERT INTO auditoria (tabla, registro_id, accion, valores_anteriores, valores_nuevos, user_id, negocio_id, created_at, updated_at)
+         VALUES ('categorias', ?, 'UPDATE', ?, ?, ?, ?, ?, ?)`
+      )
+      .run(categoriaId, JSON.stringify({ nombre: actual.nombre, descripcion: actual.descripcion }), JSON.stringify({ nombre, descripcion }), ctx.actorId, ctx.negocioId, ts, ts)
+    return mapCategoria(ctx.db.prepare('SELECT * FROM categorias WHERE id = ?').get(categoriaId))
+  })
+}
+
+/**
+ * Remove a category. REFUSED while it still groups an active product.
+ *
+ * A category is not a history-bearing row the way a product is — it has no sales — so the danger
+ * here is different: deleting it would leave its products pointing at a category that no longer
+ * resolves, and the POS filter row would show a category whose count is permanently zero. The web
+ * refuses for exactly this reason in production (`categoria.controller.js` answers 400 when active
+ * products reference it), and this build matches that rule rather than inventing a softer one.
+ */
+export function eliminarCategoria(ctx, id) {
+  requireTenant(ctx.negocioId)
+  if (!ctx.actorId) {
+    throw new IpcError('ACTOR_REQUERIDO', 401, 'La operación necesita un usuario en sesión')
+  }
+  const categoriaId = Number(id)
+  if (!Number.isSafeInteger(categoriaId) || categoriaId < 1) {
+    throw new IpcError('CATEGORIA_ID_INVALIDO', 400, `Id de categoría inválido: ${id}`)
+  }
+  const actual = ctx.db
+    .prepare('SELECT * FROM categorias WHERE id = ? AND negocio_id = ? AND deleted_at IS NULL')
+    .get(categoriaId, ctx.negocioId)
+  if (!actual) {
+    throw new IpcError('CATEGORIA_NO_ENCONTRADA', 404, 'Categoría no encontrada')
+  }
+  const productos = ctx.db
+    .prepare('SELECT COUNT(*) AS n FROM productos WHERE categoria_id = ? AND negocio_id = ? AND deleted_at IS NULL AND activo = 1')
+    .get(categoriaId, ctx.negocioId).n
+  if (productos > 0) {
+    throw new IpcError('CATEGORIA_CON_PRODUCTOS', 400, 'No se puede eliminar la categoría porque tiene productos activos asociados')
+  }
+  const ts = new Date().toISOString()
+
+  return ctx.tx(() => {
+    ctx.db
+      .prepare('UPDATE categorias SET deleted_at = ?, updated_at = ? WHERE id = ? AND negocio_id = ?')
+      .run(ts, ts, categoriaId, ctx.negocioId)
+    ctx.db
+      .prepare(
+        `INSERT INTO auditoria (tabla, registro_id, accion, valores_anteriores, valores_nuevos, user_id, negocio_id, created_at, updated_at)
+         VALUES ('categorias', ?, 'DELETE', ?, NULL, ?, ?, ?, ?)`
+      )
+      .run(categoriaId, JSON.stringify({ nombre: actual.nombre }), ctx.actorId, ctx.negocioId, ts, ts)
+    return { id: categoriaId }
+  })
+}

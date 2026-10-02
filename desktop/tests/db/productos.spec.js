@@ -1,12 +1,17 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
+  actualizar,
+  actualizarCategoria,
   buscarPorCodigo,
   crear,
   crearCategoria,
+  eliminar,
+  eliminarCategoria,
   listar,
   listarCategorias,
   mapProducto,
-  obtener
+  obtener,
+  obtenerCategoria
 } from '../../src/main/db/repositories/productos.repo.js'
 import { crear as crearDeudor, listar as listarDeudores } from '../../src/main/db/repositories/deudores.repo.js'
 import { tienda, ctxDe, insertarDeudor } from './fixtures/tienda.js'
@@ -382,6 +387,308 @@ describe('deudores — who a credit sale can be billed to', () => {
     const { t, ctx } = tiendaCon()
     crearDeudor(ctx, { nombre: 'Privado' })
     expect(listarDeudores({ ...ctx, negocioId: otroNegocio(t) }).filas).toEqual([])
+  })
+})
+
+/**
+ * A sale line for a product, inserted directly.
+ *
+ * `productos.eliminar` decides between deactivation and deletion by counting `ventas_detalles`
+ * rows for the product — that COUNT is the whole input of the decision, so a test that wants a
+ * "product with sales" only needs a line that references it. Going through `ventas.repo.js#crear`
+ * would drag stock arithmetic, a cash session and a journal entry into a test about a delete.
+ */
+function venderProducto(t, { productoId, negocioId, usuarioId, folio = 'V-TEST-1' }) {
+  const ts = '2026-01-01T00:00:00.000Z'
+  const ventaId = Number(
+    t.conn.db
+      .prepare(
+        `INSERT INTO ventas (folio, metodo_pago, subtotal_centavos, total_centavos, estado, user_id, negocio_id, created_at, updated_at)
+         VALUES (?, 'efectivo', 20000, 20000, 'completada', ?, ?, ?, ?)`
+      )
+      .run(folio, usuarioId, negocioId, ts, ts).lastInsertRowid
+  )
+  t.conn.db
+    .prepare(
+      `INSERT INTO ventas_detalles
+         (cantidad_milli, precio_unitario_centavos, subtotal_centavos, nombre_producto, venta_id, producto_id, created_at, updated_at)
+       VALUES (1000, 20000, 20000, 'Queso artesanal', ?, ?, ?, ?)`
+    )
+    .run(ventaId, productoId, ts, ts)
+  return ventaId
+}
+
+describe('productos.actualizar — the edit screen', () => {
+  it('is PATCH, not PUT: a field the form did not send keeps its old value', () => {
+    const { ctx } = tiendaCon()
+    const lacteo = crearCategoria(ctx, { nombre: 'Lácteos' })
+    const p = crear(ctx, cuerpoProducto({ categoriaId: lacteo.id }))
+
+    const r = actualizar(ctx, p.id, { precio: '2000' })
+
+    // The one changed field...
+    expect(r.precioCentavos).toBe(200000)
+    // ...and everything the payload omitted, untouched. A PUT that nulled the rest would wipe a
+    // barcode and a stock level behind the operator's back.
+    expect(r.nombre).toBe('Queso artesanal')
+    expect(r.codigo).toBe('7791234567890')
+    expect(r.precioCompraCentavos).toBe(p.precioCompraCentavos)
+    expect(r.stockMilli).toBe(3500)
+    expect(r.stockMinimoMilli).toBe(1000)
+    expect(r.categoriaId).toBe(lacteo.id)
+    expect(r.unidadMedida).toBe('kg')
+  })
+
+  it('converts the renderer units on the fields it does receive', () => {
+    const { ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+
+    const r = actualizar(ctx, p.id, { precio: '99,99', stock: '4,25', stockMinimo: '0,5' })
+
+    expect(r.precioCentavos).toBe(9999)
+    expect(r.stockMilli).toBe(4250)
+    expect(r.stockMinimoMilli).toBe(500)
+  })
+
+  it('honours `activo: false` and `stock: 0` as VALUES, not as absences', () => {
+    const { ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+
+    // The bug this guards: `if (body.activo)` and `body.stock || actual.stock`. Both are falsey
+    // for the two values an operator most plausibly means, so a truthiness merge silently ignores
+    // a deliberate deactivation and a deliberate empty shelf.
+    const r = actualizar(ctx, p.id, { activo: false, stock: 0 })
+
+    expect(r.activo).toBe(false)
+    expect(r.stockMilli).toBe(0)
+    expect(listar(ctx).filas.map((x) => x.nombre)).not.toContain('Queso artesanal')
+    expect(listar(ctx, { soloActivos: false }).filas.map((x) => x.nombre)).toContain('Queso artesanal')
+  })
+
+  it('lets the generated es_pesable column follow a changed unit', () => {
+    const { ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto({ unidadMedida: 'kg' }))
+    expect(p.esPesable).toBe(true)
+
+    const r = actualizar(ctx, p.id, { unidadMedida: 'unidad' })
+    // `es_pesable` is GENERATED; the write only changes `unidad_medida`. If the mapper had cached
+    // the old value the scale button would still be offered for a product sold by the piece.
+    expect(r.unidadMedida).toBe('unidad')
+    expect(r.esPesable).toBe(false)
+  })
+
+  it('refuses a duplicate barcode, including a different case, but allows its own unchanged code', () => {
+    const { ctx } = tiendaCon()
+    const a = crear(ctx, cuerpoProducto())
+    const b = crear(ctx, cuerpoProducto({ nombre: 'Otro queso', codigo: 'OTRO-1' }))
+
+    expect(() => actualizar(ctx, b.id, { codigo: '7791234567890' })).toThrow(
+      expect.objectContaining({ code: 'PRODUCTO_CODIGO_DUPLICADO', status: 400 })
+    )
+    // BINARY index, so the comparison has to be COLLATE NOCASE to match the web's collation.
+    expect(() => actualizar(ctx, b.id, { codigo: '7791234567890'.toUpperCase() })).toThrow(
+      expect.objectContaining({ code: 'PRODUCTO_CODIGO_DUPLICADO' })
+    )
+    // Saving the form without touching the barcode is not a duplicate of itself.
+    expect(actualizar(ctx, a.id, { nombre: 'Queso criollo' }).codigo).toBe('7791234567890')
+  })
+
+  it('refuses a blank name, a negative price and an illegal unit as 400s with codes', () => {
+    const { ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+
+    expect(() => actualizar(ctx, p.id, { nombre: '   ' })).toThrow(
+      expect.objectContaining({ code: 'PRODUCTO_NOMBRE_REQUERIDO', status: 400 })
+    )
+    expect(() => actualizar(ctx, p.id, { precio: -1 })).toThrow(
+      expect.objectContaining({ code: 'PRODUCTO_PRECIO_NEGATIVO', status: 400 })
+    )
+    expect(() => actualizar(ctx, p.id, { unidadMedida: 'galón' })).toThrow(
+      expect.objectContaining({ code: 'PRODUCTO_UNIDAD_INVALIDA', status: 400 })
+    )
+  })
+
+  it('refuses a category that belongs to another business', () => {
+    const { t, ctx } = tiendaCon()
+    const ajena = crearCategoria({ ...ctx, negocioId: otroNegocio(t) }, { nombre: 'Ajena' })
+    const p = crear(ctx, cuerpoProducto())
+
+    expect(() => actualizar(ctx, p.id, { categoriaId: ajena.id })).toThrow(
+      expect.objectContaining({ code: 'CATEGORIA_NO_ENCONTRADA' })
+    )
+  })
+
+  it('writes an audit row pairing the old and the new figures', () => {
+    const { t, ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+    actualizar(ctx, p.id, { precio: '2000' })
+
+    const fila = t.conn.db
+      .prepare("SELECT * FROM auditoria WHERE tabla = 'productos' AND registro_id = ? AND accion = 'UPDATE'")
+      .get(p.id)
+    expect(fila).toBeTruthy()
+    expect(JSON.parse(fila.valores_anteriores).precioCentavos).toBe(105050)
+    expect(JSON.parse(fila.valores_nuevos).precioCentavos).toBe(200000)
+    expect(fila.user_id).toBe(ctx.actorId)
+  })
+
+  it('never edits another business a product, and refuses without an operator', () => {
+    const { t, ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+
+    expect(() => actualizar({ ...ctx, negocioId: otroNegocio(t) }, p.id, { precio: '1' })).toThrow(
+      expect.objectContaining({ code: 'PRODUCTO_NO_ENCONTRADO', status: 404 })
+    )
+    expect(() => actualizar({ ...ctx, actorId: null }, p.id, { precio: '1' })).toThrow(
+      expect.objectContaining({ code: 'ACTOR_REQUERIDO', status: 401 })
+    )
+    // The refusals wrote nothing: the price is still the one it was created with.
+    expect(obtener(ctx, p.id).precioCentavos).toBe(105050)
+  })
+})
+
+describe('productos.eliminar — deactivate what sold, delete what never did', () => {
+  it('soft-deletes a product with no sales, and it disappears from the catalogue', () => {
+    const { t, ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+
+    const r = eliminar(ctx, p.id)
+
+    expect(r).toEqual({ id: p.id, desactivado: false })
+    // The row survives — soft delete, not DELETE — so history that referenced it keeps resolving.
+    const fila = t.conn.db.prepare('SELECT * FROM productos WHERE id = ?').get(p.id)
+    expect(fila.deleted_at).toBeTruthy()
+    expect(listar(ctx).filas.map((x) => x.id)).not.toContain(p.id)
+    expect(() => obtener(ctx, p.id)).toThrow(expect.objectContaining({ code: 'PRODUCTO_NO_ENCONTRADO' }))
+  })
+
+  it('DEACTIVATES a product that has sales and leaves its sale line resolving', () => {
+    const { t, ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+    const ventaId = venderProducto(t, { productoId: p.id, negocioId: ctx.negocioId, usuarioId: ctx.actorId })
+
+    const r = eliminar(ctx, p.id)
+
+    expect(r).toEqual({ id: p.id, desactivado: true })
+    const fila = t.conn.db.prepare('SELECT * FROM productos WHERE id = ?').get(p.id)
+    // NOT deleted: the join from the historical sale still lands on a real product.
+    expect(fila.deleted_at).toBeNull()
+    expect(fila.activo).toBe(0)
+    const detalle = t.conn.db.prepare('SELECT * FROM ventas_detalles WHERE venta_id = ?').get(ventaId)
+    expect(detalle.producto_id).toBe(p.id)
+    // Gone from the selling grid, still visible to an admin list.
+    expect(listar(ctx).filas.map((x) => x.id)).not.toContain(p.id)
+    expect(listar(ctx, { soloActivos: false }).filas.map((x) => x.id)).toContain(p.id)
+  })
+
+  it('writes an audit row for both paths, naming the reason for deactivation', () => {
+    const { t, ctx } = tiendaCon()
+    const limpio = crear(ctx, cuerpoProducto({ codigo: 'SIN-VENTAS' }))
+    const vendido = crear(ctx, cuerpoProducto({ codigo: 'CON-VENTAS' }))
+    venderProducto(t, { productoId: vendido.id, negocioId: ctx.negocioId, usuarioId: ctx.actorId })
+
+    eliminar(ctx, limpio.id)
+    eliminar(ctx, vendido.id)
+
+    const borrado = t.conn.db
+      .prepare("SELECT * FROM auditoria WHERE tabla = 'productos' AND registro_id = ? AND accion = 'DELETE'")
+      .get(limpio.id)
+    const desactivado = t.conn.db
+      .prepare("SELECT * FROM auditoria WHERE tabla = 'productos' AND registro_id = ? AND accion = 'UPDATE'")
+      .get(vendido.id)
+    expect(borrado).toBeTruthy()
+    expect(desactivado).toBeTruthy()
+    expect(JSON.parse(desactivado.valores_nuevos).motivo).toBe('ventas_asociadas')
+  })
+
+  it('is tenant-scoped and refuses without an operator', () => {
+    const { t, ctx } = tiendaCon()
+    const p = crear(ctx, cuerpoProducto())
+
+    expect(() => eliminar({ ...ctx, negocioId: otroNegocio(t) }, p.id)).toThrow(
+      expect.objectContaining({ code: 'PRODUCTO_NO_ENCONTRADO', status: 404 })
+    )
+    expect(() => eliminar({ ...ctx, actorId: null }, p.id)).toThrow(
+      expect.objectContaining({ code: 'ACTOR_REQUERIDO', status: 401 })
+    )
+    expect(t.conn.db.prepare('SELECT deleted_at, activo FROM productos WHERE id = ?').get(p.id)).toMatchObject({
+      deleted_at: null,
+      activo: 1
+    })
+  })
+})
+
+describe('categorias — get, update and remove', () => {
+  it('gets one category scoped by business', () => {
+    const { t, ctx } = tiendaCon()
+    const c = crearCategoria(ctx, { nombre: 'Lácteos', descripcion: 'Quesos y leche' })
+
+    expect(obtenerCategoria(ctx, c.id)).toMatchObject({ nombre: 'Lácteos', descripcion: 'Quesos y leche' })
+    expect(() => obtenerCategoria(ctx, 999999)).toThrow(
+      expect.objectContaining({ code: 'CATEGORIA_NO_ENCONTRADA', status: 404 })
+    )
+    expect(() => obtenerCategoria({ ...ctx, negocioId: otroNegocio(t) }, c.id)).toThrow(
+      expect.objectContaining({ code: 'CATEGORIA_NO_ENCONTRADA' })
+    )
+  })
+
+  it('updates a category with PATCH semantics and refuses a duplicate name', () => {
+    const { ctx } = tiendaCon()
+    const a = crearCategoria(ctx, { nombre: 'Bebidas' })
+    const b = crearCategoria(ctx, { nombre: 'Almacén', descripcion: 'Secos' })
+
+    const r = actualizarCategoria(ctx, b.id, { descripcion: 'Aceite y harina' })
+    expect(r.nombre).toBe('Almacén')
+    expect(r.descripcion).toBe('Aceite y harina')
+
+    expect(() => actualizarCategoria(ctx, b.id, { nombre: 'bebidas' })).toThrow(
+      expect.objectContaining({ code: 'CATEGORIA_NOMBRE_DUPLICADO', status: 400 })
+    )
+    // Saving without changing the name is not a duplicate of itself.
+    expect(actualizarCategoria(ctx, a.id, { descripcion: 'Gaseosas' }).nombre).toBe('Bebidas')
+  })
+
+  it('deactivating a category hides it from the list', () => {
+    const { ctx } = tiendaCon()
+    const c = crearCategoria(ctx, { nombre: 'Temporal' })
+
+    actualizarCategoria(ctx, c.id, { activo: false })
+    expect(listarCategorias(ctx).map((x) => x.id)).not.toContain(c.id)
+  })
+
+  it('REFUSES to remove a category that still groups an active product', () => {
+    const { t, ctx } = tiendaCon()
+    const c = crearCategoria(ctx, { nombre: 'Lácteos' })
+    crear(ctx, cuerpoProducto({ categoriaId: c.id }))
+
+    // A dangling category would leave the filter row showing a category no product can reach.
+    expect(() => eliminarCategoria(ctx, c.id)).toThrow(
+      expect.objectContaining({ code: 'CATEGORIA_CON_PRODUCTOS', status: 400 })
+    )
+    expect(listarCategorias(ctx).map((x) => x.id)).toContain(c.id)
+  })
+
+  it('removes an empty category, and then one whose product was removed first', () => {
+    const { t, ctx } = tiendaCon()
+    const vacia = crearCategoria(ctx, { nombre: 'Vacía' })
+
+    expect(eliminarCategoria(ctx, vacia.id)).toEqual({ id: vacia.id })
+    expect(listarCategorias(ctx).map((x) => x.id)).not.toContain(vacia.id)
+
+    const conProducto = crearCategoria(ctx, { nombre: 'Con producto' })
+    const p = crear(ctx, cuerpoProducto({ categoriaId: conProducto.id }))
+    eliminar(ctx, p.id) // soft delete: it is no longer an ACTIVE product
+    expect(eliminarCategoria(ctx, conProducto.id)).toEqual({ id: conProducto.id })
+  })
+
+  it('never removes another business a category', () => {
+    const { t, ctx } = tiendaCon()
+    const c = crearCategoria(ctx, { nombre: 'Lácteos' })
+
+    expect(() => eliminarCategoria({ ...ctx, negocioId: otroNegocio(t) }, c.id)).toThrow(
+      expect.objectContaining({ code: 'CATEGORIA_NO_ENCONTRADA' })
+    )
+    expect(obtenerCategoria(ctx, c.id).nombre).toBe('Lácteos')
   })
 })
 

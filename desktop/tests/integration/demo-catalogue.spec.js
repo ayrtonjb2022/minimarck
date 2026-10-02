@@ -237,8 +237,12 @@ describe('the gates in front of business code still hold over this path', () => 
   })
 
   it('answers 501 for a contract member with no handler, rather than crashing', async () => {
-    // `productos.update` is in the frozen contract with no handler in this build. If the demo
-    // button's own group ever lost its wiring, this is the shape the failure would take.
+    // `backup.create` is in the frozen contract with no handler in this build — the `backup.*`
+    // group is the last one still 501, and this test is the canary for that group's wiring. It
+    // used to name `productos.update`, which was true until the CRUD batch gave that member a
+    // handler and made this assertion fail with a 404 instead; the lesson is that a "still 501"
+    // test must point at a member the build ACTUALLY leaves unimplemented, or it becomes a lie
+    // the moment someone does the work. `scripts/check-contract.mjs` prints the live list.
     //
     // `code` is asserted, `status` is NOT, and the reason is worth writing down rather than
     // leaving as a puzzle: `llamar` recovers the code and message from Electron's wrapped
@@ -248,7 +252,7 @@ describe('the gates in front of business code still hold over this path', () => 
     // on `code` — so it is harmless, and the doc comment on the class overstates it. Asserting
     // 501 here would encode a promise the transport does not keep.
     const { llamar } = await import('../../src/renderer/app/api/ipc.js')
-    await expect(llamar('productos', 'update', { id: 1 })).rejects.toMatchObject({
+    await expect(llamar('backup', 'create', {})).rejects.toMatchObject({
       code: 'NOT_IMPLEMENTED'
     })
   })

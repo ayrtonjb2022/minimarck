@@ -1,6 +1,6 @@
 import { createCtx } from '../db/ctx.js'
 import { requireTenant } from '../db/seed.js'
-import { crearCategoria, listarCategorias } from '../db/repositories/productos.repo.js'
+import { crearCategoria, listarCategorias, obtenerCategoria, actualizarCategoria, eliminarCategoria } from '../db/repositories/productos.repo.js'
 
 /**
  * The `categorias.*` handlers. Two of five: `list` and `create`.
@@ -25,7 +25,13 @@ export function registerCategoriasHandlers(registry, { conn }) {
       return listarCategorias(ctx(reqCtx))
     },
 
-    create: (payload, reqCtx) => crearCategoria(ctx(reqCtx), payload)
+    get: (payload, reqCtx) => {
+      requireTenant(reqCtx?.negocioId)
+      return obtenerCategoria(ctx(reqCtx), payload?.id)
+    },
+    create: (payload, reqCtx) => crearCategoria(ctx(reqCtx), payload),
+    update: (payload, reqCtx) => actualizarCategoria(ctx(reqCtx), payload?.id, payload),
+    remove: (payload, reqCtx) => eliminarCategoria(ctx(reqCtx), payload?.id)
   })
 
   return registry

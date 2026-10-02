@@ -1,6 +1,6 @@
 import { createCtx } from '../db/ctx.js'
 import { requireTenant } from '../db/seed.js'
-import { buscarPorCodigo, crear, listar, obtener } from '../db/repositories/productos.repo.js'
+import { buscarPorCodigo, crear, listar, obtener, actualizar, eliminar } from '../db/repositories/productos.repo.js'
 
 /**
  * The `productos.*` handlers, backed by the real database.
@@ -65,7 +65,9 @@ export function registerProductosHandlers(registry, { conn }) {
      * is refused by name (`PRODUCTO_CODIGO_DUPLICADO`) because the same barcode in two different
      * shops is perfectly legal — the index is scoped to the business.
      */
-    create: (payload, reqCtx) => crear(ctx(reqCtx), payload)
+    create: (payload, reqCtx) => crear(ctx(reqCtx), payload),
+    update: (payload, reqCtx) => actualizar(ctx(reqCtx), payload?.id, payload),
+    remove: (payload, reqCtx) => eliminar(ctx(reqCtx), payload?.id)
   })
 
   return registry
