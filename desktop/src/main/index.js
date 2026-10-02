@@ -17,6 +17,7 @@ import { registerCategoriasHandlers } from './ipc/categorias.js'
 import { registerDeudoresHandlers } from './ipc/deudores.js'
 import { registerProveedoresHandlers } from './ipc/proveedores.js'
 import { registerComprasHandlers } from './ipc/compras.js'
+import { registerReportesHandlers, registerDashboardHandlers } from './ipc/reportes.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
 import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { createSession } from './auth/session.js'
@@ -401,6 +402,8 @@ async function main() {
   registerDeudoresHandlers(registry, { conn: db.conn })
   registerProveedoresHandlers(registry, { conn: db.conn })
   registerComprasHandlers(registry, { conn: db.conn })
+  registerReportesHandlers(registry, { conn: db.conn })
+  registerDashboardHandlers(registry, { conn: db.conn })
   installIpc(registry, identity, session)
 
   const win = createWindow({ isPackaged, rendererUrl: url })

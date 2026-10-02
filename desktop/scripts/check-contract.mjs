@@ -28,6 +28,7 @@ import { registerCategoriasHandlers } from '../src/main/ipc/categorias.js'
 import { registerDeudoresHandlers } from '../src/main/ipc/deudores.js'
 import { registerProveedoresHandlers } from '../src/main/ipc/proveedores.js'
 import { registerComprasHandlers } from '../src/main/ipc/compras.js'
+import { registerReportesHandlers, registerDashboardHandlers } from '../src/main/ipc/reportes.js'
 
 // A real migrated+seeded database, so the repositories behind those handlers are real too.
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'minimarck-contract-'))
@@ -53,6 +54,12 @@ registerDeudoresHandlers(registry, { conn: db.conn })
 // two screens, which was wrong twice over. All five of each are now implemented.
 registerProveedoresHandlers(registry, { conn: db.conn })
 registerComprasHandlers(registry, { conn: db.conn })
+// The ten `reportes.*` operations and `dashboard.stats`. Same reason as the four above, and the
+// gate is the only thing that can say whether they answer: `App.jsx` printed "no esta en el
+// contrato de 89 operaciones" on `/reportes` while all ten sat implemented-but-unregistered, and
+// the report agreed with the screen and disagreed with the code.
+registerReportesHandlers(registry, { conn: db.conn })
+registerDashboardHandlers(registry, { conn: db.conn })
 
 const contract = []
 for (const [group, ops] of Object.entries(OPS)) for (const op of ops) contract.push({ group, op })
