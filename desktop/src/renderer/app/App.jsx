@@ -10,6 +10,8 @@ import Proveedores from "./pages/Proveedores";
 import Compras from "./pages/Compras";
 import Acceso from "./pages/Acceso";
 import Usuarios from "./pages/Usuarios";
+import Reportes from "./pages/Reportes";
+import Panel from "./pages/Panel";
 import ControlesDeTurno from "./components/common/ControlesDeTurno";
 
 /**
@@ -46,12 +48,10 @@ import ControlesDeTurno from "./components/common/ControlesDeTurno";
  */
 
 const PANTALLAS_FALTANTES = [
-  { ruta: "/dashboard", nombre: "Panel", motivo: "sin resumen agregado en esta build" },
   { ruta: "/productos", nombre: "Productos", motivo: "el catalogo se carga, la edicion todavia no" },
   { ruta: "/categorias", nombre: "Categorías", motivo: "el filtro del POS ya las usa" },
   { ruta: "/caja", nombre: "Caja", motivo: "se abre al vender, el arqueo manual no" },
-  { ruta: "/reportes", nombre: "Reportes", motivo: "no esta en el contrato de 89 operaciones" },
-  { ruta: "/contabilidad", nombre: "Contabilidad", motivo: "no esta en el contrato de 89 operaciones" },
+  { ruta: "/contabilidad", nombre: "Contabilidad", motivo: "son 15 operaciones del contrato y ninguna esta" },
   { ruta: "/configuracion", nombre: "Configuracion", motivo: "no esta en el contrato de 89 operaciones" },
 ];
 
@@ -82,6 +82,15 @@ const TopBar = ({ titulo }) => {
       <nav className="mm-topbar-nav" aria-label="Secciones">
         <NavLink to="/pos" className={({ isActive }) => (isActive ? "active" : "")}>
           <i className="fa-solid fa-cash-register" aria-hidden="true"></i> Vender
+        </NavLink>
+        {/* The panel and the reports are the two screens that ANSWER questions rather than record
+            something, so they sit next to Vender rather than at the end of the strip: an operator
+            opening the app on a Monday morning wants the numbers first. */}
+        <NavLink to="/dashboard" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-gauge-high" aria-hidden="true"></i> Panel
+        </NavLink>
+        <NavLink to="/reportes/ventas" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-chart-column" aria-hidden="true"></i> Reportes
         </NavLink>
         <NavLink to="/ventas" className={({ isActive }) => (isActive ? "active" : "")}>
           <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ventas
@@ -269,6 +278,43 @@ const App = () => {
           with a clean slate is on that list too, with a "Debe" of $0,00. */}
       <Route path="/deudores" element={<PaginaDeudores />} />
       <Route path="/clientes" element={<Navigate to="/deudores" replace />} />
+      {/* The panel, and the ten reports. BOTH SIT BEHIND THE `isAuthenticated` GATE ABOVE, and
+          that is the whole security story for them — not a per-route check, not a role test.
+          `App` returns `<Acceso />` INSTEAD OF `<Routes>` when nobody is signed in, so an
+          unauthenticated renderer never mounts a report at all: there is no element to render,
+          no `useEffect` to fire, no query to make, and no `reportes.*` payload to receive. A
+          report is a summary of one shop's money, so the screen and the identity it reads are
+          gated by the same `if`.
+          Main refuses the same call independently — every report handler calls `requireTenant`
+          and answers `TENANT_REQUIRED` with no `actorId` — so the gate is not the only thing
+          between an anonymous renderer and a ledger; it is the first of two. */}
+      <Route
+        path="/dashboard"
+        element={
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Panel" />
+              <Panel />
+            </main>
+          </div>
+        }
+      />
+      {/* `/reportes` on its own sends the operator to the sales report rather than to a dead end:
+          that is the first thing anybody wants after opening a tab called Reportes. The web's
+          screen defaulted to the managerial tab; sales is the one an operator checks daily, and
+          the tab strip is one click away either way. */}
+      <Route path="/reportes" element={<Navigate to="/reportes/ventas" replace />} />
+      <Route
+        path="/reportes/:reporte"
+        element={
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Reportes" />
+              <Reportes />
+            </main>
+          </div>
+        }
+      />
       {/* Suppliers and purchases, in the same chrome and for the same reason `Deudores` is not
           behind `CajaGuard`: only the CASH method needs the till open, and `compras.create` says
           so by name — `CAJA_ABIERTA_REQUERIDA`, 409 — on cash and on nothing else. A card or a

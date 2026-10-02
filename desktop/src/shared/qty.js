@@ -323,19 +323,49 @@ const UNIDAD_SUB = Object.freeze({ kg: 'g', l: 'ml' })
  * that parses back as ONE AND A HALF grams. A space is not a character `toMilli` accepts, so
  * re-typing a grouped quantity produces a clear `QTY_FORMAT` error instead of a silent factor of
  * a thousand.
+ *
+ * `baseDecimals: true` renders in the BASE unit with a decimal point instead: 1500 milli of a kilo
+ * product is `1,5 kg` rather than `1 500 g`. It is opt-in because the two forms are right for
+ * different readers, and only the reader differs:
+ *
+ *   - A RECEIPT is a claim about one line. `1 500 g` is what the scale printed, and it is the form
+ *     that cannot be misread as a price or as a whole unit.
+ *   - A REPORT is a reading of many lines, and the owner comparing a report against a till wants
+ *     the same `1,5 kg` the POS's own quantity field shows. `3 500 unidades` for three and a half
+ *     kilos of cheese is not a rounding difference, it is a wrong unit on a real quantity.
+ *
+ * In the base form the decimal point is `,` and the value ROUND-TRIPS through `toMilli`, because
+ * `toMilli('1,5')` is 1500 and the ambiguity documented on `MILLI_INPUT` cannot arise: the base
+ * form never prints three integer digits followed by a separator, and never groups, so a digit count
+ * is never in question. That is the second reason the reports ask for it: the printed figure can be
+ * typed back into a sale.
  */
-export function formatMilli(milli, { unidad = 'unidad', grouping = true } = {}) {
+export function formatMilli(milli, { unidad = 'unidad', grouping = true, baseDecimals = false } = {}) {
   const value = assertMilli(milli, 'formatMilli')
   const scale = escalaUnidad(unidad)
   const negativo = value < 0
   const abs = Math.abs(value)
   const digitos = (n) => (grouping ? String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : String(n))
 
+  const signo = negativo ? '-' : ''
+
+  // In the base unit, with up to three decimals and the trailing zeros trimmed: `1 kg`, `1,5 kg`,
+  // `12,25 kg`. The sub-unit is never used in this form, so a kilo product cannot be printed in
+  // grams here even by accident. Units that are already at their own resolution (`unidad`, `g`,
+  // `pack`) have `scale === 1` and fall through to the shared path below, unchanged.
+  if (baseDecimals && scale > 1) {
+    const entero = Math.trunc(abs / scale)
+    const resto = abs % scale
+    if (resto === 0) return `${signo}${entero} ${unidad}`
+    const decimales = String(resto).padStart(3, '0').replace(/0+$/, '')
+    return `${signo}${entero},${decimales} ${unidad}`
+  }
+
   // A whole number of the base unit reads better in the base unit (1 kg, not 1000 g).
   if (scale > 1 && abs >= scale && abs % scale === 0) {
-    return `${negativo ? '-' : ''}${digitos(abs / scale)} ${unidad}`
+    return `${signo}${digitos(abs / scale)} ${unidad}`
   }
 
   const sub = scale > 1 ? (UNIDAD_SUB[unidad.trim().toLowerCase()] ?? unidad) : unidad
-  return `${negativo ? '-' : ''}${digitos(abs)} ${sub}`
+  return `${signo}${digitos(abs)} ${sub}`
 }

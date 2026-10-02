@@ -1454,3 +1454,34 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ===== REPORTES =====
+ * The ten reports' own two classes. Everything else they use — `.card`, `.stat-card`,
+ * `.stats-grid`, `.table-container`, `.form-group`, `.btn-*` — is already in this file, because a
+ * new screen that re-declared those would be a second definition of the app's card and a place for
+ * the two to drift.
+ *
+ * NO STYLING BEYOND STRUCTURE, and that is the user's instruction rather than an omission: "we'll
+ * fix the design at the end". These are layout rules — the strip wraps, the active tab is
+ * legible, a heading has room. Nothing here decides a colour scheme.
+ */
+.mm-reportes-tabs {
+  display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--kanagawa-border);
+}
+.mm-reportes-grupo { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.mm-reportes-grupo-titulo {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--kanagawa-fg-muted); min-width: 92px; padding: 0 4px;
+}
+.mm-reportes-tab {
+  padding: 8px 14px; border: none; background: transparent; color: var(--kanagawa-fg-muted);
+  font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px;
+}
+.mm-reportes-tab:hover { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+.mm-reportes-tab.activa { color: var(--kanagawa-blue); font-weight: 600; }
+.mm-reportes-tab i { margin-right: 6px; }
+.mm-sub {
+  font-size: 15px; font-weight: 600; margin: 24px 0 12px;
+}
+.mm-sub:first-of-type { margin-top: 0; }
