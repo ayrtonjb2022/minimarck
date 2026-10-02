@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { buildWebPreferences, resolvePreloadPath } from '../src/main/window.js'
 import { buildCsp, assertTrustedSender, isTrustedOrigin, canonicalOrigin } from '../src/main/security.js'
 import { resolveBundlePath, rendererUrl, isNavigationRequest, registerAppSchemePrivileges, shellHtmlForRoute } from '../src/main/protocol.js'
-import { resolveDataPaths, ensureDataDirs, APP_NAME } from '../src/main/dataDir.js'
+import { resolveDataPaths, ensureDataDirs, resolveUserDataSinElectron, APP_NAME } from '../src/main/dataDir.js'
 import { protocol } from 'electron'
 import path from 'node:path'
 import { basename } from 'node:path'
@@ -408,5 +408,92 @@ describe('PLAT-2 data location', () => {
     } finally {
       rmSync(base, { recursive: true, force: true })
     }
+  })
+
+  // These four cover `resolveUserDataSinElectron`, the rule the offline recovery tool
+  // (`scripts/auth-reset-admin.mjs`) uses to find the shop WITHOUT Electron — the tool has to open
+  // the database from a plain Node process, and `app.getPath('userData')` does not exist there.
+  // Deriving the path is exactly what `app.setName(APP_NAME)` exists to prevent getting wrong, so
+  // the rule is asserted per platform instead of being trusted.
+  it('derives the SAME userData Electron would, without Electron, on each platform', () => {
+    expect(
+      resolveUserDataSinElectron({
+        env: { APPDATA: 'C:/Users/x/AppData/Roaming' },
+        platform: 'win32',
+        homedir: 'C:/Users/x'
+      })
+    ).toBe(path.join('C:/Users/x/AppData/Roaming', APP_NAME))
+
+    expect(
+      resolveUserDataSinElectron({
+        env: {},
+        platform: 'darwin',
+        homedir: '/Users/x'
+      })
+    ).toBe(path.join('/Users/x', 'Library', 'Application Support', APP_NAME))
+
+    expect(
+      resolveUserDataSinElectron({ env: {}, platform: 'linux', homedir: '/home/x' })
+    ).toBe(path.join('/home/x', '.config', APP_NAME))
+  })
+
+  it('the derived path is the MiniMarck profile, NEVER the shared Electron one', () => {
+    // The exact failure the third test above documents — every shop in the machine's shared
+    // …\Roaming\Electron\ profile — reproduced here through the DERIVED path. A recovery tool that
+    // resolved this way would open, and rewrite, whatever Electron app ran last on this machine.
+    for (const [platform, env, homedir] of [
+      ['win32', { APPDATA: 'C:/Users/x/AppData/Roaming' }, 'C:/Users/x'],
+      ['darwin', {}, '/Users/x'],
+      ['linux', {}, '/home/x']
+    ]) {
+      const derivado = resolveUserDataSinElectron({ env, platform, homedir })
+      expect(derivado).toContain(APP_NAME)
+      expect(path.basename(derivado)).toBe(APP_NAME)
+      expect(derivado).not.toContain(`${path.sep}Electron${path.sep}`)
+      expect(path.basename(derivado)).not.toBe('Electron')
+    }
+  })
+
+  it('falls back to the home directory when APPDATA is missing, instead of producing a relative path', () => {
+    // An unset APPDATA would otherwise join(undefined, …) into a path relative to the CWD, and the
+    // tool would report "database not found" while describing a location it never meant.
+    const derivado = resolveUserDataSinElectron({
+      env: {},
+      platform: 'win32',
+      homedir: 'C:/Users/x'
+    })
+    expect(derivado).toBe(path.join('C:/Users/x', 'AppData', 'Roaming', APP_NAME))
+    expect(path.isAbsolute(derivado)).toBe(true)
+  })
+
+  it('reads process.env by DEFAULT, so a no-argument caller gets the real APPDATA', () => {
+    // The recovery tool calls this with no arguments at all. When the default was `{}`, that call
+    // saw no APPDATA and fell through to the homedir guess — which on an ordinary Windows machine
+    // is the SAME directory, so the tool worked on the machine that tested it and pointed at the
+    // wrong place for anybody whose APPDATA is relocated. A default that is right on the dev box is
+    // the one default a dev-box test cannot catch, so it is asserted with the environment swapped.
+    const real = process.env.APPDATA
+    const antes = process.env.APPDATA
+    process.env.APPDATA = 'C:/Users/y/AppData/Roaming'
+    try {
+      expect(resolveUserDataSinElectron()).toBe(path.join('C:/Users/y/AppData/Roaming', APP_NAME))
+    } finally {
+      if (antes === undefined) delete process.env.APPDATA
+      else process.env.APPDATA = antes
+    }
+    expect(real === undefined || typeof real === 'string').toBe(true)
+  })
+
+  it('ignores MINIMARCK_DATA_DIR, so the derived path always names the PROFILE', () => {
+    // Deliberate: the override relocates the DATA, not the profile. The recovery tool checks both
+    // and prefers the override, but a function whose name says "userData" must not answer with the
+    // data directory, or the two would be indistinguishable to whoever calls it next.
+    const derivado = resolveUserDataSinElectron({
+      env: { APPDATA: 'C:/Users/x/AppData/Roaming', MINIMARCK_DATA_DIR: 'C:/tmp/mmtest' },
+      platform: 'win32',
+      homedir: 'C:/Users/x'
+    })
+    expect(derivado).toBe(path.join('C:/Users/x/AppData/Roaming', APP_NAME))
+    expect(derivado).not.toContain('mmtest')
   })
 })

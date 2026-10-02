@@ -71,7 +71,16 @@ function texto(valor, campo, { max = 200 } = {}) {
   return t
 }
 
-function exigirPassword(password) {
+/**
+ * The password policy, in one place.
+ *
+ * Exported because there are now two callers and a policy with two implementations is a policy
+ * that drifts: the sign-in path and the owner-reset path here, and the offline recovery CLI in
+ * `cli/reset-admin.js`. A CLI that accepted a six-character password the app would have refused
+ * would leave the shop with a credential the app itself considers invalid — and the person would
+ * find out at the worst possible moment. The CLI reports this same code and sentence.
+ */
+export function exigirPassword(password) {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD) {
     throw new IpcError(
       'CONTRASENA_CORTA', 400,
