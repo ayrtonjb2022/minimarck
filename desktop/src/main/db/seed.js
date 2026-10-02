@@ -154,10 +154,22 @@ export function seed(conn, { negocio = DEFAULT_NEGOCIO, admin = DEFAULT_ADMIN, n
   return { seeded: true, reason: 'seeded', ...ids, unresolved: needsPassword ? ['users.password'] : [] }
 }
 
-/** Refuse a tenant-less write rather than defaulting `negocio_id` to something (SEC-6). */
+/**
+ * Refuse a tenant-less write rather than defaulting `negocio_id` to something (SEC-6).
+ *
+ * THE CODE IS THE CONTRACT AND THE MESSAGE IS FOR A PERSON. `TENANT_REQUIRED` is what every caller
+ * and every test asserts on, so it does not change. The MESSAGE is what `mensajeDeError` hands to
+ * the renderer, which puts it in a toast — and it used to read "negocioId is required; S4 resolves
+ * it from the local marker": English, a column name, and a build-phase label that means nothing
+ * to somebody standing at the till. It now says what happened and what to do about it.
+ */
 export function requireTenant(negocioId) {
   if (negocioId === null || negocioId === undefined) {
-    throw new IpcError('TENANT_REQUIRED', 400, 'negocioId is required; S4 resolves it from the local marker')
+    throw new IpcError(
+      'TENANT_REQUIRED',
+      400,
+      'No hay un negocio asignado a esta sesión. Volvé a iniciar sesión e intentá de nuevo.'
+    )
   }
   return negocioId
 }

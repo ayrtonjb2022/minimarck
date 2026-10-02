@@ -833,11 +833,10 @@ describe('el negocio, y quién tiene derecho a preguntar por él', () => {
     registerReportesHandlers(registry, { conn: t.conn })
     const sales = registry.resolve('reportes', 'sales')
 
-    // THE CODE, NOT THE MESSAGE. `IpcError` puts `TENANT_REQUIRED` in `.code` and a human sentence
-    // in `.message` — `negocioId is required; S4 resolves it from the local marker` — so a
-    // `toThrow(/TENANT_REQUIRED/)` matches nothing and proves nothing. The code is also the part
-    // that actually crosses the IPC boundary, so it is the part worth asserting: this is what the
-    // renderer would see.
+    // THE CODE, NOT THE MESSAGE. `IpcError` puts `TENANT_REQUIRED` in `.code` and a Spanish sentence
+    // for the owner in `.message`, so a `toThrow(/TENANT_REQUIRED/)` matched a string the
+    // renderer never sees and proved nothing about the contract. The code is the part that
+    // crosses the IPC boundary and the part callers branch on.
     expect(falla(() => sales({ fechaInicio: '2026-01-01', fechaFin: '2026-01-31' }, { actorId: null })).code).toBe(
       'TENANT_REQUIRED'
     )

@@ -64,9 +64,16 @@ describe('the tenant marker is checked at the door', () => {
     const deudor = insertarDeudor(t, { negocioId: t.negocioId, usuarioId: t.usuarioId })
     // A handler that forgot `requireTenant` would answer with the whole customer list of whatever
     // tenant the context happened to resolve to. These are the two shapes of that mistake.
-    expect(() => deudores('list')({}, {})).toThrowError(/negocioId is required/i)
-    expect(() => deudores('payments')({ deudorId: deudor.id }, {})).toThrowError(/negocioId is required/i)
-    expect(() => deudores('addPayment')({ deudorId: deudor.id, monto: '10' }, {})).toThrowError(/negocioId is required/i)
+    // THE CODE, NOT THE MESSAGE: `mensajeDeError` shows `.message` to an owner, so it is written
+    // for them, but the contract callers branch on is `TENANT_REQUIRED` and that is what belongs
+    // in an assertion here.
+    expect(() => deudores('list')({}, {})).toThrowError(expect.objectContaining({ code: 'TENANT_REQUIRED' }))
+    expect(() => deudores('payments')({ deudorId: deudor.id }, {})).toThrowError(
+      expect.objectContaining({ code: 'TENANT_REQUIRED' })
+    )
+    expect(() => deudores('addPayment')({ deudorId: deudor.id, monto: '10' }, {})).toThrowError(
+      expect.objectContaining({ code: 'TENANT_REQUIRED' })
+    )
   })
 
   it('never answers another tenant about a debtor that is not theirs', () => {
