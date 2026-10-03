@@ -434,4 +434,24 @@ describe('bootstrapDatabase', () => {
       rmSync(base, { recursive: true, force: true })
     }
   })
+
+  it('toma un respaldo previo a migrar cuando hay migraciones pendientes', async () => {
+    const base = tempBase()
+    const migDir = migrationsDirWith({
+      '001_init.sql': MINIMAL_SCHEMA
+    })
+    const db = bootstrapDatabase({ userDataPath: base, env: {}, migrationsDir: migDir, tables: [] })
+    try {
+      const { listarRespaldos } = await import('../../src/main/db/backup.js')
+      const backups = listarRespaldos(db.paths)
+      expect(backups.total).toBeGreaterThan(0)
+      const pre = backups.filas.find(f => f.motivo === 'antes-de-migrar')
+      expect(pre).toBeDefined()
+    } finally {
+      db.conn.checkpointAndClose()
+      rmSync(base, { recursive: true, force: true })
+      rmSync(migDir, { recursive: true, force: true })
+    }
+  })
+
 })

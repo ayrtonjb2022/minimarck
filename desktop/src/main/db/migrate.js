@@ -157,8 +157,17 @@ function assertConsistent(conn, migrations, applied) {
 /**
  * Apply every pending migration in ascending order. Idempotent by construction: a second call
  * with an unchanged directory applies nothing and returns the same `userVersion`.
+ *
+ * `antesDeAplicar` is the pre-migration snapshot hook, and it is OPTIONAL on purpose: a runner
+ * test does not have to own a backup directory to prove a rollback, and every existing caller
+ * keeps working unchanged. It is called ONCE — not once per file — and ONLY when something is
+ * actually pending, because a launch that changes nothing has nothing to protect and a snapshot
+ * per launch would fill the disk with copies of the same file.
  */
-export function migrate(conn, { dir, now = () => new Date().toISOString() } = {}) {
+export function migrate(
+  conn,
+  { dir, now = () => new Date().toISOString(), antesDeAplicar } = {}
+) {
   ensureLedger(conn)
   const migrations = readMigrations(dir)
   const applied = appliedMigrations(conn)
@@ -193,6 +202,13 @@ export function migrate(conn, { dir, now = () => new Date().toISOString() } = {}
   // database that could be read but not written.
   for (const m of migrations) {
     for (const table of tablesCreatedBy(m.sql)) conn.allowTable(table)
+  }
+
+  // The parachute, and the ONLY place it is fired. After `assertConsistent`/`assertNoGaps` — a run
+  // that refuses changes nothing, so it must not leave a snapshot behind — and before the first
+  // `BEGIN IMMEDIATE`, so what gets archived is the pre-migration state and not a half-applied one.
+  if (pending.length > 0 && typeof antesDeAplicar === 'function') {
+    antesDeAplicar({ versiones: pending.map((m) => m.version) })
   }
 
   for (const m of pending) {

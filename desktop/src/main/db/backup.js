@@ -45,11 +45,18 @@ const EXT_MANIFIESTO = '.db.json'
 /**
  * The `schema_migrations` ledger of a database file, read WITHOUT opening it for writing.
  *
- * `readOnly: true` fails on a WAL database with `SQLITE_CANTOPEN` (the connection cannot create the
- * `-shm` index), and a backup is a plain rollback-journal file with no sidecars, so read-only works
- * here and a normal open would work too. Read-only is chosen because this runs against archives and
- * against the LIVE file during verification: the one thing a verification must not do is write to
- * what it is verifying.
+ * Read-only is chosen because this runs against archives and against the LIVE file during
+ * verification: the one thing a verification must not do is write to what it is verifying.
+ *
+ * IT IS NOT SIDECAR-FREE. An earlier comment here said a backup is "a plain rollback-journal file
+ * with no sidecars, so read-only works here", and MEASURED, both halves of that are wrong:
+ *   - `SQLITE_CANTOPEN` is what read-only hits on a WAL database when the DIRECTORY is not
+ *     writable, because the connection cannot build the `-shm` index. It is not about WAL itself.
+ *   - `copyFileSync` and SQLite's own `backup()` both leave the archive in `journal_mode=wal` — the
+ *     journal mode is a property of the FILE, not of how it was copied. So this very read CREATES
+ *     `<id>.db-wal` and `<id>.db-shm` beside every snapshot: four files instead of two. They are
+ *     never listed (`listarRespaldos` filters on `.endsWith('.db')`) and `podarRespaldos` deletes
+ *     them with the archive.
  */
 function leerLedger(archivo) {
   let db
@@ -73,7 +80,14 @@ function leerLedger(archivo) {
     const tablas = db
       .prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
       .get().n
-    const ventas = db.prepare('SELECT COUNT(*) AS n FROM ventas').get().n
+    // Counted ONLY when the table exists. A brand-new file — a first launch, where `001` is still
+    // pending — has no `ventas`, and the unconditional query this replaced reported a perfectly
+    // good copy of an empty database as unreadable. `null` is a fact, not a failure.
+    const hayVentas =
+      db
+        .prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'ventas'")
+        .get().n > 0
+    const ventas = hayVentas ? db.prepare('SELECT COUNT(*) AS n FROM ventas').get().n : null
     return { ok: true, userVersion, migraciones, tablas, ventas }
   } catch (err) {
     return { ok: false, motivo: `ilegible o incompleto: ${err.message}` }
@@ -96,6 +110,36 @@ function tamanoDe(archivo) {
     return statSync(archivo).size
   } catch {
     return null
+  }
+}
+
+/**
+ * THE SIDECARS an archive's read leaves on disk, deleted with the archive they belong to.
+ *
+ * `leerLedger` opens every snapshot it verifies in read-only and the copied file is still in
+ * `journal_mode=wal`, so that read creates `<id>.db-wal` and `<id>.db-shm` beside it. They were never
+ * catalogued (`listarRespaldos` filters on `.endsWith('.db')`), which is why deleting only the
+ * `.db` + `.db.json` left two files per snapshot FOREVER.
+ *
+ * ── WHY THIS EXISTS AS A HELPER AND NOT AS A LOOP IN THREE PLACES ──────────────────────────────
+ *
+ * Because the leak was closed in `podarRespaldos` first and left open in the REJECTION paths, which
+ * is the worst possible shape: a prune walking the catalog did not cover it either, because a
+ * rejected archive never reaches the catalog — the catalog is precisely what the rejection prevents.
+ * Three copies of this loop is how the next one drifts, so the reason lives here once.
+ *
+ * TOLERANT on purpose, and it is never what decides anything: the sidecars may not exist (the
+ * archive was never opened, or the read checkpointed them away), and a sidecar held by a scanner on
+ * Windows is reaped when it lets go. Neither is a reason to fail an operation that has ALREADY
+ * deleted the archive, and neither may be reported as a failed deletion.
+ */
+function borrarSidecars(archivo) {
+  for (const sufijo of ['-wal', '-shm']) {
+    try {
+      rmSync(`${archivo}${sufijo}`, { force: true })
+    } catch {
+      /* the archive it belonged to is already deleted */
+    }
   }
 }
 
@@ -243,6 +287,12 @@ export async function crearRespaldo(conn, paths, { motivo = 'manual', nota = nul
     } catch {
       /* the refusal below is the result */
     }
+    // AND THE SIDECARS, outside the `try`. Step 3 above OPENED the archive, and that read left
+    // `<id>.db-wal` and `<id>.db-shm` beside it — measured, not inferred. Deleting only the `.db`
+    // would strand both, with no manifest and no catalog row that could ever reap them. This is the
+    // shape the refusal has, so there is no `podarRespaldos` pass coming: it walks the CATALOG, and a
+    // rejected archive never gets an entry.
+    borrarSidecars(destino)
     throw new IpcError(
       'RESPALDO_ILEGIBLE',
       500,
@@ -261,6 +311,195 @@ export async function crearRespaldo(conn, paths, { motivo = 'manual', nota = nul
     tablas: verificado.tablas,
     ventas: verificado.ventas,
     motivo,
+    nota: nota === null ? null : String(nota).slice(0, 500)
+  }
+  escribirManifiesto(paths, id, fila)
+  return fila
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// respaldarAntesDeMigrar — NOT an operation. There is no IPC contract for it.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * `user_version` and the applied-migration ledger of the OPEN connection, read before the copy.
+ *
+ * `schema_migrations` exists by the time the hook fires: `migrate()` calls `ensureLedger` on its
+ * first statement and the snapshot runs from inside it.
+ */
+function ledgerDe(conn) {
+  return {
+    userVersion: conn.userVersion(),
+    migraciones: conn.db
+      .prepare('SELECT version, checksum FROM schema_migrations ORDER BY version')
+      .all()
+      .map((r) => ({ version: Number(r.version), checksum: r.checksum }))
+  }
+}
+
+/** Two ledgers agree when they list the same versions with the same checksums, in the same order. */
+function mismoLedger(a, b) {
+  if (!a || !b) return false
+  if (a.length !== b.length) return false
+  return a.every((m, i) => m.version === b[i].version && m.checksum === b[i].checksum)
+}
+/**
+ * The pre-migration snapshot: the parachute, taken automatically before the first pending
+ * migration runs. It is the only backup this file produces that nobody asked for.
+ *
+ * ── WHY IT IS NOT `crearRespaldo`, MEASURED RATHER THAN ASSUMED ─────────────────────────────────
+ *
+ * `VACUUM INTO` is the synchronous snapshot the original design named, and **this connection
+ * refuses it**: `VACUUM INTO` internally ATTACHes the destination, action 24 is `SQLITE_ATTACH`,
+ * and the authorizer denies it unconditionally — `connection.js:62,80`, "one machine, one process,
+ * one database file". Probed, it comes back `ERR_SQLITE_ERROR 23` / "authorization denied".
+ * Weakening that deny to enable a backup would trade a security control for a convenience.
+ *
+ * `crearRespaldo` is the right idea with the wrong shape here: `node:sqlite`'s online `backup()`
+ * is a promise, `migrate()` is synchronous, and `TxRunner` refuses a thenable body by design
+ * (`connection.js:114`). Making bootstrap `async` to await it would ripple into the `tienda()`
+ * fixture that ~20 spec files share. So this runs **at startup, where nothing else is writing**,
+ * with only synchronous calls.
+ *
+ * ── THE ORDER, AND WHAT EACH STEP BUYS ────────────────────────────────────────────────────────
+ *
+ *   1. `wal_checkpoint(TRUNCATE)` — the `.db` becomes self-contained. Unlike `crearRespaldo`, a
+ *      failure here is FATAL rather than warned about: the online API reads through the WAL
+ *      correctly, a plain `copyFileSync` does not, and continuing would archive a file that is
+ *      missing committed sales. Refusing to migrate is the right answer to that.
+ *   2. `copyFileSync` to `<id>.db.parcial` — a crash leaves a file `listarRespaldos` ignores,
+ *      because it does not end in `.db` and there is no manifest beside it.
+ *   3. `renameSync` — atomic on NTFS, same directory, same volume. The archive is there or it is
+ *      not; there is never a half-written file under a name that claims to be a backup.
+ *   4. `leerLedger` — the copy is read back. A backup that was never read is a file with a hopeful
+ *      name.
+ *   5. `escribirManifiesto` LAST — so a manifest can never describe an archive that is not there.
+ *
+ * ── WHY THE COPY IS COMPARED AGAINST THE SOURCE AND NOT AGAINST A TABLE COUNT ──────────────────
+ *
+ * `integrity_check: ok` proves the archive is a valid SQLite file; it cannot tell "the database we
+ * are about to migrate" from "some other valid database". So `user_version` and the
+ * `schema_migrations` ledger are compared with the live connection's. That comparison is also what
+ * makes the snapshot correct on a first launch, where the file is empty and there is nothing to
+ * count.
+ *
+ * ── WHAT RESTORING IT COSTS, AND WHY THAT IS FINE ─────────────────────────────────────────────
+ *
+ * Reverting a schema slice is always enough for the app to RUN — extra columns are ignored and a
+ * trigger that never fires refuses nothing. This snapshot is only needed to UNDO the DDL, and
+ * restoring it costs every sale rung up since the migration ran. That asymmetry is the argument for
+ * taking it, and the reason it is a slice of its own that lands before any schema change.
+ *
+ * NOTE, because somebody will read it as a bug: `verificarRespaldo` reports this archive as NOT
+ * restorable by this build — its `faltantes` names the migration it predates — and
+ * `restaurarRespaldo` refuses it. That is correct. This build's code expects the new schema, and
+ * undoing a migration is an out-of-band file copy with the app closed, not a click in Respaldos.
+ */
+export function respaldarAntesDeMigrar(conn, paths, { nota = null } = {}) {
+  // NO `requireTenant` here, for the same reason `crearRespaldo` has none: this is the whole FILE.
+  // A migration is not scoped to a business, and the operation that has to work when the data
+  // layer is already wrong must not depend on resolving a business out of it.
+  if (!paths?.backupDir) {
+    throw new IpcError('RESPALDO_SIN_CARPETA', 500, 'No hay carpeta de respaldos resuelta')
+  }
+  if (!existsSync(paths.dbFile)) {
+    throw new IpcError('RESPALDO_SIN_BASE', 409, 'Todavía no hay una base de datos para respaldar')
+  }
+
+  // 1. The WAL goes into the `.db` before anything is copied out of it.
+  try {
+    conn.pragma('wal_checkpoint(TRUNCATE)')
+  } catch (err) {
+    throw new IpcError(
+      'RESPALDO_CHECKPOINT_FALLIDO', 500,
+      `No se pudo consolidar el WAL antes de migrar: ${err.message}`
+    )
+  }
+
+  // What the archive has to turn out to be, read from the source rather than assumed afterwards.
+  const esperado = ledgerDe(conn)
+
+  mkdirSync(paths.backupDir, { recursive: true })
+  const ahora = new Date()
+  // `nombreNuevo`'s id and NOT a new `antes-de-migrar-` prefix, which is what the design sketched.
+  // `exigirId` accepts `minimarck-<iso>` and nothing else, so a second prefix would make the one
+  // snapshot that matters impossible to NAME through the very operations that list, verify and
+  // restore backups. `motivo` below is the field whose job is to tell two archives apart.
+  const id = nombreNuevo(ahora)
+  const destino = path.join(paths.backupDir, `${id}${EXT}`)
+
+  // Idempotence: if there's already a pre-migration snapshot for the SAME source user_version and
+  // the same migration ledger (the state before applying this pending batch), reuse it instead of
+  // creating another copy. A second snapshot of the identical pre-migration state is redundant.
+  try {
+    const existentes = listarRespaldos(paths).filas
+    for (const f of existentes) {
+      if (f.motivo !== 'antes-de-migrar') continue
+      try {
+        const v = verificarRespaldo(paths, f.id)
+        if (v.ok && v.userVersion === esperado.userVersion) {
+          const leidoExistente = leerLedger(rutaDeArchivo(paths, f.id))
+          if (leidoExistente.ok && mismoLedger(leidoExistente.migraciones, esperado.migraciones)) {
+            return f
+          }
+        }
+      } catch {
+        // ignore this entry and try others
+      }
+    }
+  } catch {
+    // if listing/verifying fails, proceed to create a new snapshot
+  }
+
+  const parcial = `${destino}.parcial`
+
+  // 2 + 3. Copy to a name nobody lists, then make it real in one atomic step.
+  copyFileSync(paths.dbFile, parcial)
+  renameSync(parcial, destino)
+
+  // 4. Read it back — and read back the RIGHT thing.
+  const leido = leerLedger(destino)
+  const motivo =
+    !leido.ok
+      ? leido.motivo
+      : leido.userVersion !== esperado.userVersion
+        ? `el archivo tiene user_version ${leido.userVersion} y la base abierta tiene ${esperado.userVersion}`
+        : !mismoLedger(leido.migraciones, esperado.migraciones)
+          ? 'el archivo tiene un historial de migraciones distinto al de la base abierta'
+          : null
+  if (motivo) {
+    // Deleted rather than left under a name that claims it is a backup: `listarRespaldos` would
+    // offer it, and a file that is not the pre-migration state is the one thing this whole
+    // snapshot exists to make impossible.
+    try {
+      rmSync(destino, { force: true })
+    } catch {
+      /* the refusal below is the result */
+    }
+    // AND THE SIDECARS, outside the `try`, same as `crearRespaldo`. Step 4 above opened the copy and
+    // that read left `<id>.db-wal` and `<id>.db-shm` beside it. WORSE HERE THAN ANYWHERE ELSE: this
+    // snapshot is taken immediately before an `ALTER`, so a rejection means the database was ALREADY
+    // suspect — and the two orphans would sit in the backup folder with no manifest and no catalog
+    // row, which is the one thing `podarRespaldos` cannot reach.
+    borrarSidecars(destino)
+    throw new IpcError(
+      'RESPALDO_ILEGIBLE', 500,
+      `El respaldo previo a la migración no sirve: ${motivo}`
+    )
+  }
+
+  // 5. The manifest, last, in the SAME shape `crearRespaldo` writes — so the catalog treats both
+  // identically and only `motivo` says why this one is there.
+  const fila = {
+    id,
+    archivo: `${id}${EXT}`,
+    creadoAt: ahora.toISOString(),
+    bytes: tamanoDe(destino),
+    checksum: hashDe(destino),
+    userVersion: leido.userVersion,
+    tablas: leido.tablas,
+    ventas: leido.ventas,
+    motivo: 'antes-de-migrar',
     nota: nota === null ? null : String(nota).slice(0, 500)
   }
   escribirManifiesto(paths, id, fila)
@@ -596,6 +835,12 @@ export function podarRespaldos(paths, { conservar = 10 } = {}) {
       // not abort the rest of the prune. Reported per file so the screen can say which one stayed.
       fallidos.push({ id: fila.id, motivo: err.message })
     }
+
+    // THE SIDECARS, deleted with the archive they belong to. `borrarSidecars` carries the reason;
+    // what matters HERE is that the call is OUTSIDE the `try` above: the archive is already gone,
+    // which is what this operation promised, and a sidecar locked by a scanner is reaped when it
+    // lets go — it must not turn a deleted archive into a `fallidos` entry.
+    borrarSidecars(archivo)
   }
 
   return {

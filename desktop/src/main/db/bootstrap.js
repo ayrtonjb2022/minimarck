@@ -2,6 +2,7 @@ import { createPathResolver } from './paths.js'
 import { openDatabase } from './connection.js'
 import { migrate } from './migrate.js'
 import { seed } from './seed.js'
+import { respaldarAntesDeMigrar } from './backup.js'
 
 /**
  * Startup, in the order the design requires: resolve paths once -> open -> migrate -> seed.
@@ -32,7 +33,17 @@ export function bootstrapDatabase({
   let migration
   let seeded
   try {
-    migration = migrate(conn, { dir: paths.migrationsDir, now })
+    // The parachute is wired HERE and not in main, because `conn` and `paths` are both local to
+    // this function and this is the one place both exist. `migrate` fires it exactly once, and
+    // only when a migration is actually pending.
+    migration = migrate(conn, {
+      dir: paths.migrationsDir,
+      now,
+      antesDeAplicar: ({ versiones }) =>
+        respaldarAntesDeMigrar(conn, paths, {
+          nota: `copia automática previa a la migración ${versiones.join(', ')}`
+        })
+    })
     seeded = seed(conn, { now })
   } catch (err) {
     // A failed migration must not leave an open connection behind: main would then run
