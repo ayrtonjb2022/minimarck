@@ -676,3 +676,85 @@ that added `5.4.01 Otros Gastos` without a migration.
 
 ---
 
+## 22. Backups exist only on the desktop — a new capability, not a port
+
+**Web**: there is no backup operation. The web's `OPS` mirror in the contract declares
+`backup: [create, list, restore, verify, prune]` as desktop-only, alongside `platform`, `db` and
+`importer`, and the web has no equivalent because it has no file to back up: the shop's data lives
+in a MySQL server somebody else administers, and "restore" is a DBA's job.
+
+**Desktop**: all five are implemented against SQLite's own online backup API
+(`node:sqlite`'s module-level `backup()`, which the S0 spike proved works and produces a readable
+file). So this is the one group in the contract with nothing to converge with — there is no
+behaviour to match and no divergence to record beyond that.
+
+**What is worth recording is the three decisions inside it**, because each one is a place a
+plausible implementation is wrong:
+
+- **A backup CHECKPOINTS FIRST.** The live file is in WAL mode, so committed rows can be in
+  `minimarck.db-wal` while the `.db` is behind. Copying the bare file is the exact failure S1's
+  negative control measures: *"after a hard kill, copying only the .db LOSES EVERYTHING"*.
+- **A restore takes an automatic backup of the state it is about to replace.** Restoring the wrong
+  archive is the only operation in this app with no undo, so "undo" is one more restore from
+  `restaurado.seguridad`. The spec proves the net catches by falling into it.
+- **A restore reopens the connection IN PLACE.** Every handler was registered with the same
+  connection object, so replacing the object would leave every closure on a dead handle and NOT
+  replacing the handle would leave them reading a file that is no longer there. `connection.js`
+  gained `reopen()` for this call and nothing else, and `conn.db` became a getter because a
+  snapshot of it would be the closed handle.
+
+**Also new, and the first of its kind here**: `backup:progress` is the first event this app has ever
+emitted. The preload has exposed `on(topic, cb)` and the contract has declared four topics since
+S0; nothing sent one until now, because nothing until now took long enough to be worth reporting.
+
+**Status**: new capability. Owner: `db`.
+
+---
+
+## 23. The operator session is not in the backup — whether it survives a restore is undecided, not designed
+
+**Web**: the session is a bearer token in `localStorage`, read back on every page load
+(`client.js` reads `token` from storage and sends it as `Authorization: Bearer`; `AuthContext.jsx`
+initialises from the same key). It outlives a reload, and it is validated server-side on each
+request, so the web's answer to "who is operating" survives anything the browser does to the page.
+
+**Desktop**: there is no token to persist. `session.js:42` keeps `activo` as a plain variable in
+MAIN, deliberately not on disk, so "nobody is auto-logged in" is a structural property rather than a
+promise. The session is therefore **not part of the backup**: there is nothing in the file to restore
+it from, and `backup.js` never consults or rebuilds it. Grepping the restore path for `session`
+returns nothing.
+
+**The interesting part is what actually happens**, because it is not a designed outcome:
+
+- `session.js:52-72` — `actual()` re-reads the `users` row on every call, through `conn.db`. After a
+  restore, `conn.db` is the archive (`connection.js`'s `reopen()` swaps the handle behind a stable
+  object identity), so the open session is silently re-validated against the **restored** file.
+- Archive predates the operator, or predates their activation: the row is gone or inactive, so
+  `actual()` nulls `activo` and the next business call fails `ACTOR_REQUERIDO`. The operator is at
+  the sign-in panel after the reload.
+- Archive contains the operator, active: they stay signed in, with no credential check, because the
+  id held in memory still resolves. Nothing on screen says a restore happened to their session.
+- Archive contains the operator, but the live file had them deactivated *after* the archive was
+  taken: restoring it puts `activo = 1` back and `actual()` honours it. **A restore can re-activate a
+  deactivated employee, and a running session keeps working.** That follows from the two pieces of
+  code above; neither was written to allow it.
+
+**Why this is recorded and not fixed here**: all three branches are consequences, not decisions.
+There is no line in `backup.js` that consults the session and none in `session.js` that knows a
+restore happened, so "does the session survive a restore" has no answer that anybody chose. The
+honest statement of the divergence is the negative one: the desktop's session lives in MAIN's memory
+while the web's lives in the browser's storage, so a file-level operation the web cannot perform
+carries an identity consequence the web never has to reason about.
+
+**Consequence for the UI**: `Respaldos.jsx` already tells the operator to reload the window
+deliberately, and warns that *"si el respaldo es más viejo que tu usuario, al recargar vas a tener
+que entrar de nuevo"* — which is the first branch above, and is honest as far as it goes. It does
+not mention the third branch, because from the screen's side the third branch is indistinguishable
+from the first.
+
+**Status**: open, needs a decision. Owner: `auth` (with `db`, since `backup:restore` is the caller).
+The decision is whether a restore should close the session unconditionally — the conservative
+choice, and the one that makes the reload instruction unconditionally true — or whether
+re-validation against the archive is acceptable and the re-activation case is a bug to fix in
+`session.js` instead.
+

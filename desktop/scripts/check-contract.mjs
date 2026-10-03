@@ -30,6 +30,7 @@ import { registerProveedoresHandlers } from '../src/main/ipc/proveedores.js'
 import { registerComprasHandlers } from '../src/main/ipc/compras.js'
 import { registerReportesHandlers, registerDashboardHandlers } from '../src/main/ipc/reportes.js'
 import { registerContabilidadHandlers } from '../src/main/ipc/contabilidad.js'
+import { registerBackupHandlers } from '../src/main/ipc/backup.js'
 
 // A real migrated+seeded database, so the repositories behind those handlers are real too.
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'minimarck-contract-'))
@@ -67,6 +68,10 @@ registerDashboardHandlers(registry, { conn: db.conn })
 // `cuentas.repo.js` — so the report said the ledger was out of contract while the shop was keeping
 // one. Registering them here is what lets the gate say whether they answer.
 registerContabilidadHandlers(registry, { conn: db.conn })
+// The five backups. The subject of this group is the FILE, so it takes the connection and the
+// resolved paths rather than a request context — and a no-op `send`, because this gate has no
+// window to emit progress to.
+registerBackupHandlers(registry, { conn: db.conn, paths: db.paths, send: () => {} })
 
 const contract = []
 for (const [group, ops] of Object.entries(OPS)) for (const op of ops) contract.push({ group, op })

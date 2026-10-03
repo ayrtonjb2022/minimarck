@@ -19,6 +19,7 @@ import { registerProveedoresHandlers } from './ipc/proveedores.js'
 import { registerComprasHandlers } from './ipc/compras.js'
 import { registerReportesHandlers, registerDashboardHandlers } from './ipc/reportes.js'
 import { registerContabilidadHandlers } from './ipc/contabilidad.js'
+import { registerBackupHandlers } from './ipc/backup.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
 import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { createSession } from './auth/session.js'
@@ -431,6 +432,24 @@ async function main() {
   // The ledger's own screen. Fifteen operations that were in the contract from the start and had
   // no handler until now, which meant a shop carried a double-entry journal it could not open.
   registerContabilidadHandlers(registry, { conn: db.conn })
+  // The backups. The only group handed the CONNECTION and the PATHS rather than a request context,
+  // because its subject is the file: `backup.create` copies it, `backup.restore` replaces it, and
+  // `backup.restore` reopens the connection in place so every closure above keeps working.
+  //
+  // `send` is the first real event emitter this app has had. The preload has exposed `on(topic, cb)`
+  // and the contract has declared four topics since S0; nothing ever sent one, because nothing until
+  // now took long enough to be worth reporting. A backup does.
+  registerBackupHandlers(registry, {
+    conn: db.conn,
+    paths: db.paths,
+    send: (topic, payload) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        // `isDestroyed` because a window closed mid-backup is a normal event on a till somebody is
+        // shutting down, and `webContents.send` on a destroyed window throws.
+        if (!w.isDestroyed()) w.webContents.send(`minimarck:evt:${topic}`, payload)
+      }
+    }
+  })
   installIpc(registry, identity, session)
 
   const win = createWindow({ isPackaged, rendererUrl: url })

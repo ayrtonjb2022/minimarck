@@ -190,18 +190,37 @@ function walSize(walFile) {
  * thing that can change the file's behaviour.
  */
 export function openDatabase(dbFile, { tables = [], walFile, pragmas = {}, defensive = true } = {}) {
-  const db = new DatabaseSync(dbFile)
   const p = { ...DEFAULT_PRAGMAS, ...pragmas }
+  // MUTABLE, and it is the ONLY mutable binding in this module. `reopen()` replaces the handle
+  // after a restore swaps the file underneath it; every other reference in the app is to this
+  // closure, which is why the object identity of the returned connection must never change.
+  let db = null
+  let txRunner = null
 
-  db.exec(`PRAGMA journal_mode = ${p.journalMode}`)
-  db.exec(`PRAGMA foreign_keys = ${p.foreignKeys}`)
-  db.exec(`PRAGMA busy_timeout = ${p.busyTimeoutMs}`)
-
+  /**
+   * The write allowlist, in the OUTER scope on purpose.
+   *
+   * It was inside `abrirHandle` in the first draft of `reopen`, which made `allowTable` and
+   * `allowedTables` reference a set that no longer existed — a `ReferenceError` on the very first
+   * migration, because the runner calls `allowTable` as it creates each table. The set describes
+   * the SCHEMA rather than the handle, so it survives a reopen and there is exactly one of it.
+   */
   const allowed = new Set(tables)
-  db.setAuthorizer(createAuthorizer(allowed))
-  if (defensive) db.enableDefensive(true)
 
-  const txRunner = new TxRunner(db)
+  /** Open the handle and apply every pragma, authorizer and mode. Shared by open and reopen. */
+  function abrirHandle() {
+    const handle = new DatabaseSync(dbFile)
+    handle.exec(`PRAGMA journal_mode = ${p.journalMode}`)
+    handle.exec(`PRAGMA foreign_keys = ${p.foreignKeys}`)
+    handle.exec(`PRAGMA busy_timeout = ${p.busyTimeoutMs}`)
+
+    handle.setAuthorizer(createAuthorizer(allowed))
+    if (defensive) handle.enableDefensive(true)
+    return handle
+  }
+
+  db = abrirHandle()
+  txRunner = new TxRunner(db)
   let open = true
 
   function userVersion() {
@@ -260,8 +279,50 @@ export function openDatabase(dbFile, { tables = [], walFile, pragmas = {}, defen
     }
   }
 
+  /**
+   * Close the current handle and open a NEW one on the same path — for a restore.
+   *
+   * ── WHY THIS EXISTS AND WHY IT IS THE ONLY MUTATION OF `db` ──────────────────────────────────
+   *
+   * `backup.restore` replaces the database FILE. Every handler in the app was registered with THIS
+   * connection object, so the swap is only visible if the object stays the same and its handle
+   * changes — which is exactly what this does and the only thing it is for. Replacing the object
+   * would leave every closure pointing at a dead handle; NOT replacing the handle would leave them
+   * reading a file that is no longer there (SQLite keeps its own descriptor), and the next write
+   * would corrupt the restored database.
+   *
+   * THE ALLOWLIST SURVIVES. `allowed` is the set the migration runner populated, and it describes
+   * the SCHEMA, not the contents — a restored file has the same migrations (the restore verifies
+   * that before touching anything), so re-deriving the set here would be a chance to get it wrong.
+   *
+   * NOT IDEMPOTENT AND NOT SAFE TO CALL MID-TRANSACTION, deliberately: there is nothing sensible to
+   * do about either, and a `reopen` during an open transaction would commit or roll back the
+   * caller's work depending on where SQLite's close lands. It throws instead of guessing.
+   */
+  function reopen() {
+    if (txRunner.depth > 0) {
+      throw new Error('reopen() no se puede llamar dentro de una transacción')
+    }
+    try {
+      db.close()
+    } catch {
+      // The handle may already be closed by a checkpointAndClose; opening a second one on the same
+      // path is correct either way, and the caller's restore has already verified the file.
+    }
+    db = abrirHandle()
+    txRunner = new TxRunner(db)
+    open = true
+    return { reabierto: true, userVersion: userVersion() }
+  }
+
   return {
-    db,
+    // A GETTER, not a snapshot. This property used to be `db` captured at construction, which is
+    // correct until `reopen()` swaps the handle — and then every caller holding `conn.db` would be
+    // reading the connection that was just closed. The one place that matters most is the backup
+    // code itself: `backup()` runs against `conn.db` and must see the handle that is open NOW.
+    get db() {
+      return db
+    },
     // Callable, not a runner object. The design's repository contract is `ctx.tx(fn)`, so
     // `conn.tx(fn)` matching it exactly removes a whole class of confusion: an earlier draft
     // exposed the runner as `conn.tx` and every call site then needed `conn.tx.tx(fn)`, which
@@ -281,6 +342,7 @@ export function openDatabase(dbFile, { tables = [], walFile, pragmas = {}, defen
       return this
     },
     allowedTables: () => Object.freeze([...allowed]),
-    checkpointAndClose
+    checkpointAndClose,
+    reopen
   }
 }
