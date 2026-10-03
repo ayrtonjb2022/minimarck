@@ -1,0 +1,1642 @@
+@import "tailwindcss";
+
+/* Tailwind v4 ships `dark:` bound to the OS `prefers-color-scheme` media query.
+   That is the wrong trigger for a till: the operator picks a theme with the
+   button, and the app must not disagree with itself just because the shop's
+   monitor happens to report a light OS. Rebinding the variant to the SAME class
+   the CSS-variable palette uses is what keeps `dark:bg-*` utilities and the
+   hand-written Kanagawa rules in step — one source of truth, one class. */
+@custom-variant dark (&:where(.mm-theme-dark, .mm-theme-dark *));
+
+@theme {
+  --color-primary-50: #eef0f5;
+  --color-primary-100: #d4d8e3;
+  --color-primary-200: #b8bcd0;
+  --color-primary-300: #9ca0bd;
+  --color-primary-400: #8084aa;
+  --color-primary-500: #89b4fa;
+  --color-primary-600: #74c7ec;
+  --color-primary-700: #587cb0;
+  --color-primary-800: #45699c;
+  --color-primary-900: #325688;
+}
+
+:root {
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+  --ctp-surface0: #313244;
+  --ctp-surface1: #45475a;
+  --ctp-surface2: #585b70;
+  --ctp-overlay0: #6c7086;
+  --ctp-overlay1: #7f849c;
+  --ctp-overlay2: #9399b2;
+  --ctp-subtext0: #a6adc8;
+  --ctp-subtext1: #bac2de;
+  --ctp-text: #cdd6f4;
+  --ctp-lavender: #b4befe;
+  --ctp-blue: #89b4fa;
+  --ctp-sapphire: #74c7ec;
+  --ctp-sky: #89dceb;
+  --ctp-teal: #94e2d5;
+  --ctp-green: #a6e3a1;
+  --ctp-yellow: #f9e2af;
+  --ctp-peach: #fab387;
+  --ctp-maroon: #eba0ac;
+  --ctp-red: #f38ba8;
+  --ctp-mauve: #cba6f7;
+  --ctp-pink: #f5c2e7;
+  --ctp-flamingo: #f2cdcd;
+  --ctp-rosewater: #f5e0dc;
+
+  --kanagawa-bg: var(--ctp-base);
+  --kanagawa-bg-alt: var(--ctp-mantle);
+  --kanagawa-bg-dim: var(--ctp-crust);
+  --kanagawa-fg: var(--ctp-text);
+  --kanagawa-fg-muted: var(--ctp-subtext0);
+  --kanagawa-comment: var(--ctp-overlay0);
+  --kanagawa-border: var(--ctp-surface0);
+  --kanagawa-blue: var(--ctp-blue);
+  --kanagawa-green: var(--ctp-green);
+  --kanagawa-red: var(--ctp-red);
+  --kanagawa-orange: var(--ctp-peach);
+  --kanagawa-yellow: var(--ctp-yellow);
+  --kanagawa-purple: var(--ctp-mauve);
+  --kanagawa-cyan: var(--ctp-sky);
+  --kanagawa-sage: var(--ctp-teal);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--kanagawa-bg-dim);
+  color: var(--kanagawa-fg);
+}
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  width: 260px;
+  background: var(--kanagawa-bg);
+  color: var(--kanagawa-fg);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow: hidden;
+  z-index: 100;
+  transition: all 0.3s ease;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  row-gap: 2px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--kanagawa-fg);
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--kanagawa-border);
+  cursor: pointer;
+}
+
+.sidebar-brand i { color: var(--kanagawa-blue); font-size: 22px; }
+
+/* El nombre del negocio va en su propia línea y no pegado al de la app. En 260px de ancho no
+   entran los dos, y un nombre de negocio recortado a la mitad no dice qué negocio es — que es
+   justo lo que un cajero tiene que confirmar cuando hay dos cajas sobre la misma máquina.
+   `flex-basis: 100%` lo manda a la fila de abajo; `span` a propósito, porque las reglas de
+   `.sidebar.collapsed .sidebar-brand span` que lo esconde al plegar ya lo alcanzan solo.
+   El degradado de abajo hay que DESACTIVARLO aquí y no alcanza con poner `color`: el texto de
+   `.sidebar-brand span` se pinta con `-webkit-text-fill-color`, que gana sobre `color` sin
+   importar la especificidad, así que sin estas dos líneas el nombre del negocio salía con el
+   degradado azul→mauve de la marca en 11px en lugar de la línea apagada que le corresponde. */
+.sidebar-brand span.sidebar-shop {
+  flex-basis: 100%;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--kanagawa-fg-muted);
+  background: none;
+  -webkit-background-clip: border-box;
+  -webkit-text-fill-color: var(--kanagawa-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-brand span {
+  background: linear-gradient(135deg, var(--ctp-blue), var(--ctp-mauve));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.rol-selector {
+  background: var(--kanagawa-bg-alt);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+}
+
+.rol-selector label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--kanagawa-comment);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.rol-selector select {
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--kanagawa-border);
+  background: var(--kanagawa-bg);
+  color: var(--kanagawa-fg);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+}
+
+.rol-selector select:focus { border-color: var(--kanagawa-blue); }
+
+.rol-badge-display {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 12px;
+  border-radius: 30px;
+  margin-top: 4px;
+}
+
+.rol-badge-display.admin { background: rgba(243, 139, 168, 0.15); color: var(--ctp-red); }
+.rol-badge-display.supervisor { background: rgba(137, 180, 250, 0.15); color: var(--ctp-blue); }
+.rol-badge-display.vendedor { background: rgba(166, 227, 161, 0.15); color: var(--ctp-green); }
+
+/* ===== SIDEBAR MENU ===== */
+/* `overflow-y` porque la barra es de altura fija (`height: 100vh`) y el menú es `flex: 1`: con
+   catorce entradas y cuatro títulos de sección, en una ventana baja el menú tiene que poder
+   desplazarse DENTRO de la barra. Sin esto se salía por abajo del `overflow: hidden` del
+   `.sidebar` y las entradas de abajo quedaban recortadas sin scroll para recuperarlas. */
+.sidebar-menu { list-style: none; flex: 1; overflow-y: auto; overflow-x: hidden; }
+
+.sidebar-menu .sub-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--kanagawa-comment);
+  padding: 10px 14px 4px 14px;
+  font-weight: 600;
+}
+
+.sidebar-menu li {
+  padding: 7px 14px;
+  margin: 1px 0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--kanagawa-comment);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+/* EL `<a>` DE VERDAD, ADENTRO DEL `<li>`.
+   React Router dibuja un `<a href>` y le pone la clase `active` a ÉL, mientras que toda esta
+   sección de la hoja está escrita sobre el `<li>`. Por eso el markup de `AppShell.jsx` emite el
+   `<li>` como hijo directo de `.sidebar-menu` y deja que el router dibuje el enlace adentro: las
+   reglas de acá siguen aplicando al `<li>` sin tocarlas. Lo único que hay que declarar es que el
+   `<a>` ocupe la fila entera y herede color y tipografía, o el texto saldría con el azul por
+   defecto del navegador, en negrita y desalineado del ícono. */
+.sidebar-menu li > a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+}
+
+/* Plegada, la fila es sólo el ícono. El centrado era `justify-content` del `<li>` sobre un hijo
+   que ahora es el `<a>`, así que se corre acá — sin esto el ícono queda pegado a la izquierda de
+   una fila que ya no tiene texto que lo justifique. */
+.sidebar.collapsed .sidebar-menu li > a { justify-content: center; }
+
+.sidebar-menu li i { width: 20px; text-align: center; font-size: 15px; }
+
+.sidebar-menu li:hover:not(.disabled) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+
+/* ── EL INDICADOR DE LA PÁGINA ACTIVA ───────────────────────────────────────────────────────────
+   Estas dos reglas son UNA sola cosa escrita de dos formas. `li.active` es la que tenía el
+   diseño desde siempre; la que se suma es `li:has(> a.active)`, que es la que se ve hoy, porque
+   la clase `active` la pone el router sobre el `<a>` que dibuja y no sobre el `<li>` que lo
+   envuelve.
+
+   POR QUÉ `:has()` Y NO CALCULAR LA CLASE EN JAVASCRIPT con `useLocation()`. Porque "cuál es la
+   sección activa" tiene que tener UNA sola fuente de verdad, y esa fuente es el `NavLink`: él ya
+   resuelve la coincidencia con sus propias reglas (`end`, prefijos, parámetros). Reimplementar
+   esa comparación en el componente obligaría a mantener dos criterios de "estoy en esta pantalla"
+   que hoy coinciden y mañana no tienen por qué: el día que exista `/ventas/:folio`, la versión
+   en JavaScript marcaría cero filas o dos, y ninguna prueba del repositorio lo detectaría.
+
+   Electron 44 es Chromium 140, y `:has()` llegó en Chrome 105: en la app real la barrita se ve.
+   Y si algún día la hoja se carga en un motor sin `:has()`, lo que se pierde es SÓLO la
+   barrita — la fila sigue resaltada por el fondo — que es el mismo modo de falla silenciosa que
+   `tests/ui/iconos.spec.js` documenta para un ícono sin glifo: se ve deliberado y no está. */
+.sidebar-menu li.active,
+.sidebar-menu li:has(> a.active) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+
+.sidebar-menu li.active::before,
+.sidebar-menu li:has(> a.active)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 4px;
+  background: var(--kanagawa-blue);
+  border-radius: 0 4px 4px 0;
+}
+
+.sidebar-menu li .badge-count {
+  margin-left: auto;
+  background: var(--kanagawa-blue);
+  color: #181616;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 30px;
+  font-weight: 600;
+}
+
+.sidebar-menu li .badge-count.warning { background: var(--kanagawa-orange); }
+.sidebar-menu li .badge-count.danger { background: var(--kanagawa-red); }
+
+.sidebar-menu li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.sidebar-menu li.disabled i { opacity: 0.4; }
+
+.sidebar-menu li .lock-icon { margin-left: auto; font-size: 12px; color: var(--kanagawa-fg-muted); }
+
+/* ===== SIDEBAR FOOTER ===== */
+.sidebar-footer {
+  border-top: 1px solid var(--kanagawa-border);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--kanagawa-fg-muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-footer .avatar-mini {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--kanagawa-blue); color: #181616;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; flex-shrink: 0;
+}
+
+.sidebar-footer .user-info { flex: 1; }
+.sidebar-footer .user-info .name { color: var(--kanagawa-fg); font-weight: 600; font-size: 12px; }
+.sidebar-footer .user-info .email { font-size: 10px; color: var(--kanagawa-fg-muted); }
+.sidebar-footer .user-info .role-text { font-size: 10px; color: var(--kanagawa-comment); font-weight: 500; }
+
+/* ===== MAIN ===== */
+.main { flex: 1; padding: 24px 32px 32px 32px; overflow-x: auto; min-width: 0; }
+
+.main--pos { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ===== TOPBAR ===== */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+}
+
+.topbar-left h1 { font-size: 26px; font-weight: 700; color: var(--kanagawa-fg); }
+.topbar-left .breadcrumb { font-size: 13px; color: var(--kanagawa-comment); margin-top: 2px; }
+.topbar-left .breadcrumb span { color: var(--kanagawa-fg-muted); }
+
+.topbar-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+.topbar-right .badge-store {
+  background: var(--kanagawa-bg-alt); border-radius: 30px; padding: 6px 16px;
+  font-size: 13px; font-weight: 600; color: var(--kanagawa-fg);
+  display: flex; align-items: center; gap: 6px;
+}
+
+.topbar-right .badge-store i { color: var(--kanagawa-green); font-size: 10px; }
+
+.topbar-right .btn-header {
+  background: transparent; border: none; font-size: 20px;
+  color: var(--kanagawa-fg-muted); cursor: pointer; position: relative;
+  padding: 6px; border-radius: 8px; transition: 0.2s;
+}
+
+.topbar-right .btn-header:hover { background: var(--kanagawa-bg-alt); }
+
+.topbar-right .btn-header .dot {
+  position: absolute; top: 2px; right: 2px; background: var(--kanagawa-red);
+  width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--kanagawa-bg);
+}
+
+.topbar-right .notif-badge {
+  position: absolute; top: -4px; right: -4px; background: var(--kanagawa-red);
+  color: #181616; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px;
+  border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--kanagawa-bg); line-height: 1;
+}
+
+.topbar-right .avatar-main {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: var(--kanagawa-blue); color: #181616;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 16px; cursor: pointer; transition: 0.2s;
+}
+
+.topbar-right .avatar-main:hover { transform: scale(1.05); }
+
+/* ===== PAGES ===== */
+.page { display: none; animation: fadeIn 0.3s ease; }
+.page.active { display: block; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== STATS CARDS ===== */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px; margin-bottom: 28px;
+}
+
+.stat-card {
+  background: var(--kanagawa-bg-alt); border-radius: 16px; padding: 20px 22px;
+  border: 1px solid var(--kanagawa-border);
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3); transform: translateY(-2px);
+}
+
+.stat-card .label {
+  font-size: 13px; font-weight: 500; color: var(--kanagawa-fg-muted);
+  display: flex; justify-content: space-between; align-items: center;
+}
+
+.stat-card .label i { font-size: 18px; color: var(--kanagawa-comment); }
+
+.stat-card .value {
+  font-size: 30px; font-weight: 700; margin: 8px 0 4px 0; color: var(--kanagawa-fg);
+}
+
+.stat-card .change { font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.stat-card .change.up { color: var(--kanagawa-green); }
+.stat-card .change.down { color: var(--kanagawa-red); }
+
+/* ===== GRID ===== */
+.grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 28px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 28px; }
+
+/* ===== CARDS ===== */
+.card {
+  background: var(--kanagawa-bg-alt); border-radius: 16px; padding: 20px 22px;
+  border: 1px solid var(--kanagawa-border); transition: 0.2s;
+}
+.card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+
+.card .card-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+}
+
+.card .card-header h3 { font-size: 16px; font-weight: 600; }
+
+.card .card-header .tag {
+  font-size: 12px; background: var(--kanagawa-bg); padding: 4px 12px;
+  border-radius: 30px; color: var(--kanagawa-comment);
+}
+
+.card .card-header .link {
+  font-size: 13px; color: var(--kanagawa-blue); font-weight: 500;
+  text-decoration: none; cursor: pointer;
+}
+
+/* ===== BAR CHART ===== */
+.bar-chart {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  height: 150px; gap: 8px; padding-top: 10px;
+}
+
+.bar-item { display: flex; flex-direction: column; align-items: center; flex: 1; }
+
+.bar {
+  width: 100%; background: var(--kanagawa-blue); border-radius: 6px 6px 0 0;
+  min-height: 8px; max-height: 130px; transition: 0.3s; position: relative;
+}
+
+.bar:hover { opacity: 0.8; transform: scaleY(1.02); transform-origin: bottom; }
+
+.bar-item .day { font-size: 11px; color: var(--kanagawa-fg-muted); margin-top: 6px; font-weight: 500; }
+.bar-item .val { font-size: 11px; font-weight: 600; color: var(--kanagawa-fg); margin-bottom: 4px; }
+
+/* ===== PRODUCT LIST ===== */
+.product-list { list-style: none; margin-top: 4px; }
+
+.product-list li {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--kanagawa-border); font-size: 14px;
+}
+
+.product-list li:last-child { border: none; }
+
+.product-list .product-info { display: flex; align-items: center; gap: 10px; }
+
+.product-list .product-info .color-dot {
+  width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+}
+
+.product-list .name { font-weight: 500; }
+
+.product-list .qty {
+  background: var(--kanagawa-bg); padding: 2px 12px; border-radius: 30px;
+  font-weight: 600; font-size: 12px; color: var(--kanagawa-fg);
+}
+
+/* ===== TABLES ===== */
+.table-container {
+  background: var(--kanagawa-bg-alt); border-radius: 16px; border: 1px solid var(--kanagawa-border);
+  overflow-x: auto; margin-bottom: 20px;
+}
+
+.table-container .table-header {
+  padding: 16px 22px; border-bottom: 1px solid var(--kanagawa-border);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 10px;
+}
+
+.table-container .table-header h3 { font-size: 16px; font-weight: 600; }
+
+.table-container .table-header .actions {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+
+.table-container .table-header .actions input {
+  padding: 6px 14px; border: 1px solid var(--kanagawa-border); border-radius: 8px;
+  font-size: 13px; outline: none; transition: 0.2s; background: var(--kanagawa-bg); color: var(--kanagawa-fg);
+}
+
+.table-container .table-header .actions input:focus {
+  border-color: var(--kanagawa-blue); box-shadow: 0 0 0 3px rgba(126,156,216,0.15);
+}
+
+.btn-primary {
+  background: var(--kanagawa-blue); color: #181616; border: none; padding: 8px 18px;
+  border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  transition: 0.2s; display: inline-flex; align-items: center; gap: 6px;
+}
+
+.btn-primary:hover { background: var(--ctp-sapphire); transform: translateY(-1px); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.btn-secondary {
+  background: var(--kanagawa-bg); color: var(--kanagawa-fg); border: 1px solid var(--kanagawa-border);
+  padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 13px;
+  cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px;
+}
+
+.btn-secondary:hover { background: var(--kanagawa-bg-alt); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-success { background: var(--kanagawa-green); color: #181616; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+.btn-success:hover { background: var(--ctp-teal); }
+
+.btn-danger { background: var(--kanagawa-red); color: #181616; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+.btn-danger:hover { background: var(--ctp-maroon); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+table th {
+  text-align: left; padding: 12px 22px; background: var(--kanagawa-bg);
+  font-weight: 600; color: var(--kanagawa-fg-muted); font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+
+table td { padding: 12px 22px; border-bottom: 1px solid var(--kanagawa-border); color: var(--kanagawa-fg); }
+table tr:last-child td { border: none; }
+table tr:hover td { background: var(--kanagawa-bg); }
+
+/* ===== BADGES ===== */
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 30px; }
+.status.paid { background: rgba(166, 227, 161, 0.15); color: var(--ctp-green); }
+.status.pending { background: rgba(249, 226, 175, 0.15); color: var(--ctp-yellow); }
+.status.cancelled { background: rgba(243, 139, 168, 0.15); color: var(--ctp-red); }
+.status.active-s { background: rgba(166, 227, 161, 0.15); color: var(--ctp-green); }
+.status.inactive-s { background: rgba(243, 139, 168, 0.15); color: var(--ctp-red); }
+
+.status .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.status.paid .dot, .status.active-s .dot { background: var(--kanagawa-green); }
+.status.pending .dot { background: var(--kanagawa-orange); }
+.status.cancelled .dot, .status.inactive-s .dot { background: var(--kanagawa-red); }
+
+.rol-badge { font-size: 11px; font-weight: 600; padding: 3px 12px; border-radius: 30px; display: inline-block; }
+.rol-badge.admin { background: rgba(243, 139, 168, 0.15); color: var(--ctp-red); }
+.rol-badge.supervisor { background: rgba(137, 180, 250, 0.15); color: var(--ctp-blue); }
+.rol-badge.vendedor { background: rgba(166, 227, 161, 0.15); color: var(--ctp-green); }
+
+/* ===== POS SEARCH BAR ===== */
+/* A TODO EL ANCHO DE LA PANTALLA, ARRIBA DE LOS PANELES. La caja dejó de ser hija de
+   `.pos-left` (o sea, de la mitad izquierda) y pasó a ser hija directa de `.pos-container`, con
+   `.pos-split` — la fila productos/carrito — debajo. Los márgenes laterales repiten el padding
+   que ya tenía `.pos-left`, para que el input no quede pegado al borde de la grilla ni al del
+   carrito. */
+.pos-search-bar {
+  background: var(--kanagawa-bg-alt);
+  border-radius: 14px;
+  border: 1px solid var(--ctp-surface1);
+  padding: 16px 18px;
+  margin: 0 16px 12px 20px;
+  flex: 0 0 auto;      /* ← que la fila larga NO se estire: mide lo que su contenido mide */
+}
+
+.pos-search-input {
+  width: 100%;
+  padding: 12px 34px 12px 36px;
+  border: 2px solid var(--ctp-surface0);
+  border-radius: 10px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--kanagawa-fg);
+  background: var(--kanagawa-bg);
+  outline: none;
+  transition: 0.2s;
+}
+
+.pos-search-input:focus {
+  border-color: var(--kanagawa-blue);
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.15);
+}
+
+.pos-categories {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-top: 10px;
+  padding-bottom: 4px;
+}
+
+.pos-cat-btn {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--ctp-surface0);
+  cursor: pointer;
+  background: var(--kanagawa-bg);
+  color: var(--kanagawa-fg-muted);
+  transition: 0.2s;
+}
+
+.pos-cat-btn:hover {
+  border-color: var(--kanagawa-fg-muted);
+}
+
+.pos-cat-btn.active {
+  background: var(--kanagawa-blue);
+  color: var(--ctp-crust);
+  border-color: var(--kanagawa-blue);
+  font-weight: 700;
+}
+
+/* ===== POS ===== */
+/* EL CONTENEDOR AHORA ES UNA COLUMNA, Y ESTA ES LA RAZÓN DE QUE MIDA `100%` Y NO `100vh`.
+   Antes era una fila de dos paneles (`height: 100vh`) porque era hijo DIRECTO del body: `100vh`
+   era exactamente el alto disponible. Dentro del cromo ya no lo es — vive en `.main`, que
+   encima le pone 56px de padding y tiene la barra de pantalla encima — y `100vh` ahí significaba
+   "más alto que la ventana": el POS empujaba el scroll de la página en vez de vivir dentro de
+   ella. Con `.pos-container` en columna, la barra de búsqueda ocupa una fila propia arriba y
+   `.pos-split` se queda con lo que sobra. */
+.pos-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;       /* ← No permite scroll en este contenedor */
+  flex: 1;
+  min-height: 0;
+  background: var(--ctp-crust);
+}
+
+/* LA COLA QUE QUEDÓ ABAJO. Esta fila no existía antes: sin ella no había forma de que la
+   búsqueda ocupara el ancho completo sin empujar el carrito fuera de la pantalla. Es la que
+   sigue siendo fila; `.pos-container` es la que pasó a ser columna. */
+.pos-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── PANEL IZQUIERDO: Productos ── */
+/* `height: auto` y no `100vh`: dentro de `.pos-split` el alto lo decide la fila, y un `100vh`
+   fijo haría que este panel se pasara de la base apenas la barra de búsqueda le saque espacio.
+   `min-height: 0` viene a impedir eso mismo: sin él un hijo flexible no puede encogerse por
+   debajo de su contenido, y el `overflow: hidden` de arriba no alcanza para recortarlo. */
+.pos-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;       /* ← No permite scroll en el panel */
+  padding: 16px 16px 16px 20px;
+}
+
+/* SOLO el contenedor de productos hace scroll */
+.pos-left .pos-scroll {
+  flex: 1;                /* ← Ocupa el espacio restante */
+  overflow-y: auto;       /* ← Scroll SOLO aquí */
+  min-height: 0;          /* ← Necesario para que flex funcione */
+  padding-right: 4px;
+}
+
+.pos-left .pos-scroll::-webkit-scrollbar,
+.pos-cart .cart-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pos-left .pos-scroll::-webkit-scrollbar-thumb,
+.pos-cart .cart-scroll::-webkit-scrollbar-thumb {
+  background: var(--kanagawa-border);
+  border-radius: 10px;
+}
+
+.pos-products {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+/* La pantalla de PRIMERA VEZ: catálogo vacío en una instalación nueva.
+   Sin esto el POS mostraba un bloque con una lupa y la frase «No se encontraron productos», que es
+   exactamente el mensaje equivocado para un catálogo que todavía no existe. */
+.pos-primera-vez {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 320px;
+  padding: 32px 16px;
+  color: var(--kanagawa-comment);
+}
+.pos-primera-vez h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--kanagawa-fg);
+}
+.pos-primera-vez-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1.5px solid var(--ctp-surface1);
+  border-radius: 12px;
+  background: var(--kanagawa-bg-alt);
+  max-width: 480px;
+}
+
+.pos-product-card {
+  background: var(--kanagawa-bg-alt);
+  border: 1.5px solid var(--ctp-surface1);
+  border-radius: 12px;
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.pos-product-card:hover { border-color: var(--kanagawa-blue); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+
+.pos-product-card.en-carrito {
+  border-color: var(--kanagawa-blue);
+  background: rgba(137, 180, 250, 0.08);
+  box-shadow: 0 0 0 1.5px rgba(137, 180, 250, 0.3);
+}
+
+.pos-product-card.stock-bajo {
+  border-color: var(--ctp-peach);
+  background: rgba(250, 179, 135, 0.06);
+}
+
+.pos-product-card .icon-product { font-size: 28px; color: var(--kanagawa-blue); margin-bottom: 6px; }
+.pos-product-card .icon-product img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+.pos-product-card .name { font-weight: 700; font-size: 14px; color: var(--kanagawa-fg); line-height: 1.3; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pos-product-card .price { color: var(--kanagawa-blue); font-weight: 800; font-size: 16px; margin-bottom: 2px; }
+.pos-product-card .stock { font-size: 12px; font-weight: 600; color: var(--kanagawa-fg-muted); }
+.pos-product-card .stock.low { color: var(--kanagawa-orange); }
+.pos-product-card .stock.out { color: var(--kanagawa-red); }
+
+.badge-cart-qty {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--kanagawa-blue);
+  color: #181616;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+/* ── PANEL DERECHO: Carrito ── */
+/* Mismo cambio de altura que `.pos-left`, y por el mismo motivo: ahora los dos paneles son
+   hermanos dentro de `.pos-split` y el alto lo decide la fila. */
+.pos-cart {
+  width: 420px;
+  min-width: 360px;
+  flex-shrink: 0;
+  background: var(--kanagawa-bg-alt);
+  border-left: 1px solid var(--kanagawa-border);
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;       /* ← No permite scroll en el panel */
+  padding: 16px 18px;
+}
+
+/* EL POS NECESITA QUE `.main` LO DEJE MEDIR EL ALTO QUE LE SOBRA.
+   `.main` es un hijo flexible de `.app-layout` y por defecto su alto lo fija SU contenido. El
+   POS, en cambio, quiere ocupar todo el espacio disponible y no generar scroll: si se lo pide
+   con `height: 100%` sin más, el navegador resuelve un porcentaje contra un padre de alto
+   indeterminado y cae a `auto`.
+
+   Por eso esta regla convierte a `.main` en columna SÓLO cuando lo que monta es el POS, y no
+   en las otras trece pantallas: un `.main` flexible cambiaría el comportamiento de todas, y
+   cada una mide su altura como necesita. `:has()` es lo que permite apuntar al caso sin pedirle
+   a `puntoDeVenta.jsx` que envuelva su pantalla en otro `div` sólo para poder ser identificado;
+   Chromium 140 lo soporta, y si algún día no lo soportara lo que se pierde es el alto completo
+   del POS, no la navegación. Es el mismo modo de falla que la barra activa de la lateral. */
+.main:has(> .pos-container) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pos-cart .cart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--kanagawa-border);
+}
+
+.pos-cart .cart-header .badge-cart {
+  background: var(--kanagawa-blue);
+  color: #181616;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* SOLO los items del carrito hacen scroll */
+.pos-cart .cart-scroll {
+  flex: 1;                /* ← Ocupa el espacio restante */
+  overflow-y: auto;       /* ← Scroll SOLO aquí */
+  min-height: 0;          /* ← Necesario para que flex funcione */
+  padding: 8px 4px 8px 0;
+}
+
+/* ── Footer del carrito: SIEMPRE VISIBLE ── */
+.pos-cart .cart-footer {
+  flex-shrink: 0;
+  border-top: 2px solid var(--kanagawa-border);
+  padding-top: 14px;
+  background: var(--kanagawa-bg-alt);
+}
+
+.pos-cart .cart-total {
+  display: flex; justify-content: space-between;
+  font-size: 24px; font-weight: 800;
+  margin-bottom: 14px;
+}
+.pos-cart .cart-total .amount { color: var(--kanagawa-blue); }
+
+.pos-cart .cart-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+}
+
+.pos-cart .cart-actions .btn-secondary {
+  border: 1px solid var(--kanagawa-border);
+  background: transparent;
+  color: var(--kanagawa-fg-muted);
+  border-radius: 12px;
+  padding: 14px 12px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.pos-cart .cart-actions .btn-secondary:hover {
+  background: rgba(243, 139, 168, 0.08);
+  border-color: var(--kanagawa-red);
+  color: var(--kanagawa-red);
+}
+
+.pos-cart .cart-actions .btn-success {
+  background: linear-gradient(135deg, var(--kanagawa-green), #4ade80);
+  border: none;
+  border-radius: 12px;
+  padding: 14px 20px;
+  font-weight: 700;
+  font-size: 16px;
+  color: #0a0a0a;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 20px rgba(166, 227, 161, 0.2);
+}
+.pos-cart .cart-actions .btn-success:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 8px 32px rgba(166, 227, 161, 0.35);
+}
+.pos-cart .cart-actions .btn-success:active { transform: scale(0.97); }
+.pos-cart .cart-actions .btn-success:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.pos-cart .cart-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid var(--kanagawa-border);
+}
+
+.pos-cart .cart-item:last-child { border-bottom: none; }
+
+.pos-cart .cart-item .item-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+
+.pos-cart .cart-item .item-info .details { flex: 1; min-width: 0; }
+.pos-cart .cart-item .item-info .details .name { font-weight: 700; font-size: 15px; color: var(--kanagawa-fg); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pos-cart .cart-item .item-info .details .unit { font-size: 13px; color: var(--kanagawa-fg-muted); margin: 3px 0 0 0; font-weight: 500; }
+
+.pos-cart .cart-item .qty-control { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+.pos-cart .cart-item .qty-control button {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 1.5px solid var(--kanagawa-border); background: var(--ctp-base); cursor: pointer;
+  font-weight: 700; font-size: 14px; color: var(--kanagawa-fg);
+  display: flex; align-items: center; justify-content: center; transition: 0.2s;
+}
+
+.pos-cart .cart-item .qty-control button:hover { background: var(--kanagawa-border); }
+
+.pos-cart .cart-item .qty-control input {
+  width: 48px; padding: 4px 0; text-align: center; font-weight: 700; font-size: 15px;
+  color: var(--kanagawa-fg); background: transparent;
+  border: 1px solid transparent; border-radius: 6px; outline: none;
+}
+
+.pos-cart .cart-item .qty-control input:focus { border-color: var(--kanagawa-blue); }
+
+.pos-cart .cart-item .item-total {
+  font-weight: 800; font-size: 15px; color: var(--kanagawa-blue);
+  margin-left: 12px; white-space: nowrap; flex-shrink: 0;
+}
+
+.pos-cart .cart-item .remove-btn {
+  background: none; border: none; color: var(--kanagawa-red);
+  cursor: pointer; padding: 6px 8px; border-radius: 6px;
+  transition: 0.2s; opacity: 0.6; margin-left: 4px; font-size: 14px;
+}
+
+.pos-cart .cart-item .remove-btn:hover { opacity: 1; background: rgba(243, 139, 168, 0.1); }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .pos-cart { width: 340px; min-width: 280px; }
+}
+
+@media (max-width: 768px) {
+  /* `.pos-container` ya es columna, así que lo que se apila ahora es `.pos-split`: son los dos
+     paneles los que pasan uno debajo del otro. */
+  .pos-split { flex-direction: column; }
+  .pos-left { flex: 1; padding: 12px; min-height: 0; height: 50vh; }
+  .pos-cart {
+    width: 100%; min-width: unset; height: 50vh;
+    border-left: none; border-top: 1px solid var(--kanagawa-border);
+    padding: 12px 14px; flex-shrink: 0;
+  }
+  .pos-products { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+  .pos-cart .cart-total { font-size: 20px; }
+}
+
+@media (max-width: 480px) {
+  .pos-cart .cart-actions { grid-template-columns: 1fr; }
+  .pos-cart .cart-actions .btn-success { padding: 12px; font-size: 15px; }
+  .pos-products { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 6px; }
+  .pos-product-card { padding: 8px 4px; }
+  .pos-product-card .name { font-size: 10px; }
+  .pos-cart .cart-item .qty-control input { width: 36px; font-size: 13px; }
+}
+
+/* ===== FORMS ===== */
+.form-group { margin-bottom: 16px; }
+
+.form-group label {
+  display: block; font-weight: 500; font-size: 13px; color: var(--kanagawa-fg-muted); margin-bottom: 4px;
+}
+
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 14px; border: 2px solid var(--kanagawa-border);
+  border-radius: 8px; font-size: 14px; font-family: inherit;
+  color: var(--kanagawa-fg); background: var(--kanagawa-bg);
+  transition: 0.2s; outline: none;
+}
+.form-group input:hover, .form-group select:hover, .form-group textarea:hover {
+  border-color: var(--kanagawa-fg-muted);
+}
+.form-group input::placeholder, .form-group textarea::placeholder { color: var(--kanagawa-comment); }
+
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  border-color: var(--kanagawa-blue); background: var(--kanagawa-bg); box-shadow: 0 0 0 3px rgba(126,156,216,0.15);
+}
+
+.form-group input.error, .form-group select.error, .form-group textarea.error {
+  border-color: var(--kanagawa-red);
+}
+
+.form-group input:disabled, .form-group select:disabled, .form-group textarea:disabled {
+  background: var(--kanagawa-bg-alt); color: var(--kanagawa-comment); cursor: not-allowed;
+}
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* Filter bar inputs (standalone, outside .form-group) */
+.filter-input {
+  padding: 8px 16px; border: 2px solid var(--kanagawa-border); border-radius: 8px;
+  font-size: 14px; font-family: inherit; color: var(--kanagawa-fg); background: var(--kanagawa-bg);
+  outline: none; transition: 0.2s;
+}
+.filter-input:focus { border-color: var(--kanagawa-blue); box-shadow: 0 0 0 3px rgba(126,156,216,0.15); }
+.filter-input:hover { border-color: var(--kanagawa-fg-muted); }
+
+/* Input-field class (used in ProductForm, SaleForm, etc.) */
+.input-field {
+  width: 100%; padding: 10px 14px; border: 2px solid var(--kanagawa-border);
+  border-radius: 8px; font-size: 14px; font-family: inherit;
+  color: var(--kanagawa-fg); background: var(--kanagawa-bg);
+  transition: 0.2s; outline: none;
+}
+.input-field:focus { border-color: var(--kanagawa-blue); background: var(--kanagawa-bg); box-shadow: 0 0 0 3px rgba(126,156,216,0.15); }
+.input-field:hover { border-color: var(--kanagawa-fg-muted); }
+select.input-field { cursor: pointer; }
+
+/* ===== SETTINGS ===== */
+.settings-grid { display: grid; grid-template-columns: 260px 1fr; gap: 24px; }
+
+.settings-menu {
+  background: var(--kanagawa-bg-alt); border-radius: 16px; border: 1px solid var(--kanagawa-border);
+  padding: 8px; height: fit-content;
+}
+
+.settings-menu li {
+  list-style: none; padding: 10px 16px; border-radius: 8px;
+  cursor: pointer; font-weight: 500; font-size: 14px; color: var(--kanagawa-fg-muted);
+  transition: 0.2s; display: flex; align-items: center; gap: 10px;
+}
+
+.settings-menu li:hover { background: var(--kanagawa-bg); }
+.settings-menu li.active { background: rgba(137, 180, 250, 0.15); color: var(--kanagawa-blue); }
+.settings-menu li.disabled-settings { opacity: 0.4; cursor: not-allowed; }
+
+.settings-content { background: var(--kanagawa-bg-alt); border-radius: 16px; border: 1px solid var(--kanagawa-border); padding: 24px; }
+
+/* ===== ACCESS DENIED ===== */
+.restricted-banner {
+  background: rgba(249, 226, 175, 0.1); border: 1px solid var(--kanagawa-orange); border-radius: 12px;
+  padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px; color: var(--kanagawa-yellow); font-size: 14px; font-weight: 500;
+}
+
+.restricted-banner i { font-size: 20px; color: var(--kanagawa-orange); }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1200px) {
+  .pos-container { grid-template-columns: 1fr; }
+  .pos-cart { position: static; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .settings-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 992px) {
+  .sidebar { width: 72px; padding: 16px 10px; }
+  .sidebar-brand span, .sidebar-menu li span, .sidebar-menu .sub-label,
+  .sidebar-footer .user-info, .sidebar-menu li .badge-count,
+  .sidebar-menu li .lock-icon, .rol-selector label, .rol-selector select { display: none; }
+  .rol-selector { padding: 8px; display: flex; justify-content: center; }
+  .rol-selector select { display: none; }
+  .sidebar-brand { justify-content: center; padding-bottom: 12px; margin-bottom: 16px; }
+  .sidebar-menu li { justify-content: center; padding: 10px; }
+  .sidebar-menu li i { font-size: 20px; }
+  .sidebar-footer { justify-content: center; }
+  .main { padding: 16px; }
+  .grid-3 { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 576px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .topbar { flex-direction: column; align-items: flex-start; }
+  .topbar-right { width: 100%; justify-content: space-between; }
+  .pos-products { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+  .table-container .table-header { flex-direction: column; align-items: stretch; }
+  .table-container .table-header .actions { flex-wrap: wrap; }
+}
+
+/* ===== DESKTOP COLLAPSE ===== */
+.sidebar.collapsed { width: 72px; padding: 16px 10px; }
+.sidebar.collapsed .sidebar-brand span,
+.sidebar.collapsed .sidebar-menu li span,
+.sidebar.collapsed .sidebar-menu .sub-label,
+.sidebar.collapsed .sidebar-footer .user-info,
+.sidebar.collapsed .sidebar-menu li .badge-count,
+.sidebar.collapsed .sidebar-menu li .lock-icon { display: none; }
+.sidebar.collapsed .sidebar-brand { justify-content: center; padding-bottom: 12px; margin-bottom: 16px; }
+.sidebar.collapsed .sidebar-brand i { font-size: 28px; }
+.sidebar.collapsed .sidebar-menu li { justify-content: center; padding: 10px; }
+.sidebar.collapsed .sidebar-menu li i { width: auto; font-size: 20px; }
+.sidebar.collapsed .sidebar-footer { justify-content: center; padding: 12px 0; }
+.sidebar.collapsed .sidebar-footer .avatar-mini { width: 32px; height: 32px; font-size: 14px; }
+
+/* Ahora es un `<button>` y no un `<div onClick>` — el operador llega con el teclado igual que con
+   el mouse, y esto no lo pliega a mano. Un `<button>` trae fondo, borde y tipografía de sistema
+   que hay que dejar afuera para que se vea como el control que ya estaba dibujado; el
+   `width` compensa los márgenes negativos de arriba, que existen para que el `border-top` llegue
+   de borde a borde de la barra y no termine 18px antes. */
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  cursor: pointer;
+  color: var(--kanagawa-fg-muted);
+  border-top: 1px solid var(--kanagawa-border);
+  margin: 4px -18px 0;
+  transition: color 0.2s;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  width: calc(100% + 36px);
+  font: inherit;
+  font-size: 12px;
+}
+.sidebar-collapse-btn:hover {
+  color: var(--kanagawa-fg);
+  background: var(--kanagawa-bg-alt);
+}
+.sidebar.collapsed .sidebar-collapse-btn {
+  margin: 4px -10px 0;
+  width: calc(100% + 20px);
+}
+
+@media (max-width: 992px) {
+  .sidebar-collapse-btn { display: none; }
+  .sidebar.collapsed { width: 72px; padding: 16px 10px; }
+  .sidebar.collapsed .sidebar-brand span,
+  .sidebar.collapsed .sidebar-menu li span,
+  .sidebar.collapsed .sidebar-menu .sub-label,
+  .sidebar.collapsed .sidebar-footer .user-info,
+  .sidebar.collapsed .sidebar-menu li .badge-count,
+  .sidebar.collapsed .sidebar-menu li .lock-icon { display: none; }
+  .sidebar.collapsed .sidebar-brand { justify-content: center; padding-bottom: 12px; margin-bottom: 16px; }
+  .sidebar.collapsed .sidebar-menu li { justify-content: center; padding: 10px; }
+  .sidebar.collapsed .sidebar-menu li i { font-size: 20px; }
+  .sidebar.collapsed .sidebar-footer { justify-content: center; }
+}
+
+/* ===== MOBILE TOGGLE =====
+   ESTE BLOQUE NO SE EJECUTA NUNCA EN ESTA APLICACIÓN, Y SE SABE POR QUÉ.
+
+   `.sidebar-toggle` (el botón flotante que abre el cajón) y `.sidebar-overlay` los dibujaba el
+   `Sidebar.jsx` viejo, que no monta nadie; ahora el que monta la barra lateral es `AppShell.jsx`
+   y no dibuja ninguno de los dos. No es un olvido: la ventana de `src/main/window.js` tiene
+   `minWidth: 1024`, así que el viewport nunca baja de 1024px y esta media query nunca se
+   cumple. Si algún día el piso de la ventana baja de 992, el menú se vuelve un cajón fuera de
+   pantalla SIN forma de abrirlo, y hay que montar el `.sidebar-toggle` junto con su estado
+   antes de bajar ese número. La hoja está escrita para ese día; el markup todavía no. */
+.sidebar-toggle { display: none; position: fixed; bottom: 20px; right: 20px; background: var(--kanagawa-blue); color: #181616; border: none; width: 56px; height: 56px; border-radius: 50%; font-size: 24px; cursor: pointer; box-shadow: 0 4px 16px rgba(137,180,250,0.3); z-index: 200; align-items: center; justify-content: center; }
+
+@media (max-width: 992px) {
+  .sidebar-toggle { display: flex; }
+  .sidebar { position: fixed; left: -280px; top: 0; height: 100vh; transition: left 0.3s ease; box-shadow: 4px 0 20px rgba(0,0,0,0.4); }
+  .sidebar.open { left: 0; }
+  .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 99; }
+  .sidebar-overlay.active { display: block; }
+}
+
+/* ===== SPINNER ANIMATION ===== */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== TOAST OVERRIDE ===== */
+.Toastify__toast { border-radius: 12px !important; font-family: 'Inter', sans-serif !important; font-size: 14px !important; background: var(--kanagawa-bg-alt) !important; color: var(--kanagawa-fg) !important; border: 1px solid var(--kanagawa-border) !important; }
+.Toastify__toast--success { border-left: 4px solid var(--kanagawa-green) !important; }
+.Toastify__toast--error { border-left: 4px solid var(--kanagawa-red) !important; }
+.Toastify__toast--warning { border-left: 4px solid var(--kanagawa-orange) !important; }
+
+/* ==================================================================
+   THEMES — app-wide, one class on <html>, not scoped to the POS.
+
+   The web app hung the light palette on `.pos-theme-light`, a class the POS
+   applied to its own container, so switching to light repainted the till and
+   left the navbar, the sales list and the tables dark. The palette is now two
+   classes on the document element, so it moves the whole app at once and the
+   same class drives Tailwind's `dark:` variant above.
+   ================================================================== */
+
+/* Dark is also the unclassed default in :root, so a first paint before this
+   stylesheet's classes land is Kanagawa rather than a flash of white glass. */
+.mm-theme-dark {
+  color-scheme: dark;
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+  --ctp-surface0: #313244;
+  --ctp-surface1: #45475a;
+  --ctp-surface2: #585b70;
+  --ctp-overlay0: #6c7086;
+  --ctp-overlay1: #7f849c;
+  --ctp-overlay2: #9399b2;
+  --ctp-subtext0: #a6adc8;
+  --ctp-subtext1: #bac2de;
+  --ctp-text: #cdd6f4;
+  --ctp-lavender: #b4befe;
+  --ctp-blue: #89b4fa;
+  --ctp-sapphire: #74c7ec;
+  --ctp-sky: #89dceb;
+  --ctp-teal: #94e2d5;
+  --ctp-green: #a6e3a1;
+  --ctp-yellow: #f9e2af;
+  --ctp-peach: #fab387;
+  --ctp-maroon: #eba0ac;
+  --ctp-red: #f38ba8;
+  --ctp-mauve: #cba6f7;
+  --ctp-pink: #f5c2e7;
+  --ctp-flamingo: #f2cdcd;
+  --ctp-rosewater: #f5e0dc;
+
+  --kanagawa-bg: var(--ctp-base);
+  --kanagawa-bg-alt: var(--ctp-mantle);
+  --kanagawa-bg-dim: var(--ctp-crust);
+  --kanagawa-fg: var(--ctp-text);
+  --kanagawa-fg-muted: var(--ctp-subtext0);
+  --kanagawa-comment: var(--ctp-overlay0);
+  --kanagawa-border: var(--ctp-surface0);
+  --kanagawa-blue: var(--ctp-blue);
+  --kanagawa-green: var(--ctp-green);
+  --kanagawa-red: var(--ctp-red);
+  --kanagawa-orange: var(--ctp-peach);
+  --kanagawa-yellow: var(--ctp-yellow);
+  --kanagawa-purple: var(--ctp-mauve);
+  --kanagawa-cyan: var(--ctp-sky);
+  --kanagawa-sage: var(--ctp-teal);
+}
+
+.mm-theme-light {
+  color-scheme: light;
+  --ctp-base: #ffffff;
+  --ctp-mantle: #f8fafc;
+  --ctp-crust: #f1f5f9;
+  --ctp-surface0: #e2e8f0;
+  --ctp-surface1: #cbd5e1;
+  --ctp-surface2: #94a3b8;
+  --ctp-overlay0: #64748b;
+  --ctp-overlay1: #475569;
+  --ctp-overlay2: #334155;
+  --ctp-subtext0: #475569;
+  --ctp-subtext1: #334155;
+  --ctp-text: #0f172a;
+  --ctp-blue: #3b82f6;
+  --ctp-sapphire: #2563eb;
+  --ctp-teal: #0d9488;
+  --ctp-green: #22c55e;
+  --ctp-peach: #f97316;
+  --ctp-red: #ef4444;
+  --ctp-mauve: #a855f7;
+
+  --kanagawa-bg: #ffffff;
+  --kanagawa-bg-alt: #f8fafc;
+  --kanagawa-bg-dim: #f1f5f9;
+  --kanagawa-fg: #0f172a;
+  --kanagawa-fg-muted: #475569;
+  --kanagawa-comment: #94a3b8;
+  --kanagawa-border: #e2e8f0;
+  --kanagawa-blue: #3b82f6;
+  --kanagawa-green: #22c55e;
+  --kanagawa-red: #ef4444;
+  --kanagawa-orange: #f97316;
+}
+
+/* Body painted from the active palette. `color-scheme` on <html> above makes
+   the native scrollbars and form controls follow too, instead of leaving a
+   dark-on-light scrollbar track. */
+body {
+  background: var(--kanagawa-bg-dim);
+  color: var(--kanagawa-fg);
+}
+
+/* ===== APP SHELL: top bar, pager, detail grid, missing-screen list ===== */
+
+/* LA BARRA DE ARRIBA, DELGADA. Lo que antes vivía en esta caja — la marca, el nombre del
+   negocio y los doce enlaces en fila — vive ahora en la barra lateral, que está definida más
+   arriba de esta hoja. Acá queda sólo lo que es de la pantalla en la que estás: el título, el
+   relevo, el tema y la salida. La marca tampoco hacía falta dos veces en el mismo alto.
+
+   `.mm-topbar-title` NO se renombra a gusto: `src/main/index.js` lo lee del DOM real para
+   comprobar que un enlace profundo a `/ventas` montó la pantalla de ventas y no una página de
+   error, y ese probe es el mismo que quemó al `Navbar`. Ese acuerdo está escrito en el
+   `BarraSuperior` de `AppShell.jsx`. */
+.mm-topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--kanagawa-bg);
+  border: 1px solid var(--kanagawa-border);
+  border-radius: 14px;
+  padding: 8px 14px;
+  margin-bottom: 18px;
+}
+
+.mm-topbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--kanagawa-fg);
+}
+
+/* `margin-left: auto` es lo que empuja el grupo de controles contra el borde derecho: antes lo
+   hacía la tira de enlaces, y sin él el título y los botones quedan pegados a la izquierda. */
+.mm-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+/* EL RELEVO Y EL ENLACE A USUARIOS, EN LOS DOS SITIOS DONDE HAY QUE PODER LLEGARLOS.
+   `.compacto` es la variante del punto de venta: sin etiqueta de texto, porque el POS ya
+   tiene botones de 12px y un «Usuarios» escrito ahí se lee como un Producto más. */
+.mm-turno-controles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mm-turno-controles.compacto {
+  margin-left: auto;
+}
+
+.mm-turno-enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kanagawa-fg-muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.mm-turno-enlace:hover,
+.mm-turno-enlace.activo {
+  color: var(--kanagawa-fg);
+  background: var(--kanagawa-surface-2, rgba(127, 160, 179, 0.12));
+  border-color: var(--kanagawa-border, rgba(127, 160, 179, 0.25));
+}
+
+.mm-turno-controles.compacto .mm-turno-enlace {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.mm-turno-quien {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--kanagawa-fg-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mm-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 22px;
+  border-top: 1px solid var(--kanagawa-border);
+  font-size: 13px;
+  color: var(--kanagawa-fg-muted);
+}
+
+.mm-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mm-detail-grid span {
+  display: block;
+  font-size: 12px;
+  color: var(--kanagawa-fg-muted);
+  margin-bottom: 2px;
+}
+
+.mm-detail-grid div { font-weight: 500; }
+
+.mm-missing-list {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.mm-missing-list li {
+  display: grid;
+  grid-template-columns: 130px 110px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--kanagawa-bg);
+}
+
+.mm-missing-list code { color: var(--kanagawa-blue); }
+.mm-missing-list strong { font-weight: 600; }
+.mm-missing-list span { color: var(--kanagawa-fg-muted); }
+
+@media (max-width: 640px) {
+  .mm-topbar { gap: 10px; }
+  .mm-missing-list li { grid-template-columns: 1fr; }
+}
+
+/* Theme toggle button. Named without the "pos-" prefix: the control is in the
+   app shell now, and a name that says "pos" is a lie in every other screen. */
+.theme-toggle {
+  border: 1px solid var(--kanagawa-border);
+  background: var(--kanagawa-bg);
+  color: var(--kanagawa-fg-muted);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: 0.2s;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  border-color: var(--kanagawa-fg-muted);
+  color: var(--kanagawa-fg);
+}
+
+/* ── SIGN-IN PANEL ─────────────────────────────────────────────────────────────────────────
+ * A till machine that has just been switched on must ask who is there. The panel is centred and
+ * deliberately plain: it is the first thing four people a day look at, and the only two things
+ * they ever do on it are "enter" and "create the shop".
+ */
+.acceso {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--kanagawa-bg);
+}
+.acceso-panel {
+  width: 100%;
+  max-width: 400px;
+  padding: 28px;
+}
+.acceso-titulo {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--kanagawa-fg);
+  text-align: center;
+}
+.acceso-subtitulo {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--kanagawa-comment);
+  text-align: center;
+}
+.acceso-pestanas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 4px;
+  background: var(--kanagawa-bg-alt);
+  border-radius: 10px;
+}
+.acceso-pestana {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--kanagawa-fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.acceso-pestana.activa {
+  background: var(--kanagawa-bg);
+  color: var(--kanagawa-fg);
+}
+.acceso-error {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(127, 110, 25, 0.12);
+  border: 1px solid var(--kanagawa-red);
+  color: var(--kanagawa-red);
+  font-size: 13px;
+}
+.acceso-ok {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(158, 206, 106, 0.12);
+  border: 1px solid var(--kanagawa-green);
+  color: var(--kanagawa-green);
+  font-size: 13px;
+}
+/* The recovery hint under a failed sign-in. It is NOT an error style: the sign-in failed, but what
+   is on screen is the way out, so it must not read as another failure. Neutral border, muted text,
+   and the command itself in monospace because it gets typed, not read. */
+.acceso-ayuda {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(127, 110, 25, 0.08);
+  border: 1px solid var(--kanagawa-border);
+  color: var(--kanagawa-fg-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.acceso-ayuda p {
+  margin: 0 0 6px;
+}
+.acceso-ayuda p:last-child {
+  margin-bottom: 0;
+}
+.acceso-ayuda code {
+  display: block;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(127, 110, 25, 0.1);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--kanagawa-fg);
+  user-select: all;
+}
+.acceso-boton {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+
+/* The handover picker. Every row is a person who can be on the till, so the employee handing the
+ * till back to the owner finds the owner's row in the same list the owner handed over from. */
+.relevo-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--kanagawa-border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.relevo-fila:hover:not(:disabled) {
+  border-color: var(--kanagawa-blue);
+  background: var(--kanagawa-bg-alt);
+}
+.relevo-fila.activa {
+  border-color: var(--kanagawa-blue);
+  background: var(--kanagawa-bg-alt);
+}
+.relevo-fila:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== REPORTES =====
+ * The ten reports' own two classes. Everything else they use — `.card`, `.stat-card`,
+ * `.stats-grid`, `.table-container`, `.form-group`, `.btn-*` — is already in this file, because a
+ * new screen that re-declared those would be a second definition of the app's card and a place for
+ * the two to drift.
+ *
+ * NO STYLING BEYOND STRUCTURE, and that is the user's instruction rather than an omission: "we'll
+ * fix the design at the end". These are layout rules — the strip wraps, the active tab is
+ * legible, a heading has room. Nothing here decides a colour scheme.
+ */
+.mm-reportes-tabs {
+  display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--kanagawa-border);
+}
+.mm-reportes-grupo { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.mm-reportes-grupo-titulo {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--kanagawa-fg-muted); min-width: 92px; padding: 0 4px;
+}
+.mm-reportes-tab {
+  padding: 8px 14px; border: none; background: transparent; color: var(--kanagawa-fg-muted);
+  font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px;
+}
+.mm-reportes-tab:hover { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+.mm-reportes-tab.activa { color: var(--kanagawa-blue); font-weight: 600; }
+.mm-reportes-tab i { margin-right: 6px; }
+.mm-sub {
+  font-size: 15px; font-weight: 600; margin: 24px 0 12px;
+}
+.mm-sub:first-of-type { margin-top: 0; }
+
+/* ── A FLAT TAB STRIP, FOR SCREENS THAT HAVE NO GROUPS ────────────────────────────────────────
+ *
+ * `.mm-reportes-tabs` is a COLUMN of groups, because the ten reports are filed under Operativos /
+ * Financieros / Diagnóstico and the headings are part of how they are read. Contabilidad has four
+ * sections with no taxonomy between them, so it needs the same tab but in a row.
+ *
+ * Written as its own pair rather than by reusing `.mm-reportes-tab` inside a flex container: the
+ * report tab's icon rule is `margin-right: 6px`, and in a row of tabs where some carry a warning
+ * triangle the spacing has to be the icon's own `gap`, not a margin the JSX has to remember to
+ * cancel. Two small rules beat one shared rule with three overrides.
+ */
+.mm-tabs {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  margin-bottom: 20px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--kanagawa-border);
+}
+.mm-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border: none; background: transparent; color: var(--kanagawa-fg-muted);
+  font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px;
+}
+.mm-tab:hover { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+.mm-tab.activa { color: var(--kanagawa-blue); font-weight: 600; }
+

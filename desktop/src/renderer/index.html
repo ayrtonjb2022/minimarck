@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MiniMarck Desktop — Punto de Venta</title>
+    <!-- An empty data: icon. Without it Chromium asks the network for /favicon.ico on
+         every window open, which on an offline till is a request that can only fail. -->
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <!--
+      The launch probe's output target. It is NOT inside #root on purpose: React owns #root
+      and rewrites its contents, so a probe list living in there would be deleted by the first
+      render and `render()` in probe.js would write into a detached node. It is also `hidden`,
+      because once the real app mounts, an operator opening the till should see the sale
+      screen and not a wall of PASS lines. The results are still read over
+      `window.__S0_PROBE__` by src/main/index.js, so hiding them costs the gate nothing.
+    -->
+    <ul id="results" hidden></ul>
+
+    <div id="root"></div>
+
+    <!--
+      probe.js is listed FIRST and is deliberately a module, so it executes before
+      app/main.jsx. It wraps fetch/XHR/WebSocket/EventSource/sendBeacon and starts a
+      MutationObserver over the document, all of which must be in place BEFORE React mounts
+      and injects its first element — otherwise the audit is watching a window that has
+      already left the building. main.jsx then runs and takes over the page.
+    -->
+    <script type="module" src="./probe.js"></script>
+    <script type="module" src="./app/main.jsx"></script>
+  </body>
+</html>

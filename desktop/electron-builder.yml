@@ -1,0 +1,152 @@
+# electron-builder configuration for the MiniMarck desktop POS.
+#
+# WHY A SEPARATE FILE. This config is long and every line of it is a decision about what a shop
+# gets on its till, so it carries the reasoning inline. `package.json` cannot hold a comment, and
+# burying this under a `build` key would mean the packaging policy was the one part of the
+# project nobody could read. electron-builder picks this file up automatically.
+#
+# THE GEOMETRY THAT MATTERS. `src/main/db/paths.js` resolves the migrations directory RELATIVE TO
+# THE MAIN BUNDLE'S OWN LOCATION (`./migrations/` against `import.meta.url`). That is why the SQL
+# is emitted to `out/main/migrations/` by the `emitMigrations()` plugin in electron.vite.config.js
+# rather than copied as an `extraResources` payload.
+#
+# It is tempting to solve packaging with `extraResources`, which would drop the SQL at
+# `resources/migrations/` OUTSIDE the asar. That would break the resolution, because
+# `defaultMigrationsDir()` would then point at a directory that is not there - and the failure is
+# SILENT: the app starts, the window opens, and the database sits at `user_version = 0` with no
+# tables, so every screen fails later with "no such table". So the SQL stays INSIDE the asar, at
+# the same relative offset it has in the build output, and `verify:migrations` asserts it there.
+appId: com.minimarck.desktop
+
+# `productName` is what the executable, the Start Menu entry, the desktop shortcut and the
+# Programs-and-Features row are all called. It is deliberately the same string as `APP_NAME` in
+# src/main/dataDir.js, because that constant is what decides the `userData` folder - and the
+# user's sales database lives inside it. If these two ever disagree, the app would install as
+# "MiniMarck" while writing its data to a folder named after something else.
+productName: MiniMarck
+
+copyright: Copyright (c) MiniMarck
+
+directories:
+  # `release/` is the output. It is git-ignored: it holds a ~90 MB installer and an unpacked
+  # directory, neither of which belongs in history.
+  output: release
+  # Where electron-builder looks for icon.png / icon.ico. Must NOT be `out/` or `src/`.
+  buildResources: build
+
+# WHAT GOES IN THE INSTALLER.
+#
+# The whole app is `out/` plus the manifest. `node_modules` is deliberately absent and this is a
+# load-bearing decision, not an oversight: `scripts/assert-bundle-selfcontained.mjs` proves from
+# the EMITTED `out/main/index.js` and `out/preload/index.cjs` that the only bare import left is
+# `electron` itself, which the runtime provides. `node:sqlite` is a Node builtin compiled into
+# the runtime, so there is no native module to carry and therefore NO REBUILD STEP AT ALL.
+#
+# That property is worth a great deal: it is why `better-sqlite3`, `node-gyp` and every
+# postinstall hook stay out of this project. A build that cannot run without a compiler toolchain
+# is a build that cannot be reproduced on a machine that does not have one, and for a POS the
+# installer has to be buildable from a clean checkout with nothing but Node and npm.
+files:
+  - out/**/*
+  - package.json
+  # Explicit negation, so adding a runtime dependency to package.json later cannot silently pull
+  # tens of megabytes of node_modules into the installer without this line being reconsidered.
+  - '!node_modules/**/*'
+  - '!scripts/**/*'
+  - '!tests/**/*'
+  - '!src/**/*'
+  # The release renderer has no probe in it (see buildResources note in electron.vite.config.js),
+  # but the dev build in `out/` does. The probe is a development instrument, not a product
+  # feature, and it is excluded from the artifact by the same `files` rule rather than by a
+  # separate build directory that nobody would remember to use.
+  - '!**/*.map'
+
+# asar, not an exploded directory. Keeps the install small, and Electron's asar shim makes
+# readFileSync/existsSync work transparently for files inside it - which is what the migration
+# runner relies on. `scripts/verify-package.mjs` asserts the SQL really is inside.
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # The Windows executable is `MiniMarck.exe` inside the install directory, and the file the user
+  # double-clicks is the NSIS installer below. `artifactName` is set on the nsis block, not here,
+  # so the two names can differ deliberately instead of by accident.
+  # A CODE SIGNING CERTIFICATE IS NOT CONFIGURED, deliberately. Signing needs a certificate the
+  # project does not have, and an unsigned installer is honest about that: Windows SmartScreen
+  # shows an "unrecognized publisher" warning on first run, and the user clicks "More info" ->
+  # "Run anyway". That is a worse first impression than a signed build and a BETTER one than
+  # shipping a self-signed certificate, which teaches users to click through warnings permanently.
+
+nsis:
+  # `oneClick: false` -> the ASSISTED wizard, not the one-shot installer.
+  #
+  # This is the single most user-visible decision in the file. electron-builder's default is a
+  # one-click installer that starts installing the instant it is double-clicked, with no dialog
+  # and no confirmation. For a per-user install with no elevation, a one-click installer is fast
+  # and completely opaque: the user cannot see where it is installing to, cannot cancel it, and
+  # gets no explanation before their system changes. The wizard shows the destination, the
+  # shortcuts being created, and a real Cancel.
+  oneClick: false
+
+  # PER USER, NOT PER MACHINE, AND NEVER AN ADMIN PROMPT.
+  #
+  # `perMachine: false` installs under `%LOCALAPPDATA%\Programs\MiniMarck`, which is the user's
+  # own space and needs no administrator rights.
+  perMachine: false
+  # Belt and braces with `perMachine: false`: even if a future edit flips that, the installer
+  # refuses to request elevation rather than silently showing a UAC prompt on a till.
+  allowElevation: false
+  # The wizard lets the user see and change the folder. It defaults to the per-user path above.
+  allowToChangeInstallationDirectory: true
+
+  # SHORTCUTS. Desktop by default is the request; the Start Menu entry is what makes the app
+  # findable in Programs and Features, and Windows requires a Start Menu entry for the uninstall
+  # entry to be discoverable at all.
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MiniMarck
+  # A POS is a till: the shortcut is opened many times a day, so it goes straight to the app
+  # rather than to a "choose what to install" maintenance page.
+  runAfterFinish: true
+
+  # PLAT-2, and the reason this line is worth more than it looks.
+  #
+  # `deleteAppDataOnUninstall: false` is electron-builder's default, and it is written out
+  # explicitly here anyway, for two reasons. First, a default is a default: the next person who
+  # tidies this file, or a future electron-builder upgrade that changes it, would delete a shop's
+  # entire sales history as a side effect of removing the program. Second, and worse,
+  # `deleteAppDataOnUninstall: true` deletes the `userData` FOLDER, and the SQLite database with
+  # every sale, every till movement and every journal entry in it lives there. An uninstall/reinstall
+  # cycle is also the NORMAL way to fix a broken install, so the setting that loses the money is
+  # the setting that fires exactly when something has already gone wrong.
+  #
+  # `scripts/verify-package.mjs` reads THIS FILE and fails if the value is ever absent or true, so
+  # the guarantee is enforced rather than assumed.
+  deleteAppDataOnUninstall: false
+
+  # The Programs and Features row. The version is spelled out because a shop that has two
+  # versions installed at some point needs to tell which is which from the list.
+  uninstallDisplayName: MiniMarck 1.0.0
+
+  # SPANISH INSTALLER UI.
+  #
+  # `es_ES` is the Spanish (Spain) language file that ships with electron-builder's NSIS
+  # resources. There is no `es_419`/`es_AR` variant, and the string differences between them are
+  # cosmetic for an installer wizard. If this value is wrong or the resource is missing,
+  # electron-builder either warns and falls back to English or errors outright - and
+  # `scripts/verify-package.mjs` greps the built installer for Spanish strings so a silent
+  # fallback to English cannot pass as a Spanish installer.
+  installerLanguages:
+    - es_ES
+
+  # The file the user double-clicks. Exactly `MiniMarck Setup.exe`, with no version number in the
+  # name: it is a delivery artefact for a person to run, not a build to keep side by side, and a
+  # version in the name invites someone to run last month's installer from a downloads folder.
+  artifactName: MiniMarck Setup.exe
+
+  # Install for the current user without asking who the current user is: an offline till has no
+  # domain account prompt in the middle of a sale.
+  differentialPackage: false
