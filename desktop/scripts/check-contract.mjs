@@ -29,6 +29,7 @@ import { registerDeudoresHandlers } from '../src/main/ipc/deudores.js'
 import { registerProveedoresHandlers } from '../src/main/ipc/proveedores.js'
 import { registerComprasHandlers } from '../src/main/ipc/compras.js'
 import { registerReportesHandlers, registerDashboardHandlers } from '../src/main/ipc/reportes.js'
+import { registerContabilidadHandlers } from '../src/main/ipc/contabilidad.js'
 
 // A real migrated+seeded database, so the repositories behind those handlers are real too.
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'minimarck-contract-'))
@@ -46,7 +47,8 @@ registerCategoriasHandlers(registry, { conn: db.conn })
 // report that called `deudores.list`, `deudores.create` and `deudores.payments` 501s while the
 // app answers all three: a gate that under-reports is worse than no gate, because it teaches
 // whoever reads it that operations are missing when the real problem is the check.
-// The four still missing are the real ones: `get`, `update`, `remove`, `addPayment`.
+// All seven are implemented now — the comment that used to sit here said four were still missing,
+// which stopped being true when the debtors CRUD landed.
 registerDeudoresHandlers(registry, { conn: db.conn })
 // Same reason, one step further: `proveedores` and `compras` were absent from this gate AND from the
 // app, and the report then listed all ten of their operations as 501. They were in the frozen
@@ -60,6 +62,11 @@ registerComprasHandlers(registry, { conn: db.conn })
 // the report agreed with the screen and disagreed with the code.
 registerReportesHandlers(registry, { conn: db.conn })
 registerDashboardHandlers(registry, { conn: db.conn })
+// The fifteen `contabilidad.*` operations. They were absent from this gate while every sale,
+// purchase, debtor payment and till movement wrote a balanced journal entry through
+// `cuentas.repo.js` — so the report said the ledger was out of contract while the shop was keeping
+// one. Registering them here is what lets the gate say whether they answer.
+registerContabilidadHandlers(registry, { conn: db.conn })
 
 const contract = []
 for (const [group, ops] of Object.entries(OPS)) for (const op of ops) contract.push({ group, op })

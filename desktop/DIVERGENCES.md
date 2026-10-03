@@ -529,6 +529,75 @@ never re-derived per query) and correct in a fixed-offset shop where the web's s
 
 ---
 
+## 19. `contabilidad.deleteEntry` refuses an entry the APP wrote — port vs web
+
+**Web**: the accounting module reads and writes `asientos_contables` through Sequelize, and
+`deleteEntry` removes whatever row it is given. Nothing distinguishes an entry a person typed from
+one the sale path posted, because on the web the sale path posts none — the web writes no journal
+row for a sale at all (see `cuentas.repo.js`'s header and entry 16). So the whole class of
+"machine-written entry" does not exist there, and its delete endpoint is unguarded.
+
+**Desktop**: every entry a feature writes carries a `referencia` (`venta:12`, `compra:4`, `pago:3`),
+and `eliminarAsiento` answers `ASIENTO_DE_SISTEMA` (409) for any entry that has one. Deleting it
+would leave the sale without its journal row — the exact state this port's sale path exists to
+prevent — and the reports, which reconcile against the ledger, would silently stop adding up.
+Cancelling the SALE is what reverses a sale's entry, and it does it by writing the mirror entry.
+
+**Consequence a reviewer should check**: a shop that mistypes a HAND-WRITTEN entry can still delete
+it (those carry no `referencia`), so the operation is not dead. What it cannot do is use
+`deleteEntry` as an undo for a sale, which the web's unguarded version would have allowed.
+
+**Status**: willed, and it is the strict direction — the desktop refuses an operation the web
+permits, in the one place where permitting it silently destroys the ledger's agreement with the
+sales reports.
+
+---
+
+## 20. A settled debt cannot be reopened, and an account with movements cannot be deleted
+
+**Web**: `cuentaCorrienteDeuda` is updated with `req.body`, so `estado` can be set to anything the
+caller sends, including `activo` on a debt whose `saldoPendiente` is zero. `cuentaContable` is
+deleted with `destroy()`, which for a table with no `paranoid` flag is a hard DELETE.
+
+**Desktop**: two refusals the web does not have, both 409 with a sentence:
+
+- `DEUDA_SALDADA` — a debt with nothing left to pay cannot go back to `activo` or `vencido`. The
+  panel and the debt list sort unpaid first precisely so that "what do I have to pay" is the top of
+  the screen, and a settled debt parked in that bucket is a row the owner chases forever with a zero
+  next to it. `registrarPagoDeuda` settles a debt the moment its balance reaches zero, so the only
+  way into the bad state was the API writing around it.
+- `CUENTA_CON_MOVIMIENTOS` / `CUENTA_CON_HIJAS` — an account with lines in `detalles_asientos` cannot
+  be deleted, and the message carries the line COUNT so the operator knows whether to deactivate
+  instead. This one is not a preference: `balanceGeneral` groups over `cuentas_contables` with a
+  LEFT JOIN, so deleting an account REMOVES its sums from the trial balance while its detail rows
+  stay behind. The ledger would stop balancing against itself and the report would look fine.
+
+**Status**: willed. Both are states the schema permits and no business has; the desktop refuses
+them, and the second one is load-bearing for the correctness of `contabilidad.balance`.
+
+---
+
+## 21. The chart of accounts is per-tenant and created on demand, not seeded — port vs web
+
+**Web**: `seed-contabilidad.js` inserts the chart at boot, as part of a startup seed, and
+`cuentas_contables.codigo` is declared `unique: true` — a GLOBAL unique, so two shops in one database
+cannot both own account `1.1.01`.
+
+**Desktop**: the chart has NO INSERTs in `001_init.sql` (a migration runs before any business
+exists, and `negocio_id` is NOT NULL, so there is nothing to hang an account on), the unique index is
+`ux_cuentas_contables_codigo_negocio` — scoped to the business — and `asegurarPlan` creates the 24
+accounts lazily, with `ON CONFLICT DO NOTHING`, on every flow that needs one.
+
+**Consequence**: `contabilidad.listAccounts` and `contabilidad.balance` CALL `asegurarPlan` before
+reading, so a shop that has never sold anything still sees the real plan rather than an empty table.
+Without that, the first thing an owner did — open the accounting screen before ringing up a sale —
+would have shown a chart of zero accounts, which reads as broken rather than new.
+
+**Status**: willed, and recorded in the schema's own header (§7). It is the same add-only mechanism
+that added `5.4.01 Otros Gastos` without a migration.
+
+---
+
 ## Internal notes (not user-visible, kept for the reviewer)
 
 
@@ -604,3 +673,6 @@ never re-derived per query) and correct in a fixed-offset shop where the web's s
   `PRODUCTO_NO_ENCONTRADO` (404) and the test went red for the RIGHT reason. It now calls
   `backup.create`, which is in the frozen contract and still has no handler, and the comment points
   the next reader at `scripts/check-contract.mjs` so the member can be moved again without guessing.
+
+---
+

@@ -18,6 +18,7 @@ import { registerDeudoresHandlers } from './ipc/deudores.js'
 import { registerProveedoresHandlers } from './ipc/proveedores.js'
 import { registerComprasHandlers } from './ipc/compras.js'
 import { registerReportesHandlers, registerDashboardHandlers } from './ipc/reportes.js'
+import { registerContabilidadHandlers } from './ipc/contabilidad.js'
 import { bootstrapDatabase } from './db/bootstrap.js'
 import { identityWarning, resolveLocalIdentity } from './db/identity.js'
 import { createSession } from './auth/session.js'
@@ -28,6 +29,7 @@ import { runPaymentDrive } from './payment-drive.js'
 import { runDeudoresDrive } from './deudores-drive.js'
 import { runComprasDrive } from './compras-drive.js'
 import { runReportesDrive } from './reportes-drive.js'
+import { runContabilidadDrive } from './contabilidad-drive.js'
 import { runHandoverDrive, runHandoverRestartPhase } from './handover-drive.js'
 
 const isPackaged = app.isPackaged
@@ -426,6 +428,9 @@ async function main() {
   registerComprasHandlers(registry, { conn: db.conn })
   registerReportesHandlers(registry, { conn: db.conn })
   registerDashboardHandlers(registry, { conn: db.conn })
+  // The ledger's own screen. Fifteen operations that were in the contract from the start and had
+  // no handler until now, which meant a shop carried a double-entry journal it could not open.
+  registerContabilidadHandlers(registry, { conn: db.conn })
   installIpc(registry, identity, session)
 
   const win = createWindow({ isPackaged, rendererUrl: url })
@@ -464,6 +469,9 @@ async function main() {
   // single-shot gate alongside the handover drive, and one shared flag would let a second
   // silently reuse the first's guard.
   let reportesDriveStarted = false
+    // And one for the accounting drive, same reason as every flag above. The ledger was the one
+    // section no drive had ever opened, so it needed its own single-shot guard like the rest.
+    let contabilidadDriveStarted = false
   let handoverDriveStarted = false
   let handoverRestartStarted = false
   win.webContents.on('did-finish-load', () => {
@@ -603,6 +611,30 @@ async function main() {
         .catch((err) => {
           clearTimeout(watchdog)
           console.error(`REPORTES_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
+    }
+
+    // The accounting drive: the four ledger screens, every figure read off the window and
+    // reconciled against the same file the ledger is written to. The drives above prove the money
+    // moves AND that the sales figures are right; this one proves the third thing, which is that the
+    // shop can READ its own double-entry ledger and that the trial balance on screen is the trial
+    // balance in the file. Same gating, same watchdog discipline, and it drives THIS window.
+    if (process.env.MINIMARCK_CONTABILIDAD_DRIVE && !contabilidadDriveStarted) {
+      contabilidadDriveStarted = true
+      const watchdog = setTimeout(() => {
+        console.error('CONTABILIDAD_DRIVE_ERROR timeout after 300s — the drive never reached finish()')
+        app.exit(1)
+      }, 300_000)
+      runContabilidadDrive(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`CONTABILIDAD_DRIVE_RESULT ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`CONTABILIDAD_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
           app.exit(1)
         })
     }
