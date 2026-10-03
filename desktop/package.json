@@ -12,6 +12,7 @@
     "dev": "node scripts/build.mjs dev",
     "build": "node scripts/build.mjs",
     "launch": "npm run build && electron out/main/index.js",
+    "abrir": "node scripts/abrir.mjs",
     "spike": "node scripts/spike.mjs",
     "probe:launch": "node scripts/probe-launch.mjs",
     "drive:payment": "node scripts/drive-payment.mjs",
