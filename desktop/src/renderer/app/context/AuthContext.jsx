@@ -101,7 +101,13 @@ export const AuthProvider = ({ children }) => {
    */
   const restablecerPassword = async (usuarioId, password) => {
     setError(null);
-    return authAPI.changePassword(undefined, password, usuarioId);
+    const res = await authAPI.changePassword(undefined, password, usuarioId);
+    // `personas` is the roster the users screen renders, and the reset does not change a name — but
+    // the credential row behind a person IS what `puedeIngresar` reports, so a person who had no
+    // password and just got one has to stop showing as "sin credencial". One refresh is cheaper than
+    // teaching the screen which half of the roster a reset can change.
+    await refrescar();
+    return res;
   };
 
   /** End the session. The panel comes back, and the next launch starts here too. */
@@ -114,6 +120,19 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    /**
+     * `actual` is `user` under the name the users screen asks for.
+     *
+     * The reset button's guard is `actual?.rol === "admin" && p.id !== actual.id` — "the owner, and
+     * not on their own row, because your own password is the self path and needs the old one". That
+     * expression was written against a property this provider never published, so the guard was
+     * always `undefined === "admin"` and the button was invisible for everybody, including the owner
+     * the feature exists for. The backend was complete the whole time.
+     *
+     * It is an ALIAS and not a second piece of state on purpose: two fields meaning "who is signed
+     * in" is how a screen ends up reading one while the session updates the other.
+     */
+    actual: user,
     negocio,
     personas,
     error,

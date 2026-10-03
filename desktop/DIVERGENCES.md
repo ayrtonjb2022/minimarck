@@ -676,6 +676,67 @@ that added `5.4.01 Otros Gastos` without a migration.
 
 ---
 
+## Owner lockout recovery — **Port vs web** (Owner: `auth`)
+
+**Decision**: password recovery is a CLI on the machine (`npm run auth:reset-admin`), and its trust
+boundary is the **database file**, not the operator. Whoever can open `minimarck.db` can set the
+password of any account in that shop. There is no operator prompt, no "are you the owner" question,
+and there could not usefully be one.
+
+**Why the boundary is the file**: proving you are the owner requires the password the tool replaces.
+Any operator check would either be the same password (so no check at all) or a second secret nobody
+was ever told. The web version has a server, a session and a recovery email; a desktop till has to
+open at a market stall with no network, so the web's answer is not available here. This is weaker
+than a server-side account system **on purpose**, and the honest form of that is to say it out loud
+rather than to imply a protection that is not there.
+
+**What the app does own**, and the reason this is not a hole in the sign-in screen:
+
+- No IPC operation exposes it. `§L` is frozen at 89 and none of them resets a password from outside
+  a session. The renderer cannot reach this code; there is no preload bridge for it.
+- No window, menu item or keybinding triggers it. It is a command a person types on the machine.
+- The decision layer is pure and separately tested (`src/main/cli/reset-admin.js`), and it refuses an
+  ambiguous file rather than guessing which business a handle belongs to.
+- Every refusal gives the SAME answer for unknown / no-credential / deactivated / retired. Four
+  different answers would turn a command anyone can run into a way of enumerating the shop's staff.
+- The reset writes through `guardarCredencial`, so it is the same write the sign-in path makes. There
+  is no second implementation of "change a password" to drift.
+- Password policy is the app's own `exigirPassword`, not a copy. The tool reports `CONTRASENA_CORTA`,
+  which is what the app reports.
+
+**Not migrated, deliberately**: the tool refuses a file older than migration 2 and asks the owner to
+open the app once. A schema change applied by a person who is already locked out, and who therefore
+cannot evaluate it, is not a kindness.
+
+**Known limit, stated rather than hidden**: a running MiniMarck keeps its in-memory session and will
+not ask for the new password until the next sign-in, which looks exactly like a reset that did
+nothing. The tool cannot check — Chromium's single-instance lock cannot be created in a shell with
+no interactive session, and that failure is documented in `src/main/index.js` — so it prints the
+conditional instead of claiming a check it did not perform.
+
+**Four implementation bugs found while proving this**, recorded because each one is the kind that
+passes on the machine that wrote it:
+
+- The handle was read off the matched row, and `usuarioPorNombre` does not select `external_id`. The
+  new credential was written under an EMPTY handle: the account became unfindable by name, so the
+  recovery tool produced a second, quieter lockout. Now the handle comes from the caller's own input,
+  normalized the same way the lookup normalized it.
+- `resolveUserDataSinElectron` defaulted its `env` to `{}`, so a no-argument caller saw no `APPDATA`
+  and fell through to a homedir guess. On an ordinary Windows machine that guess is the SAME
+  directory, so it worked on the test machine and pointed at the wrong place for anyone whose
+  `APPDATA` is relocated. The default is now `process.env`, asserted by swapping the variable.
+- `npm run auth:reset-admin -- --user duena` silently did NOTHING: npm parses `--user` as its own
+  configuration and discards it. The handle is positional, and `tests/auth/reset-admin-launcher.spec.js`
+  spawns the real process to keep that true.
+- `readline.question` waits for a newline, so `type clave.txt | …` against a file written without a
+  trailing newline HUNG after printing the prompt. A recovery tool that hangs once it has asked the
+  question is the worst failure mode available, so non-terminal stdin is read to EOF now.
+
+**Owner of the fix**: `auth`. Reconciliation: none needed — the web has no equivalent recovery path,
+so there is nothing to converge with.
+
+---
+
 ## 22. Backups exist only on the desktop — a new capability, not a port
 
 **Web**: there is no backup operation. The web's `OPS` mirror in the contract declares

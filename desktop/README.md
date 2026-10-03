@@ -238,6 +238,53 @@ resolved location and whether the override is active.
 MINIMARCK_DATA_DIR=/tmp/mm npx electron out/main/index.js
 ```
 
+### Forgot the password: `npm run auth:reset-admin`
+
+Once the file has credentials, `auth.register` refuses — so an owner who cannot sign in
+cannot register their way back in, and the one person allowed to reset anybody's
+password is the person who is locked out. That is a permanent lockout, not strictness.
+The way back in is a command on the machine:
+
+```bash
+cd desktop
+npm run auth:reset-admin -- --listar          # what can be reset
+npm run auth:reset-admin -- duena             # reset a handle; asks for the password
+```
+
+The handle is **positional**, and that is not a style choice:
+`npm run auth:reset-admin -- --user duena` silently does **nothing** on Windows, because
+npm parses `--user` as its own configuration and drops it (with or without `=`). Calling
+the file directly, `node scripts/auth-reset-admin.mjs --user duena`, works. To run it
+with nobody watching:
+
+```bash
+type clave.txt | npm run auth:reset-admin -- duena
+```
+
+Exit codes are the interface, so a script can tell the failures apart: `0` done, `2`
+usage, `3` refused, `5` no database found (every path it checked is printed), `6` the
+file predates credentials.
+
+**What it will not do**: migrate your database. If the file is behind, open the app once
+and come back. It also cannot check whether the app is running — Chromium's
+single-instance lock does not work in a shell with no interactive session, and a check
+that lies is worse than none — so it says to close MiniMarck instead. A running app
+keeps its session and will not ask for the new password until the next sign-in, which
+looks exactly like a reset that did nothing.
+
+**The trust boundary is the file, not the operator.** Whoever can open `minimarck.db`
+can set anyone's password; there is no operator prompt, and there could not usefully be
+one, because proving you are the owner requires the password this command replaces. See
+`DIVERGENCES.md` for the decision and what the app does own.
+
+The command runs under plain Node, not Electron. `electron.exe` is a GUI-subsystem
+binary whose main process receives an **empty stdin** even when the parent redirects a
+real file into it (measured: 18 bytes through Node, 0 through Electron, same file), so a
+password prompt behind it cannot be scripted. The profile path is derived instead, by
+`resolveUserDataSinElectron` in `src/main/dataDir.js` — a pure function of the platform
+and the environment, asserted per platform in `tests/security.spec.js`, and always
+confirmed against a real database file before anything is opened.
+
 ### When a migration you already ran changes: `npm run db:reset`
 
 The migration runner records a SHA-256 checksum per applied file and **refuses to start** when an

@@ -22,7 +22,7 @@ import Modal from "../components/common/Modal";
  * who mysteriously cannot work the till.
  */
 const Usuarios = () => {
-  const { personas, register, negocio } = useAuth();
+  const { personas, register, negocio, actual, restablecerPassword } = useAuth();
   const [abierto, setAbierto] = useState(false);
   const [nombre, setNombre] = useState("");
   const [nombreAcceso, setNombreAcceso] = useState("");
@@ -31,6 +31,12 @@ const Usuarios = () => {
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState(null);
   const [exito, setExito] = useState(null);
+  /* The reset dialog is a SECOND modal state, not a mode of the create modal: creating somebody and
+     changing a password of somebody who already works here are different acts, and folding them
+     into one form would let the owner reset a password while the "new employee" fields sit there
+     half filled. */
+  const [reseteando, setReseteando] = useState(null);
+  const [passwordNueva, setPasswordNueva] = useState("");
 
   const cerrar = () => {
     setAbierto(false);
@@ -39,6 +45,34 @@ const Usuarios = () => {
     setRol("vendedor");
     setPassword("");
     setError(null);
+  };
+
+  const cerrarReset = () => {
+    setReseteando(null);
+    setPasswordNueva("");
+    setError(null);
+  };
+
+  const restablecer = async (evento) => {
+    evento.preventDefault();
+    setOcupado(true);
+    setError(null);
+    try {
+      /* No old password, and that is the point: `auth.changePassword` only demands one when the
+         target is yourself. This is the owner resetting somebody else's, so the owner is proving
+         who they are with their own session, and the employee is not asked to remember a password
+         they have forgotten. */
+      await restablecerPassword(reseteando.id, passwordNueva);
+      setExito(
+        `La contraseña de ${reseteando.nombre} quedó restablecida. Avisale cuando pueda: ` +
+          `la próxima vez que entre, MiniMarck le va a pedir la nueva.`
+      );
+      cerrarReset();
+    } catch (err) {
+      setError(mensajeDeError(err, "No se pudo restablecer la contraseña"));
+    } finally {
+      setOcupado(false);
+    }
   };
 
   const crear = async (evento) => {
@@ -73,6 +107,7 @@ const Usuarios = () => {
             <th>Nombre de acceso</th>
             <th>Rol</th>
             <th>Último ingreso</th>
+            <th aria-label="Acciones"></th>
           </tr>
         </thead>
         <tbody>
@@ -88,10 +123,30 @@ const Usuarios = () => {
                     : "nunca"
                   : <span style={{ color: "#f59e0b" }}>sin contraseña</span>}
               </td>
+              <td>
+                {/* Only for somebody who HAS a password, and only for somebody else. Resetting your
+                    own password is a different screen (`Acceso`) that asks for the current one —
+                    offering it here would let the owner "reset" themselves without ever proving
+                    they know their own password, which is exactly the proof the sign-in screen is
+                    for. And there is no button on a row that cannot be reset: `auth.changePassword`
+                    would refuse with SIN_CREDENCIAL, and a button that only ever fails is a lie
+                    about what the owner can do. */}
+                {actual?.rol === "admin" && p.puedeIngresar && p.id !== actual.id && (
+                  <button
+                    className="btn-secondary btn-sm"
+                    data-testid={`resetear-${p.email}`}
+                    onClick={() => { setReseteando(p); setExito(null); setError(null); }}
+                  >
+                    <i className="fa-solid fa-key"></i> Restablecer
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {exito && <div className="acceso-ok">{exito}</div>}
 
       {abierto && (
         <Modal isOpen={abierto} onClose={cerrar} title="Nuevo empleado" size="sm">

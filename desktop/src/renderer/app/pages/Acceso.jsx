@@ -130,6 +130,27 @@ const Acceso = () => {
 
         {error && <div className="acceso-error">{error}</div>}
 
+        {/* The way back in, for the one case the app cannot handle by itself.
+            `CREDENCIALES_INVALIDAS` is the SAME answer for "no such account" and "wrong
+            password", deliberately: two different answers would let anybody type names into this
+            screen and learn who works here. So the guidance cannot say "that user does not
+            exist" — it can only say what to do next, which is the same for both cases. It appears
+            on every failure rather than on a guess about which one it was. */}
+        {error && pestana === "entrar" && (
+          <div className="acceso-ayuda">
+            <p>
+              ¿No entrás con la contraseña que creíste? El dueño de este negocio puede
+              restablecerla desde la misma computadora, en la carpeta del proyecto:
+            </p>
+            <code>npm run auth:reset-admin -- --listar</code>
+            <p>
+              Después le pide la contraseña nueva y la cambia al instante. Es el mismo comando para
+              una cuenta que no existe que para una contraseña equivocada, así que no se puede
+              usar para averiguar quién trabaja acá.
+            </p>
+          </div>
+        )}
+
         <button type="submit" className="btn-primary acceso-boton" disabled={ocupado}>
           {ocupado ? "Un momento…" : pestana === "entrar" ? "Entrar" : "Crear y entrar"}
         </button>
