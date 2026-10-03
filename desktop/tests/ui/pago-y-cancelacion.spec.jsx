@@ -347,6 +347,39 @@ describe('taking the money: F2, the change, the till, and the receipt', () => {
     expect(egreso.monto_centavos).toBe(20000)
   })
 
+  it('el detalle de una venta fiada muestra sus productos, aunque no tenga recibido ni cambio', async () => {
+    const { t } = escenario({ productos: [{ nombre: 'Queso artesanal', stock_milli: 3000 }] })
+    stores.push(t)
+    await abrirLaCaja()
+
+    const deudor = insertarDeudor(t, {
+      negocioId: t.negocioId,
+      usuarioId: t.usuarioId,
+      nombre: 'Marta Gomez'
+    })
+
+    // UNA VENTA FIADA NO TIENE RECIBIDO NI CAMBIO: nadie puso billetes en el mostrador, así que
+    // las dos columnas quedan en NULL. `formatCentavos(null)` no devuelve un cero — tira
+    // MONEY_NOT_CENTS, y el que tira durante el render se lleva el subárbol desmontado.
+    await globalThis.minimarck.call('ventas', 'create', {
+      items: [{ productoId: 1, cantidad: 1 }],
+      metodoPago: 'credito',
+      clienteDeudorId: deudor.id,
+      idempotencyKey: 'tk-fiada-detalle'
+    })
+
+    montarVentas()
+    const verDetalle = await screen.findByRole('button', { name: /Ver detalle de la venta/ }, { timeout: 5000 })
+    await user.click(verDetalle)
+
+    // LO QUE FALTABA MIRAR. El otro test que abre el detalle va derecho al botón de cancelar y
+    // nunca afirma que los productos estén: por eso un detalle que se cae entero pasaba igual,
+    // siempre que la venta hubiera sido en efectivo y con vuelto. Crédito y transferencia —dos de
+    // cada tres ventas de un negocio real— llegaban acá con los montos en NULL.
+    expect(await screen.findByText('Queso artesanal', undefined, { timeout: 5000 })).toBeTruthy()
+    expect(screen.queryByText('Esta venta no tiene lineas')).toBeNull()
+  })
+
   it('the payment receipt shows a real balance for a debtor who still owes, not a hardcoded zero', async () => {
     const { t } = escenario({ productos: [{ nombre: 'Queso artesanal', stock_milli: 3000 }] })
     stores.push(t)

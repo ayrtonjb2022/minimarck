@@ -3,6 +3,7 @@ import { ventasAPI } from "../api/ventas";
 import Modal from "../components/common/Modal";
 import { toast } from "react-toastify";
 import { formatCentavos, formatDate, formatCantidad } from "../utils/formatters";
+import { isCents } from "../../../shared/money";
 
 /**
  * Sales history, read-only, over the desktop contract.
@@ -18,8 +19,10 @@ import { formatCentavos, formatDate, formatCantidad } from "../utils/formatters"
  * 2. `row.total`, `row.subtotal`, `row.iva`, `detalle.precioUnitario`. The contract is
  *    integer centavos — `totalCentavos`, `subtotalCentavos`, `ivaCentavos`,
  *    `precioUnitarioCentavos` — and quantities are integer thousandths (`cantidadMilli`).
- *    `formatCentavos(undefined)` renders "$0.00" rather than throwing, so a whole ledger
- *    could display as a column of zeroes and look like a till that took no money.
+ *    `formatCentavos(undefined)` does NOT render "$0.00": it THROWS `MONEY_NOT_CENTS` from
+ *    `assertCents`, which rejects anything that is not an integer of centavos. So a wrong
+ *    field name took the whole screen down instead of showing a column of zeroes, and every
+ *    call site here was renamed to the contract's name to keep that from happening.
  *
  * 3. `row.usuario.nombre`. There is no joined user object; a sale carries `userId`, and
  *    resolving it would need an operation the frozen contract does not have. So the
@@ -319,10 +322,38 @@ const DetalleVenta = ({ venta, onCancelada }) => {
           <span>Cliente</span>
           <div>{venta.clienteNombre || "-"}</div>
         </div>
+        {/* EL RECIBIDO/CAMBIO ES DEL EFECTIVO Y DE NADIE MÁS. Una venta por crédito, tarjeta o
+            transferencia no tiene "recibido": nadie puso billetes en el mostrador, así que las dos
+            columnas llegan en `null` — legítimamente. `formatCentavos(null)` no dibuja un cero:
+            TIRA `MONEY_NOT_CENTS`, porque el módulo de dinero rechaza todo lo que no sea un entero
+            de centavos.
+
+            Esa excepción se llevaba puesto el detalle ENTERO: React desmonta el componente que
+            tira durante el render, así que el modal quedaba abierto con el folio en el título y el
+            cuerpo en blanco. Visto desde el mostrador eso no parece un crash, parece "esta venta no
+            tiene productos" — y con dos de tres ventas (crédito y transferencia) pasando por acá,
+            el historial entero se veía roto.
+
+            El guardia va ACÁ y no adentro de `formatCentavos`: la estrictez del formateador es la
+            que delata a quien le pasa pesos donde van centavos, y aflojarla para tapar un `null`
+            que SÍ es válido cambiaría una pantalla rota por un número mal cobrado, en silencio.
+
+            Y el predicado es `isCents`, no `Number.isSafeInteger`. El formateador encadena
+            `formatCents` → `assertCents` → `isCents`, así que el guardia tiene que ser LA MISMA
+            puerta o más ancha; uno más ancho reabre la pantalla en blanco por la puerta de
+            atrás. `Number.isSafeInteger` acepta un entero que exceda `MAX_CENTS`, y ese valor
+            pasa el guardia y TIRA un centavo más adentro del render.
+
+            El `&&` es a propósito: un solo `—` blanquea las DOS columnas cuando cualquiera de las
+            dos no es centavos, y eso es correcto sólo porque `ventas.repo.js:329-341` las
+            inicializa en `null` y las asigna JUNTAS dentro del mismo `if`. Nunca hay una sola
+            seteada, así que no existe el caso "una columna válida y la otra no". */}
         <div>
           <span>Recibido / Cambio</span>
           <div>
-            {formatCentavos(venta.montoRecibidoCentavos)} / {formatCentavos(venta.montoCambioCentavos)}
+            {isCents(venta.montoRecibidoCentavos) && isCents(venta.montoCambioCentavos)
+              ? `${formatCentavos(venta.montoRecibidoCentavos)} / ${formatCentavos(venta.montoCambioCentavos)}`
+              : "—"}
           </div>
         </div>
       </div>

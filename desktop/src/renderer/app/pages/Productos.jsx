@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
 import { mensajeDeError } from "../api/ipc";
@@ -129,6 +130,11 @@ const margenCalculado = (precioTexto, costoTexto) => {
 };
 
 const Productos = () => {
+  // React Query, to reach ACROSS screens. The POS caches the product list under
+  // `["productos","all-for-pos"]` with a five-minute life, and this page never wrote to that cache:
+  // a product created here showed up in the catalogue and stayed missing at the till until the
+  // cache expired. The writes below invalidate the `productos` family instead.
+  const queryClient = useQueryClient();
   const [filas, setFilas] = useState([]);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(0);
@@ -204,6 +210,10 @@ const Productos = () => {
     setForm({ ...VACIO, categoriaId: categorias[0] ? String(categorias[0].id) : "" });
   };
 
+  // A write the POS has to see. `["productos"]` matches by PREFIX, so it also catches the POS's
+  // `["productos","all-for-pos"]` — one call covers create, edit, toggle and delete.
+  const avisarAlPos = () => queryClient.invalidateQueries({ queryKey: ["productos"] });
+
   const guardar = async (evento) => {
     evento.preventDefault();
     setGuardando(true);
@@ -236,6 +246,7 @@ const Productos = () => {
         await productosAPI.crear(cuerpo);
         toast.success(`"${form.nombre}" creado`);
       }
+      await avisarAlPos();
       setForm(null);
       await cargar({ suprimeCargando: true });
     } catch (err) {
@@ -252,6 +263,7 @@ const Productos = () => {
     try {
       await productosAPI.actualizar(p.id, { activo: !p.activo });
       toast.success(p.activo ? `"${p.nombre}" desactivado` : `"${p.nombre}" activado`);
+      await avisarAlPos();
       await cargar({ suprimeCargando: true });
     } catch (err) {
       toast.error(mensajeDeError(err, "No se pudo cambiar el estado"));
@@ -271,6 +283,7 @@ const Productos = () => {
           ? `"${porEliminar.nombre}" tiene ventas: quedó desactivado en vez de eliminado`
           : `"${porEliminar.nombre}" eliminado`
       );
+      await avisarAlPos();
       setPorEliminar(null);
       await cargar({ suprimeCargando: true });
     } catch (err) {
