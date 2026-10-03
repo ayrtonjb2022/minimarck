@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { Routes, Route, Navigate, useLocation, NavLink } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
-import { useTheme } from "./context/ThemeContext";
 import CajaGuard from "./components/common/CajaGuard";
+import AppShell from "./components/common/AppShell";
 import PuntoDeVenta from "./pages/puntoDeVenta";
 import Ventas from "./pages/Ventas";
 import Deudores from "./pages/Deudores";
@@ -16,7 +16,6 @@ import Productos from "./pages/Productos";
 import Categorias from "./pages/Categorias";
 import Contabilidad from "./pages/Contabilidad";
 import Respaldos from "./pages/Respaldos";
-import ControlesDeTurno from "./components/common/ControlesDeTurno";
 
 /**
  * The route tree, cut down to what this build can actually do.
@@ -49,6 +48,21 @@ import ControlesDeTurno from "./components/common/ControlesDeTurno";
  * screen agreed with each other and both were wrong, which is worse than either being wrong alone.
  * The stock already moved without them: a sale can push stock down and nothing could push it back
  * up, and the average cost a sale was measured against could only be changed by hand.
+ *
+ * LO QUE ESTE ARCHIVO YA NO DIBUJA, Y POR QUÉ.
+ *
+ * El cromo de cada pantalla — la barra lateral con los doce destinos agrupados en cuatro
+ * secciones, la barra delgada con el título, el relevo, el tema y la salida — vive entero en
+ * `AppShell.jsx`. Este archivo pasó de catorce copias de
+ * `<div className="app-layout"><main className="main"><TopBar …/><Page /></main></div>` a
+ * catorce `<AppShell titulo="…"><Page /></AppShell>`, que es la mitad de las líneas y un solo
+ * lugar donde un cambio de cromo hay que recordar aplicar.
+ *
+ * `TopBar` no se borró sin más: su mitad útil (el relevo, el tema, la salida, y
+ * `.mm-topbar-title`, que `src/main/index.js` lee del DOM real para el chequeo NAV-2) se mudó
+ * a `BarraSuperior` DENTRO de `AppShell.jsx`, con el porqué escrito al lado. Lo que desapareció
+ * fue la tira de doce enlaces, que era el problema: a 1280px doce textos en fila son un muro,
+ * y no dicen cuál es la pantalla de arranque.
  */
 
 const PANTALLAS_FALTANTES = [
@@ -57,170 +71,47 @@ const PANTALLAS_FALTANTES = [
 ];
 
 /**
- * The top strip. Not the web's Navbar: that one carried a shop switcher, a notification bell
- * polling an op that answers 501, and a logout button for a session that does not exist.
- * This says who is on the till and gets out of the way.
+ * The screen for a route this build does not have, instead of a 404 from nowhere.
  *
- * The handover control used to hang off the web `Navbar`, which this route tree never
- * renders — the feature was complete and unreachable, and no unit test could have said so.
- * It is mounted here, and on the point of sale, through `ControlesDeTurno`: one place, both
- * mount points, so there is a single definition to keep honest.
+ * It receives the collapse pair from `App` and passes it on instead of owning it, for the same
+ * reason every other route here does: the sidebar's fold state lives in `App`, so it survives a
+ * route change instead of snapping back open every time the operator hits a dead URL.
  */
-const TopBar = ({ titulo }) => {
-  const { user, negocio, logout, puedeAdministrarUsuarios } = useAuth();
-  const { theme, toggleTheme } = useTheme();
-
-  return (
-    <header className="mm-topbar">
-      <div className="mm-topbar-brand">
-        <i className="fa-solid fa-cash-register" aria-hidden="true"></i>
-        <strong>MiniMarck</strong>
-        {negocio?.nombre ? <span className="mm-topbar-shop">{negocio.nombre}</span> : null}
-      </div>
-
-      <div className="mm-topbar-title">{titulo}</div>
-
-      <nav className="mm-topbar-nav" aria-label="Secciones">
-        <NavLink to="/pos" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-cash-register" aria-hidden="true"></i> Vender
-        </NavLink>
-        {/* The panel and the reports are the two screens that ANSWER questions rather than record
-            something, so they sit next to Vender rather than at the end of the strip: an operator
-            opening the app on a Monday morning wants the numbers first. */}
-        <NavLink to="/dashboard" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-gauge-high" aria-hidden="true"></i> Panel
-        </NavLink>
-        <NavLink to="/reportes/ventas" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-chart-column" aria-hidden="true"></i> Reportes
-        </NavLink>
-        <NavLink to="/ventas" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ventas
-        </NavLink>
-        <NavLink to="/deudores" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-coins" aria-hidden="true"></i> Deudores
-        </NavLink>
-        <NavLink to="/proveedores" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-truck-field" aria-hidden="true"></i> Proveedores
-        </NavLink>
-        <NavLink to="/compras" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-cart-plus" aria-hidden="true"></i> Compras
-        </NavLink>
-        {/* The catalogue, and the buckets it is filed under. These are the two screens that answer
-            "what does this shop sell, and for how much", which is the question an operator asks
-            right before ringing something up — so they belong in the strip rather than behind a
-            settings menu that does not exist yet. */}
-        <NavLink to="/productos" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-box-open" aria-hidden="true"></i> Catálogo
-        </NavLink>
-        <NavLink to="/categorias" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-tags" aria-hidden="true"></i> Categorías
-        </NavLink>
-        {/* The ledger. It sits after the shop's own operations because that is the order an owner
-            reads it in: sell, buy, and then look at what the numbers say. The tab strip inside
-            groups its four readings. */}
-        <NavLink to="/contabilidad" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-scale-balanced" aria-hidden="true"></i> Contabilidad
-        </NavLink>
-        {/* The shop's own file. LAST in the strip, and shown to whoever may run the usuarios module
-            — the same predicate the route checks. A restore replaces the database including the
-            users, so offering it to a vendedor would be offering the keys to the shop. */}
-        {puedeAdministrarUsuarios ? (
-          <NavLink to="/respaldos" className={({ isActive }) => (isActive ? "active" : "")}>
-            <i className="fa-solid fa-database" aria-hidden="true"></i> Respaldos
-          </NavLink>
-        ) : null}
-        {/* `/usuarios` has been a mounted, role-gated route since the sign-in feature landed and it
-            was reachable only by typing the URL: nothing in the chrome linked to it. Same defect as
-            the handover control, and the same fix — a link next to the thing it belongs to. It is
-            shown to the roles the route itself admits, so the strip cannot offer a door that
-            answers "no".
-            `puedeAdministrarUsuarios` is `admin || supervisor`, exactly the predicate the route
-            checks, and it is imported from the context rather than re-derived here so the two
-            cannot drift. */}
-        {puedeAdministrarUsuarios ? (
-          <NavLink to="/usuarios" className={({ isActive }) => (isActive ? "active" : "")}>
-            <i className="fa-solid fa-users" aria-hidden="true"></i> Usuarios
-          </NavLink>
-        ) : null}
-      </nav>
-
-      <div className="mm-topbar-right">
-        <ControlesDeTurno />
-        {user?.nombre ? (
-          <span className="mm-topbar-user" title={`Rol: ${user.rol}`}>
-            {user.nombre}
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className="theme-toggle"
-          onClick={toggleTheme}
-          title={theme === "light" ? "Modo oscuro" : "Modo claro"}
-          aria-label={theme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-        >
-          <i className={`fa-solid ${theme === "light" ? "fa-moon" : "fa-sun"}`} aria-hidden="true"></i>
-        </button>
-        {/* The way out of the session, in the chrome this route tree actually renders.
-            It used to live only in `Navbar`/`Sidebar`, which `App.jsx` never mounts — a feature
-            defined and unreachable, the same trap `ControlesDeTurno`'s comment records for the
-            handover. `AuthContext.logout` clears the session and `isAuthenticated` flips, so the
-            shell swaps `<Routes>` for `<Acceso />`; the button is the operator's half of it. */}
-        {user ? (
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={logout}
-            title="Cerrar sesión"
-            aria-label="Cerrar sesión"
-            data-testid="cerrar-sesion"
-          >
-            <i className="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
-          </button>
-        ) : null}
-      </div>
-    </header>
-  );
-};
-
-/** The screen for a route this build does not have, instead of a 404 from nowhere. */
-const NoDisponible = () => {
+const NoDisponible = ({ colapsado, onAlternarColapsado }) => {
   const location = useLocation();
 
   return (
-    <div className="app-layout">
-      <main className="main">
-        <TopBar titulo="No disponible" />
-        <div className="card" style={{ maxWidth: 720 }}>
-          <div className="card-header">
-            <h3>
-              <i className="fa-solid fa-triangle-exclamation" style={{ color: "var(--kanagawa-orange)", marginRight: 8 }} aria-hidden="true"></i>
-              Esta pantalla todavia no existe en la version de escritorio
-            </h3>
-          </div>
-          <p style={{ color: "var(--kanagawa-fg-muted)", fontSize: 14, marginBottom: 16 }}>
-            Pediste <code>{location.pathname}</code>. La app de escritorio hoy vende, muestra el
-            historial y cobra las cuentas corrientes; el resto de las secciones todavia no.
-          </p>
-          <ul className="mm-missing-list">
-            {PANTALLAS_FALTANTES.map((p) => (
-              <li key={p.ruta}>
-                <code>{p.ruta}</code>
-                <strong>{p.nombre}</strong>
-                <span>{p.motivo}</span>
-              </li>
-            ))}
-          </ul>
-          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-            <NavLink to="/pos" className="btn-primary">
-              <i className="fa-solid fa-cash-register" aria-hidden="true"></i> Ir a vender
-            </NavLink>
-            <NavLink to="/deudores" className="btn-secondary">
-              <i className="fa-solid fa-coins" aria-hidden="true"></i> Ver deudores
-            </NavLink>
-          </div>
+    <AppShell titulo="No disponible" colapsado={colapsado} onAlternarColapsado={onAlternarColapsado}>
+      <div className="card" style={{ maxWidth: 720 }}>
+        <div className="card-header">
+          <h3>
+            <i className="fa-solid fa-triangle-exclamation" style={{ color: "var(--kanagawa-orange)", marginRight: 8 }} aria-hidden="true"></i>
+            Esta pantalla todavia no existe en la version de escritorio
+          </h3>
         </div>
-      </main>
-    </div>
+        <p style={{ color: "var(--kanagawa-fg-muted)", fontSize: 14, marginBottom: 16 }}>
+          Pediste <code>{location.pathname}</code>. La app de escritorio hoy vende, muestra el
+          historial y cobra las cuentas corrientes; el resto de las secciones todavia no.
+        </p>
+        <ul className="mm-missing-list">
+          {PANTALLAS_FALTANTES.map((p) => (
+            <li key={p.ruta}>
+              <code>{p.ruta}</code>
+              <strong>{p.nombre}</strong>
+              <span>{p.motivo}</span>
+            </li>
+          ))}
+        </ul>
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <NavLink to="/pos" className="btn-primary">
+            <i className="fa-solid fa-cash-register" aria-hidden="true"></i> Ir a vender
+          </NavLink>
+          <NavLink to="/deudores" className="btn-secondary">
+            <i className="fa-solid fa-coins" aria-hidden="true"></i> Ver deudores
+          </NavLink>
+        </div>
+      </div>
+    </AppShell>
   );
 };
 
@@ -234,14 +125,18 @@ const NoDisponible = () => {
  * between an operator and a debt they are trying to collect. The only thing the till is needed
  * for here is CASH, and `deudores.addPayment` says so by name — `CAJA_ABIERTA_REQUERIDA`, 409 —
  * on the cash method and only on the cash method.
+ *
+ * Sigue siendo un componente de módulo y no un elemento en línea dentro de `<Routes>` a propósito:
+ * los componentes definidos dentro de `App` se recrean en cada render y React desmonta el
+ * subárbol entero, con lo cual el estado del POS y el texto del filtro se perderían al cambiar de
+ * ruta. Acá además hace falta que sea un componente para recibir y reenviar el par
+ * `colapsado`/`onAlternarColapsado` como cualquier otra pantalla, sin repetir el `AppShell`
+ * dentro de la lista de rutas.
  */
-const PaginaDeudores = () => (
-  <div className="app-layout">
-    <main className="main">
-      <TopBar titulo="Deudores" />
-      <Deudores />
-    </main>
-  </div>
+const PaginaDeudores = ({ colapsado, onAlternarColapsado }) => (
+  <AppShell titulo="Deudores" colapsado={colapsado} onAlternarColapsado={onAlternarColapsado}>
+    <Deudores />
+  </AppShell>
 );
 
 /**
@@ -264,6 +159,23 @@ const PaginaDeudores = () => (
 const App = () => {
   const { isAuthenticated, loading, puedeAdministrarUsuarios } = useAuth();
 
+  /**
+   * EL ESTADO DEL PLIEGUE VIVE EN `App`, NO EN `AppShell`, Y ESO ES LO IMPORTANTE.
+   *
+   * `AppShell` se monta y se desmonta en cada cambio de ruta. Si el pliegue fuera estado suyo,
+   * el operador que plegara el menú para liberar ancho — que es justo lo que hace alguien con
+   * una pantalla chica y un carrito abierto — vería la barra reabrirse sola al ir a cobrar, y
+   * otra vez al volver a vender. El estado tiene que vivir un nivel más arriba que las rutas,
+   * y el único lugar de ese nivel que sobrevive a la navegación es `App`.
+   *
+   * `alternarColapsado` usa la forma funcional de `setColapsado` en vez de leer `colapsado` del
+   * closure: con dos clics dentro del mismo tick, un cierre calculado con el valor viejo se
+   * aplicaría dos veces y la barra no se movería. `v => !v` lee siempre el valor más reciente y
+   * se aplica una vez.
+   */
+  const [colapsado, setColapsado] = useState(false);
+  const alternarColapsado = () => setColapsado((v) => !v);
+
   if (loading) {
     return (
       <div className="acceso">
@@ -278,21 +190,15 @@ const App = () => {
     <Routes>
       <Route path="/usuarios" element={
         puedeAdministrarUsuarios ? (
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Usuarios" />
-              <Usuarios />
-            </main>
-          </div>
+          <AppShell titulo="Usuarios" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Usuarios />
+          </AppShell>
         ) : (
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Usuarios" />
-              <div className="card">
-                <p>Sólo el dueño o un supervisor pueden ver los usuarios.</p>
-              </div>
-            </main>
-          </div>
+          <AppShell titulo="Usuarios" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <div className="card">
+              <p>Sólo el dueño o un supervisor pueden ver los usuarios.</p>
+            </div>
+          </AppShell>
         )
       } />
       {/* A till app opens on the till, not on a menu. */}
@@ -308,30 +214,39 @@ const App = () => {
           `app://bundle/ventas` rely on `isNavigationRequest()` treating a real file path as a
           file, and moving the launch URL would put that rule and the router in each other's way. */}
       <Route path="/index.html" element={<Navigate to="/pos" replace />} />
+      {/* EL PUNTO DE VENTA AHORA USA EL CROMO DE TODAS LAS PANTALLAS, Y ESTO NO ES COSMÉTICO.
+          Antes `/pos` era la única ruta sin `app-layout`: sin barra lateral, sin marca, sin
+          salida. El precio de esa excepción eran cuatro `NavLink` pegados a la fila del
+          buscador en `puntoDeVenta.jsx`, y el porqué de por qué existían y de por qué se
+          fueron está en el docblock de `AppShell`, que es el cromo que vino a reemplazarlos.
+          `CajaGuard` sigue envolviendo al POS exactamente igual: la pregunta que hace —¿está
+          abierta la caja?— es del dinero y no del cromo. */}
       <Route
         path="/pos"
         element={
           <CajaGuard>
-            <PuntoDeVenta />
+            <AppShell titulo="Vender" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+              <PuntoDeVenta />
+            </AppShell>
           </CajaGuard>
         }
       />
       <Route
         path="/ventas"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Ventas" />
-              <Ventas />
-            </main>
-          </div>
+          <AppShell titulo="Ventas" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Ventas />
+          </AppShell>
         }
       />
       {/* Customers and debtors are the SAME ROWS here. The web had a `clientes` screen and a
           `deudores` screen over one `clientes_deudores` table, so sending the old `/clientes`
           URL to the debtor list is a redirect to the truth rather than a missing page: a customer
           with a clean slate is on that list too, with a "Debe" of $0,00. */}
-      <Route path="/deudores" element={<PaginaDeudores />} />
+      <Route
+        path="/deudores"
+        element={<PaginaDeudores colapsado={colapsado} onAlternarColapsado={alternarColapsado} />}
+      />
       <Route path="/clientes" element={<Navigate to="/deudores" replace />} />
       {/* The panel, and the ten reports. BOTH SIT BEHIND THE `isAuthenticated` GATE ABOVE, and
           that is the whole security story for them — not a per-route check, not a role test.
@@ -346,12 +261,9 @@ const App = () => {
       <Route
         path="/dashboard"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Panel" />
-              <Panel />
-            </main>
-          </div>
+          <AppShell titulo="Panel" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Panel />
+          </AppShell>
         }
       />
       {/* `/reportes` on its own sends the operator to the sales report rather than to a dead end:
@@ -362,12 +274,9 @@ const App = () => {
       <Route
         path="/reportes/:reporte"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Reportes" />
-              <Reportes />
-            </main>
-          </div>
+          <AppShell titulo="Reportes" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Reportes />
+          </AppShell>
         }
       />
       {/* Suppliers and purchases, in the same chrome and for the same reason `Deudores` is not
@@ -380,23 +289,17 @@ const App = () => {
       <Route
         path="/proveedores"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Proveedores" />
-              <Proveedores />
-            </main>
-          </div>
+          <AppShell titulo="Proveedores" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Proveedores />
+          </AppShell>
         }
       />
       <Route
         path="/compras"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Compras" />
-              <Compras />
-            </main>
-          </div>
+          <AppShell titulo="Compras" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Compras />
+          </AppShell>
         }
       />
       {/* The catalogue, and the categories it is filed under.
@@ -407,23 +310,17 @@ const App = () => {
       <Route
         path="/productos"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Productos" />
-              <Productos />
-            </main>
-          </div>
+          <AppShell titulo="Productos" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Productos />
+          </AppShell>
         }
       />
       <Route
         path="/categorias"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Categorías" />
-              <Categorias />
-            </main>
-          </div>
+          <AppShell titulo="Categorías" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Categorias />
+          </AppShell>
         }
       />
       {/* The ledger, and the debts the shop itself owes.
@@ -435,42 +332,36 @@ const App = () => {
       <Route
         path="/contabilidad"
         element={
-          <div className="app-layout">
-            <main className="main">
-              <TopBar titulo="Contabilidad" />
-              <Contabilidad />
-            </main>
-          </div>
+          <AppShell titulo="Contabilidad" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <Contabilidad />
+          </AppShell>
         }
       />
       {/* The shop's file, and the only screen that can undo a disaster.
           GATED BY ROLE, unlike every other route here: a restore replaces the database INCLUDING
           the users table, so a screen that could reach it would be a way around the sign-in it was
           supposed to be behind. The gate is the same `puedeAdministrarUsuarios` the nav link uses,
-          so the strip cannot offer a door that answers "no". */}
+          so the sidebar cannot offer a door that answers "no". */}
       <Route
         path="/respaldos"
         element={
           puedeAdministrarUsuarios ? (
-            <div className="app-layout">
-              <main className="main">
-                <TopBar titulo="Respaldos" />
-                <Respaldos />
-              </main>
-            </div>
+            <AppShell titulo="Respaldos" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+              <Respaldos />
+            </AppShell>
           ) : (
-            <div className="app-layout">
-              <main className="main">
-                <TopBar titulo="Respaldos" />
-                <div className="card">
-                  <p>Sólo el dueño o un supervisor pueden ver y restaurar respaldos.</p>
-                </div>
-              </main>
-            </div>
+            <AppShell titulo="Respaldos" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+              <div className="card">
+                <p>Sólo el dueño o un supervisor pueden ver y restaurar respaldos.</p>
+              </div>
+            </AppShell>
           )
         }
       />
-      <Route path="*" element={<NoDisponible />} />
+      <Route
+        path="*"
+        element={<NoDisponible colapsado={colapsado} onAlternarColapsado={alternarColapsado} />}
+      />
     </Routes>
   );
 };

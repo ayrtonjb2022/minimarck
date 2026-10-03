@@ -99,7 +99,9 @@ body {
 .sidebar-brand {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+  row-gap: 2px;
   font-size: 18px;
   font-weight: 800;
   color: var(--kanagawa-fg);
@@ -110,6 +112,29 @@ body {
 }
 
 .sidebar-brand i { color: var(--kanagawa-blue); font-size: 22px; }
+
+/* El nombre del negocio va en su propia línea y no pegado al de la app. En 260px de ancho no
+   entran los dos, y un nombre de negocio recortado a la mitad no dice qué negocio es — que es
+   justo lo que un cajero tiene que confirmar cuando hay dos cajas sobre la misma máquina.
+   `flex-basis: 100%` lo manda a la fila de abajo; `span` a propósito, porque las reglas de
+   `.sidebar.collapsed .sidebar-brand span` que lo esconde al plegar ya lo alcanzan solo.
+   El degradado de abajo hay que DESACTIVARLO aquí y no alcanza con poner `color`: el texto de
+   `.sidebar-brand span` se pinta con `-webkit-text-fill-color`, que gana sobre `color` sin
+   importar la especificidad, así que sin estas dos líneas el nombre del negocio salía con el
+   degradado azul→mauve de la marca en 11px en lugar de la línea apagada que le corresponde. */
+.sidebar-brand span.sidebar-shop {
+  flex-basis: 100%;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--kanagawa-fg-muted);
+  background: none;
+  -webkit-background-clip: border-box;
+  -webkit-text-fill-color: var(--kanagawa-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .sidebar-brand span {
   background: linear-gradient(135deg, var(--ctp-blue), var(--ctp-mauve));
@@ -162,7 +187,11 @@ body {
 .rol-badge-display.vendedor { background: rgba(166, 227, 161, 0.15); color: var(--ctp-green); }
 
 /* ===== SIDEBAR MENU ===== */
-.sidebar-menu { list-style: none; flex: 1; }
+/* `overflow-y` porque la barra es de altura fija (`height: 100vh`) y el menú es `flex: 1`: con
+   catorce entradas y cuatro títulos de sección, en una ventana baja el menú tiene que poder
+   desplazarse DENTRO de la barra. Sin esto se salía por abajo del `overflow: hidden` del
+   `.sidebar` y las entradas de abajo quedaban recortadas sin scroll para recuperarlas. */
+.sidebar-menu { list-style: none; flex: 1; overflow-y: auto; overflow-x: hidden; }
 
 .sidebar-menu .sub-label {
   font-size: 10px;
@@ -188,12 +217,54 @@ body {
   position: relative;
 }
 
+/* EL `<a>` DE VERDAD, ADENTRO DEL `<li>`.
+   React Router dibuja un `<a href>` y le pone la clase `active` a ÉL, mientras que toda esta
+   sección de la hoja está escrita sobre el `<li>`. Por eso el markup de `AppShell.jsx` emite el
+   `<li>` como hijo directo de `.sidebar-menu` y deja que el router dibuje el enlace adentro: las
+   reglas de acá siguen aplicando al `<li>` sin tocarlas. Lo único que hay que declarar es que el
+   `<a>` ocupe la fila entera y herede color y tipografía, o el texto saldría con el azul por
+   defecto del navegador, en negrita y desalineado del ícono. */
+.sidebar-menu li > a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+}
+
+/* Plegada, la fila es sólo el ícono. El centrado era `justify-content` del `<li>` sobre un hijo
+   que ahora es el `<a>`, así que se corre acá — sin esto el ícono queda pegado a la izquierda de
+   una fila que ya no tiene texto que lo justifique. */
+.sidebar.collapsed .sidebar-menu li > a { justify-content: center; }
+
 .sidebar-menu li i { width: 20px; text-align: center; font-size: 15px; }
 
 .sidebar-menu li:hover:not(.disabled) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
-.sidebar-menu li.active { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
 
-.sidebar-menu li.active::before {
+/* ── EL INDICADOR DE LA PÁGINA ACTIVA ───────────────────────────────────────────────────────────
+   Estas dos reglas son UNA sola cosa escrita de dos formas. `li.active` es la que tenía el
+   diseño desde siempre; la que se suma es `li:has(> a.active)`, que es la que se ve hoy, porque
+   la clase `active` la pone el router sobre el `<a>` que dibuja y no sobre el `<li>` que lo
+   envuelve.
+
+   POR QUÉ `:has()` Y NO CALCULAR LA CLASE EN JAVASCRIPT con `useLocation()`. Porque "cuál es la
+   sección activa" tiene que tener UNA sola fuente de verdad, y esa fuente es el `NavLink`: él ya
+   resuelve la coincidencia con sus propias reglas (`end`, prefijos, parámetros). Reimplementar
+   esa comparación en el componente obligaría a mantener dos criterios de "estoy en esta pantalla"
+   que hoy coinciden y mañana no tienen por qué: el día que exista `/ventas/:folio`, la versión
+   en JavaScript marcaría cero filas o dos, y ninguna prueba del repositorio lo detectaría.
+
+   Electron 44 es Chromium 140, y `:has()` llegó en Chrome 105: en la app real la barrita se ve.
+   Y si algún día la hoja se carga en un motor sin `:has()`, lo que se pierde es SÓLO la
+   barrita — la fila sigue resaltada por el fondo — que es el mismo modo de falla silenciosa que
+   `tests/ui/iconos.spec.js` documenta para un ícono sin glifo: se ve deliberado y no está. */
+.sidebar-menu li.active,
+.sidebar-menu li:has(> a.active) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+
+.sidebar-menu li.active::before,
+.sidebar-menu li:has(> a.active)::before {
   content: '';
   position: absolute;
   left: 0;
@@ -491,11 +562,18 @@ table tr:hover td { background: var(--kanagawa-bg); }
 .rol-badge.vendedor { background: rgba(166, 227, 161, 0.15); color: var(--ctp-green); }
 
 /* ===== POS SEARCH BAR ===== */
+/* A TODO EL ANCHO DE LA PANTALLA, ARRIBA DE LOS PANELES. La caja dejó de ser hija de
+   `.pos-left` (o sea, de la mitad izquierda) y pasó a ser hija directa de `.pos-container`, con
+   `.pos-split` — la fila productos/carrito — debajo. Los márgenes laterales repiten el padding
+   que ya tenía `.pos-left`, para que el input no quede pegado al borde de la grilla ni al del
+   carrito. */
 .pos-search-bar {
   background: var(--kanagawa-bg-alt);
   border-radius: 14px;
   border: 1px solid var(--ctp-surface1);
   padding: 16px 18px;
+  margin: 0 16px 12px 20px;
+  flex: 0 0 auto;      /* ← que la fila larga NO se estire: mide lo que su contenido mide */
 }
 
 .pos-search-input {
@@ -549,24 +627,44 @@ table tr:hover td { background: var(--kanagawa-bg); }
 }
 
 /* ===== POS ===== */
-/* El contenedor principal respeta el viewport SIN scroll */
+/* EL CONTENEDOR AHORA ES UNA COLUMNA, Y ESTA ES LA RAZÓN DE QUE MIDA `100%` Y NO `100vh`.
+   Antes era una fila de dos paneles (`height: 100vh`) porque era hijo DIRECTO del body: `100vh`
+   era exactamente el alto disponible. Dentro del cromo ya no lo es — vive en `.main`, que
+   encima le pone 56px de padding y tiene la barra de pantalla encima — y `100vh` ahí significaba
+   "más alto que la ventana": el POS empujaba el scroll de la página en vez de vivir dentro de
+   ella. Con `.pos-container` en columna, la barra de búsqueda ocupa una fila propia arriba y
+   `.pos-split` se queda con lo que sobra. */
 .pos-container {
   display: flex;
-  height: 100vh;          /* ← Ocupa toda la pantalla visible */
+  flex-direction: column;
+  height: 100%;
   overflow: hidden;       /* ← No permite scroll en este contenedor */
   flex: 1;
   min-height: 0;
   background: var(--ctp-crust);
 }
 
+/* LA COLA QUE QUEDÓ ABAJO. Esta fila no existía antes: sin ella no había forma de que la
+   búsqueda ocupara el ancho completo sin empujar el carrito fuera de la pantalla. Es la que
+   sigue siendo fila; `.pos-container` es la que pasó a ser columna. */
+.pos-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 /* ── PANEL IZQUIERDO: Productos ── */
-/* También respeta el viewport sin scroll */
+/* `height: auto` y no `100vh`: dentro de `.pos-split` el alto lo decide la fila, y un `100vh`
+   fijo haría que este panel se pasara de la base apenas la barra de búsqueda le saque espacio.
+   `min-height: 0` viene a impedir eso mismo: sin él un hijo flexible no puede encogerse por
+   debajo de su contenido, y el `overflow: hidden` de arriba no alcanza para recortarlo. */
 .pos-left {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  height: 100vh;          /* ← Ocupa toda la pantalla visible */
+  height: auto;
+  min-height: 0;
   overflow: hidden;       /* ← No permite scroll en el panel */
   padding: 16px 16px 16px 20px;
 }
@@ -678,7 +776,8 @@ table tr:hover td { background: var(--kanagawa-bg); }
 }
 
 /* ── PANEL DERECHO: Carrito ── */
-/* También respeta el viewport sin scroll */
+/* Mismo cambio de altura que `.pos-left`, y por el mismo motivo: ahora los dos paneles son
+   hermanos dentro de `.pos-split` y el alto lo decide la fila. */
 .pos-cart {
   width: 420px;
   min-width: 360px;
@@ -687,9 +786,28 @@ table tr:hover td { background: var(--kanagawa-bg); }
   border-left: 1px solid var(--kanagawa-border);
   display: flex;
   flex-direction: column;
-  height: 100vh;          /* ← Ocupa toda la pantalla visible */
+  height: auto;
+  min-height: 0;
   overflow: hidden;       /* ← No permite scroll en el panel */
   padding: 16px 18px;
+}
+
+/* EL POS NECESITA QUE `.main` LO DEJE MEDIR EL ALTO QUE LE SOBRA.
+   `.main` es un hijo flexible de `.app-layout` y por defecto su alto lo fija SU contenido. El
+   POS, en cambio, quiere ocupar todo el espacio disponible y no generar scroll: si se lo pide
+   con `height: 100%` sin más, el navegador resuelve un porcentaje contra un padre de alto
+   indeterminado y cae a `auto`.
+
+   Por eso esta regla convierte a `.main` en columna SÓLO cuando lo que monta es el POS, y no
+   en las otras trece pantallas: un `.main` flexible cambiaría el comportamiento de todas, y
+   cada una mide su altura como necesita. `:has()` es lo que permite apuntar al caso sin pedirle
+   a `puntoDeVenta.jsx` que envuelva su pantalla en otro `div` sólo para poder ser identificado;
+   Chromium 140 lo soporta, y si algún día no lo soportara lo que se pierde es el alto completo
+   del POS, no la navegación. Es el mismo modo de falla que la barra activa de la lateral. */
+.main:has(> .pos-container) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .pos-cart .cart-header {
@@ -839,7 +957,9 @@ table tr:hover td { background: var(--kanagawa-bg); }
 }
 
 @media (max-width: 768px) {
-  .pos-container { flex-direction: column; }
+  /* `.pos-container` ya es columna, así que lo que se apila ahora es `.pos-split`: son los dos
+     paneles los que pasan uno debajo del otro. */
+  .pos-split { flex-direction: column; }
   .pos-left { flex: 1; padding: 12px; min-height: 0; height: 50vh; }
   .pos-cart {
     width: 100%; min-width: unset; height: 50vh;
@@ -989,6 +1109,11 @@ select.input-field { cursor: pointer; }
 .sidebar.collapsed .sidebar-footer { justify-content: center; padding: 12px 0; }
 .sidebar.collapsed .sidebar-footer .avatar-mini { width: 32px; height: 32px; font-size: 14px; }
 
+/* Ahora es un `<button>` y no un `<div onClick>` — el operador llega con el teclado igual que con
+   el mouse, y esto no lo pliega a mano. Un `<button>` trae fondo, borde y tipografía de sistema
+   que hay que dejar afuera para que se vea como el control que ya estaba dibujado; el
+   `width` compensa los márgenes negativos de arriba, que existen para que el `border-top` llegue
+   de borde a borde de la barra y no termine 18px antes. */
 .sidebar-collapse-btn {
   display: flex;
   align-items: center;
@@ -996,16 +1121,24 @@ select.input-field { cursor: pointer; }
   padding: 6px;
   cursor: pointer;
   color: var(--kanagawa-fg-muted);
-  font-size: 12px;
   border-top: 1px solid var(--kanagawa-border);
   margin: 4px -18px 0;
   transition: color 0.2s;
-}
-.sidebar.collapsed .sidebar-collapse-btn {
-  margin: 4px -10px 0;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  width: calc(100% + 36px);
+  font: inherit;
+  font-size: 12px;
 }
 .sidebar-collapse-btn:hover {
   color: var(--kanagawa-fg);
+  background: var(--kanagawa-bg-alt);
+}
+.sidebar.collapsed .sidebar-collapse-btn {
+  margin: 4px -10px 0;
+  width: calc(100% + 20px);
 }
 
 @media (max-width: 992px) {
@@ -1023,7 +1156,16 @@ select.input-field { cursor: pointer; }
   .sidebar.collapsed .sidebar-footer { justify-content: center; }
 }
 
-/* ===== MOBILE TOGGLE ===== */
+/* ===== MOBILE TOGGLE =====
+   ESTE BLOQUE NO SE EJECUTA NUNCA EN ESTA APLICACIÓN, Y SE SABE POR QUÉ.
+
+   `.sidebar-toggle` (el botón flotante que abre el cajón) y `.sidebar-overlay` los dibujaba el
+   `Sidebar.jsx` viejo, que no monta nadie; ahora el que monta la barra lateral es `AppShell.jsx`
+   y no dibuja ninguno de los dos. No es un olvido: la ventana de `src/main/window.js` tiene
+   `minWidth: 1024`, así que el viewport nunca baja de 1024px y esta media query nunca se
+   cumple. Si algún día el piso de la ventana baja de 992, el menú se vuelve un cajón fuera de
+   pantalla SIN forma de abrirlo, y hay que montar el `.sidebar-toggle` junto con su estado
+   antes de bajar ese número. La hoja está escrita para ese día; el markup todavía no. */
 .sidebar-toggle { display: none; position: fixed; bottom: 20px; right: 20px; background: var(--kanagawa-blue); color: #181616; border: none; width: 56px; height: 56px; border-radius: 50%; font-size: 24px; cursor: pointer; box-shadow: 0 4px 16px rgba(137,180,250,0.3); z-index: 200; align-items: center; justify-content: center; }
 
 @media (max-width: 992px) {
@@ -1148,35 +1290,24 @@ body {
 
 /* ===== APP SHELL: top bar, pager, detail grid, missing-screen list ===== */
 
-/* The web Navbar carried a shop switcher, a notification bell polling an op that answers
-   501, and a logout for a session that does not exist. This is the strip that is actually
-   true of a single-operator desktop: who is selling, where you are, and a way back. */
+/* LA BARRA DE ARRIBA, DELGADA. Lo que antes vivía en esta caja — la marca, el nombre del
+   negocio y los doce enlaces en fila — vive ahora en la barra lateral, que está definida más
+   arriba de esta hoja. Acá queda sólo lo que es de la pantalla en la que estás: el título, el
+   relevo, el tema y la salida. La marca tampoco hacía falta dos veces en el mismo alto.
+
+   `.mm-topbar-title` NO se renombra a gusto: `src/main/index.js` lo lee del DOM real para
+   comprobar que un enlace profundo a `/ventas` montó la pantalla de ventas y no una página de
+   error, y ese probe es el mismo que quemó al `Navbar`. Ese acuerdo está escrito en el
+   `BarraSuperior` de `AppShell.jsx`. */
 .mm-topbar {
   display: flex;
   align-items: center;
   gap: 18px;
-  flex-wrap: wrap;
   background: var(--kanagawa-bg);
   border: 1px solid var(--kanagawa-border);
   border-radius: 14px;
-  padding: 10px 16px;
+  padding: 8px 14px;
   margin-bottom: 18px;
-}
-
-.mm-topbar-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-}
-
-.mm-topbar-brand i { color: var(--kanagawa-blue); font-size: 18px; }
-
-.mm-topbar-shop {
-  color: var(--kanagawa-fg-muted);
-  font-size: 13px;
-  padding-left: 8px;
-  border-left: 1px solid var(--kanagawa-border);
 }
 
 .mm-topbar-title {
@@ -1185,43 +1316,13 @@ body {
   color: var(--kanagawa-fg);
 }
 
-.mm-topbar-nav {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.mm-topbar-nav a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--kanagawa-fg-muted);
-  text-decoration: none;
-  border: 1px solid transparent;
-}
-
-.mm-topbar-nav a:hover { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
-
-.mm-topbar-nav a.active {
-  background: var(--kanagawa-blue);
-  color: var(--kanagawa-crust);
-  border-color: var(--kanagawa-blue);
-}
-
+/* `margin-left: auto` es lo que empuja el grupo de controles contra el borde derecho: antes lo
+   hacía la tira de enlaces, y sin él el título y los botones quedan pegados a la izquierda. */
 .mm-topbar-right {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.mm-topbar-user {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--kanagawa-fg);
+  margin-left: auto;
 }
 
 /* EL RELEVO Y EL ENLACE A USUARIOS, EN LOS DOS SITIOS DONDE HAY QUE PODER LLEGARLOS.
@@ -1322,7 +1423,6 @@ body {
 
 @media (max-width: 640px) {
   .mm-topbar { gap: 10px; }
-  .mm-topbar-nav { margin-left: 0; width: 100%; }
   .mm-missing-list li { grid-template-columns: 1fr; }
 }
 

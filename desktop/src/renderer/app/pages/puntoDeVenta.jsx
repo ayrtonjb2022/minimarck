@@ -1,5 +1,4 @@
   import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-  import { NavLink } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
@@ -1049,7 +1048,7 @@ export default function PuntoDeVenta() {
 
         {/* El modal va AQUÍ también, y aunque hoy no se llegue, es un error real.
          *
-         * `/pos` está envuelto en `CajaGuard` (`App.jsx:198`), así que con la caja cerrada el POS
+         * `/pos` está envuelto en `CajaGuard` (en `App.jsx`), así que con la caja cerrada el POS
          * no llega a renderizarse: quien responde es el guard, con su propia pantalla "Caja
          * Cerrada". Esta rama es la que queda si alguna vez se saca el guard de `/pos`, y ahí el
          * botón no abría nada — el modal se renderizaba más abajo, en la rama de la caja activa.
@@ -1096,329 +1095,311 @@ export default function PuntoDeVenta() {
           maneja `manejarEnterBusqueda` sobre el input de búsqueda. Lo que no existe es la
           sesión remota por red, que es una feature web, no una capacidad de caja. */}
 
-      <div className="pos-left">
-        <div className="pos-search-bar">
-          <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"8px"}}>
-            <div style={{position:"relative",flex:1}}>
-              <i className="fa-solid fa-search" style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"var(--kanagawa-comment)"}}></i>
-              {/* `onKeyDown` con Enter es el ESCÁNER. Un lector de barras es un teclado: escribe
-                  el código y manda Enter. Sin este handler el escaneo sólo filtraba la grilla y
-                  había que hacer clic a mano cada artículo — que es como el POS no «tenía»
-                  soporte de códigos de barras en la práctica. */}
-              <input ref={searchRef} type="text" value={filtro} onChange={(e) => setFiltro(e.target.value)}
-                onKeyDown={manejarEnterBusqueda} placeholder="Buscar o escanear código de barras... (Ctrl+F)" className="pos-search-input" autoFocus />
-              {filtro && <button onClick={() => setFiltro("")} style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",color:"var(--kanagawa-comment)"}}><i className="fa-solid fa-times"></i></button>}
-            </div>
-            <button onClick={toggleTheme} className="theme-toggle" title={posTheme === "light" ? "Modo oscuro" : "Modo claro"} aria-label={posTheme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}>
-              <i className={`fa-solid ${posTheme === "light" ? "fa-moon" : "fa-sun"}`} aria-hidden="true"></i>
-            </button>
-            {/* LA SALIDA DEL PUNTO DE VENTA. Antes no existía ninguna.
-                `/pos` se renderiza FUERA de `app-layout` — es una pantalla de ancho completo, sin la
-                barra lateral que tienen el resto de las pantallas — y este archivo no tenía ni un
-                `NavLink`, ni un `useNavigate`, ni un botón de "volver". Consecuencia real, no
-                teórica: la app abre acá (`/index.html` redirige a `/pos`), así que después de
-                cobrar el cajero se quedaba sin forma de llegar a la lista de ventas, que es
-                justamente donde vive la cancelación de una venta. Salir era reiniciar la app.
+      {/* LA BARRA DEL POS, A TODO EL ANCHO, ARRIBA DE LA GRILLA Y DEL CARRITO.
+          Antes esta caja vivía DENTRO de `.pos-left`, o sea atada a la mitad izquierda del
+          ancho, con el carrito (420px fijos) robándole el resto. El buscador quedaba con unos
+          600px útiles para escribir un código de barras de trece dígitos mientras los botones
+          de al lado —tema, venta libre, relevo, y los cuatro enlaces de navegación de abajo—
+          competían por el mismo renglón.
 
-                Va como `NavLink` y no como `<a href>` para que sea navegación del router, sin
-                recargar el documento: recargar la app en mitad de un ticket abierto perdería el
-                ticket. El ticket vive en estado del componente, y por eso un `a` normal aquí
-                habría sido un peor bug que el que arregla. */}
-            <NavLink to="/ventas" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
-              <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ventas
-            </NavLink>
-            {/* Y el mismo argumento para Deudores, con una vuelta de tuerca: el POS es la
-                pantalla de INGRESO de la app, y es la única forma de fiar. El cajero que
-                necesita ver quién debe, llamar a un cliente o mirar el historial de pagos
-                está parado acá, con un ticket en el carrito, y no tenía por dónde salir a
-                /deudores: la barra lateral que lo enlaza no se renderiza en /pos. Se agrega
-                el mismo NavLink, por el mismo motivo. */}
-            <NavLink to="/deudores" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
-              <i className="fa-solid fa-user-clock" aria-hidden="true"></i> Deudores
-            </NavLink>
-            {/* Y el MISMO argumento para Proveedores y Compras, que es donde esta vez se notó
-                porque el recorrido de compras las encontró inalcanzables. Las dos pantallas
-                existen, tienen su ruta, su barra superior y su entrada en la barra lateral — y el
-                cajero que las necesita está parado acá, en `/pos`, que es donde abre la app y la
-                única pantalla SIN barra lateral. El recorrido automático intentó hacer clic en
-                `a[href="/compras"]` desde el POS y volcó los enlaces que había en pantalla:
-                `/ventas /deudores`. Ni una compra ni un proveedor alcanzables, con las dos
-                pantallas escritas y compiladas.
+          Ahora es hija directa de `.pos-container`, arriba de `.pos-split`, que es la fila
+          productos/carrito. Gana el ancho completo y, de paso, el buscador deja de compartir
+          renglón con la navegación. Una búsqueda larga la resuelve cada pantalla como pueda, y
+          `/pos` la resuelve localmente: el `ref`, el `value`, el Enter del escáner y el Ctrl+F
+          viven en este archivo y no se movieron.
 
-                Es el mismo agujero que el comentario de arriba describe para Ventas y Deudores, en
-                la dirección opuesta: allí faltaba la SALIDA del POS y había que abrir una; aquí
-                faltaba la ENTRADA y había que cerrarlo. La diferencia es que las dos pantallas
-                nuevas compran stock, y el stock se repone en el mostrador, con el cliente
-                esperando. No puede ser una pantalla a la que se llega por un menú lateral que
-                este layout no tiene. */}
-            <NavLink to="/proveedores" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
-              <i className="fa-solid fa-truck-field" aria-hidden="true"></i> Proveedores
-            </NavLink>
-            <NavLink to="/compras" className="btn-secondary" style={{display:"inline-flex",alignItems:"center",gap:"6px",whiteSpace:"nowrap"}}>
-              <i className="fa-solid fa-cart-plus" aria-hidden="true"></i> Compras
-            </NavLink>
-            {/* El botón de «escanear desde el celular» y su punto rojo/verde se fueron con el
-                socket: no hay servidor al que conectarse, y un punto rojo fijo en la barra del POS
-                le diría al cajero que algo está roto cuando lo único roto era una feature web. */}
-            <button onClick={() => setModalVentaLibre(true)} className="btn-secondary" style={{whiteSpace:"nowrap",padding:"8px 12px",fontSize:"12px"}} title="Vender un producto que no está en el inventario">
-              Venta libre
-            </button>
-
-            {/* EL CONTROL DE RELEVO, Y POR QUÉ ESTÁ AQUÍ Y NO EN LA BARRA DE ARRIBA.
-                El POS es la pantalla de arranque y la única que se dibuja sin cromo: no hay
-                `TopBar` alrededor, así que un botón de relevo arriba sería invisible justo
-                donde se releva la caja. Y la barra de arriba no es una salida — cuando este
-                layout se montó, `Navbar` y `Sidebar` quedaron sin renderizar en el árbol de
-                rutas, con el botón de relevo y el enlace de usuarios dentro de archivos que
-                nadie monta. La función estaba completa y no se llegaba a: 29 pruebas del
-                módulo pasaban porque ninguna monta un componente, y sólo el recorrido a mano
-                pudo preguntarle a la app real por ese `data-testid` y recibir `false`.
-                `ControlesDeTurno` es el mismo control en los dos sitios, no dos controles. */}
-            <ControlesDeTurno compacto />
+          Los cuatro `NavLink` de esta fila se fueron con la navegación, y el porqué de por qué
+          existían y de por qué ya no están está en el docblock de `AppShell`, que es el cromo
+          que vino a reemplazarlos. */}
+      <div className="pos-search-bar">
+        <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"8px"}}>
+          <div style={{position:"relative",flex:1}}>
+            <i className="fa-solid fa-search" style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"var(--kanagawa-comment)"}}></i>
+            {/* `onKeyDown` con Enter es el ESCÁNER. Un lector de barras es un teclado: escribe
+                el código y manda Enter. Sin este handler el escaneo sólo filtraba la grilla y
+                había que hacer clic a mano cada artículo — que es como el POS no «tenía»
+                soporte de códigos de barras en la práctica. */}
+            <input ref={searchRef} type="text" value={filtro} onChange={(e) => setFiltro(e.target.value)}
+              onKeyDown={manejarEnterBusqueda} placeholder="Buscar o escanear código de barras... (Ctrl+F)" className="pos-search-input" autoFocus />
+            {filtro && <button onClick={() => setFiltro("")} style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",color:"var(--kanagawa-comment)"}}><i className="fa-solid fa-times"></i></button>}
           </div>
-          <div className="pos-categories">
-            <button onClick={() => setCategoriaActiva("Todas")}
-              className={`pos-cat-btn ${categoriaActiva==="Todas"?"active":""}`}>Todas</button>
-            {categoriasMenu.slice(1).map((catId) => (
-              <button key={catId} onClick={() => setCategoriaActiva(catId)}
-                className={`pos-cat-btn ${categoriaActiva===catId?"active":""}`}>{getCategoriaNombre(catId)}</button>
-            ))}
-          </div>
+          <button onClick={toggleTheme} className="theme-toggle" title={posTheme === "light" ? "Modo oscuro" : "Modo claro"} aria-label={posTheme === "light" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}>
+            <i className={`fa-solid ${posTheme === "light" ? "fa-moon" : "fa-sun"}`} aria-hidden="true"></i>
+          </button>
+          {/* El botón de «escanear desde el celular» y su punto rojo/verde se fueron con el
+              socket: no hay servidor al que conectarse, y un punto rojo fijo en la barra del POS
+              le diría al cajero que algo está roto cuando lo único roto era una feature web. */}
+          <button onClick={() => setModalVentaLibre(true)} className="btn-secondary" style={{whiteSpace:"nowrap",padding:"8px 12px",fontSize:"12px"}} title="Vender un producto que no está en el inventario">
+            Venta libre
+          </button>
+
+          {/* EL CONTROL DE RELEVO SIGUE EN EL POS, PERO YA NO POR FALTA DE CROMO.
+              Antes se justificaba así: el POS era la única pantalla sin `TopBar` alrededor, así
+              que un botón de relevo arriba era invisible justo donde se releva la caja, y la
+              función quedaba completa e INALCANZABLE — el botón colgaba de `Navbar` y `Sidebar`,
+              archivos que este árbol de rutas no monta. 29 pruebas del módulo pasaban igual,
+              porque ninguna monta un componente; sólo el recorrido a mano pudo preguntarle a
+              la app real por ese `data-testid` y recibir `false`.
+
+              Hoy `/pos` pasa por `AppShell` como todas las pantallas y el relevo está también
+              en la barra del cromo. El control `compacto` NO sobra: el relevo se pide con el
+              ticket abierto delante, y esta fila es la que está a la vista mientras se cobra.
+              Es el mismo componente en los dos sitios — una definición, dos puntos de montaje —
+              y no dos controles. */}
+          <ControlesDeTurno compacto />
         </div>
-
-        <div className="pos-scroll">
-          {conStock.length === 0 && sinStock.length === 0 ? (
-            catalogoVacio ? (
-              /* PRIMERA VEZ. El POS acaba de instalarse y el catálogo está vacío de verdad. Este
-                 caso NOexistía antes: caía en el mismo mensaje de búsqueda, de modo que el primer
-                 minuto de uso de una app recién instalada era una grilla vacía sin explicación y
-                 sin salida — sin productos no hay venta, ni escáner, ni balanza. */
-              <div className="pos-primera-vez">
-                <i className="fa-solid fa-box-open" style={{fontSize:"36px"}} aria-hidden="true"></i>
-                <h3>Aún no cargaste ningún producto</h3>
-                <p style={{maxWidth:"420px",textAlign:"center",lineHeight:"1.5"}}>
-                  Para poder cobrar necesitás al menos un producto con precio y stock.
-                  Podés empezar con un catálogo de ejemplo y borrarlo cuando quieras.
-                </p>
-                {confirmDemo ? (
-                  <div className="pos-primera-vez-confirm" role="group" aria-label="Confirmar carga del catálogo de ejemplo">
-                    <p style={{textAlign:"center",maxWidth:"420px",lineHeight:"1.5"}}>
-                      Se van a crear <strong>{CATALOGO_DEMO.length} productos ficticios</strong> con
-                      precios y stock de ejemplo. No se borra nada existente, y podés eliminarlos
-                      desde <strong>Productos</strong> cuando cargues los tuyos.
-                    </p>
-                    <div style={{display:"flex",gap:"8px"}}>
-                      <button className="btn-primary" onClick={sembrarCatalogoDemo} disabled={isSubmitting}>
-                        {isSubmitting ? "Cargando..." : `Sí, cargar ${CATALOGO_DEMO.length} productos de ejemplo`}
-                      </button>
-                      <button className="btn-secondary" onClick={() => setConfirmDemo(false)} disabled={isSubmitting}>
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* Un solo botón, y es el que resuelve el problema. El POS abre en `/pos` y esta
-                     build no tiene login, así que la pantalla de Productos es un placeholder y no
-                     es a dónde puede ir el cajero: ofrecer «Cargar mis productos» como alternativa
-                     sería mandar a un sitio que dice «todavía no existe». Sin productos esta
-                     pantalla no puede cobrar nada, entonces sembrar el catálogo es la acción, no
-                     un adorno. */
-                  <button className="btn-primary" onClick={() => setConfirmDemo(true)}>
-                    <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Cargar catálogo de ejemplo
-                  </button>
-                )}
-              </div>
-            ) : filtrando ? (
-              /* HAY catálogo pero el filtro no matchea. La acción es cambiar el filtro, no cargar
-                 datos: ofrecer «cargar ejemplo» acá metería productos de mentira en una tienda que
-                 ya tiene los suyos. */
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
-                <i className="fa-solid fa-search" style={{fontSize:"32px"}} aria-hidden="true"></i>
-                <p style={{fontSize:"14px"}}>Ningún producto coincide con la búsqueda</p>
-                <button className="btn-secondary" onClick={() => { setFiltro(""); setCategoriaActiva("Todas"); }}>
-                  Quitar filtros
-                </button>
-              </div>
-            ) : (
-              /* Hay catálogo y no hay filtros, pero los productos visibles están todos sin stock.
-                 Es information, no un vacío: el artículo existe y hay que reponerlo. */
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
-                <i className="fa-solid fa-triangle-exclamation" style={{fontSize:"32px"}} aria-hidden="true"></i>
-                <p style={{fontSize:"14px"}}>Todos tus productos están sin stock</p>
-              </div>
-            )
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:"24px"}}>
-              {conStock.length > 0 && (
-                <div className="pos-products">
-                  {conStock.map((p) => {
-                    const stockMilli = p.stockMilli ?? 0;
-                    const enTicket = ticket.find((i) => i.id === p.id);
-                    // `esPesable` viene GENERADO por la base (`es_pesable`) y no se re-deriva acá:
-                    // la escala la usa también la guarda de la balanza y el badge, y si cada uno
-                    // calcula su propia respuesta del `unidad_medida` terminan discrepando.
-                    const esPesable = p.esPesable;
-                    let cardClass = "pos-product-card";
-                    if (enTicket) cardClass += " en-carrito";
-                    else if (stockMilli <= 5 * QTY_SCALE) cardClass += " stock-bajo";
-                    return (
-                      // `data-producto-id` is not decoration. The grid is sorted by name, so the FIRST
-                      // card is not the first row by id, and anything that needs to know which product
-                      // a card is — the payment drive, a test, a support tool pointed at a screenshot —
-                      // would otherwise have to match on the product's NAME, which is not unique and
-                      // is display text. The id belongs in the DOM for the same reason `id` does.
-                      <div key={p.id} data-producto-id={p.id} className={cardClass} onClick={() => agregarProducto(p)}>
-                        {enTicket && <span className="badge-cart-qty">{formatCantidad(enTicket.qtyMilli, { unidad: p.unidadMedida })}</span>}
-                        <div className="icon-product">
-                          {p.imagen ? <img src={p.imagen} alt={p.nombre} /> : <i className="fa-solid fa-cube"></i>}
-                        </div>
-                        <div className="name">{p.nombre}</div>
-                        <div className="price">{formatCentavos(p.precioCentavos)}</div>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}}>
-                          <div className="stock" style={{color:stockMilli <= 5 * QTY_SCALE ? "var(--kanagawa-orange)" : "var(--kanagawa-green)"}}>
-                            {formatCantidad(stockMilli, { unidad: p.unidadMedida })}
-                          </div>
-                          {esPesable && (
-                            <div style={{display:"flex",gap:"2px"}}>
-                              <div
-                                onClick={(e) => { e.stopPropagation(); setCalcProducto(p); }}
-                                style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
-                                title="Calcular por peso"
-                              >⚖️</div>
-                              <div
-                                onClick={(e) => { e.stopPropagation(); setModalFraccionar(p); }}
-                                style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
-                                title="Fraccionar"
-                              >✂️</div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {sinStock.length > 0 && (
-                <div>
-                  <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
-                    <span style={{fontSize:"12px",fontWeight:600,color:"var(--kanagawa-fg-muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>Sin stock</span>
-                    <div style={{flex:1,height:"1px",background:"var(--kanagawa-border)"}} />
-                  </div>
-                  <div className="pos-products">
-                    {sinStock.map((p) => (
-                      <div key={p.id} className="pos-product-card stock-cero">
-                        <div className="icon-product">
-                          {p.imagen ? <img src={p.imagen} alt={p.nombre} /> : <i className="fa-solid fa-cube"></i>}
-                        </div>
-                        <div className="name" style={{textDecoration:"line-through",color:"var(--kanagawa-fg-muted)"}}>{p.nombre}</div>
-                        <div className="price" style={{color:"var(--kanagawa-comment)"}}>{formatCentavos(p.precioCentavos)}</div>
-                        <div className="stock" style={{color:"var(--kanagawa-red)"}}>Sin stock</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+        <div className="pos-categories">
+          <button onClick={() => setCategoriaActiva("Todas")}
+            className={`pos-cat-btn ${categoriaActiva==="Todas"?"active":""}`}>Todas</button>
+          {categoriasMenu.slice(1).map((catId) => (
+            <button key={catId} onClick={() => setCategoriaActiva(catId)}
+              className={`pos-cat-btn ${categoriaActiva===catId?"active":""}`}>{getCategoriaNombre(catId)}</button>
+          ))}
         </div>
       </div>
 
-      <div className="pos-cart">
-        <div className="cart-header">
-          <div>
-            <h3 style={{fontSize:"16px",fontWeight:700,margin:0,color:"var(--kanagawa-fg)"}}>Ticket</h3>
-            <p style={{fontSize:"12px",color:"var(--kanagawa-comment)",margin:"2px 0 0"}}>{ticket.length} artículo{ticket.length !== 1 ? "s" : ""}</p>
+      {/* LA FILA DE ABAJO: PRODUCTOS A LA IZQUIERDA, CARRITO A LA DERECHA.
+          Este `div` no existía. `.pos-container` era una fila y sus dos hijos —`.pos-left` y
+          `.pos-cart`— se repartían el ancho. Para que la barra de búsqueda ocupe una fila
+          COMPLETA arriba de los dos, hace falta una fila dentro de la columna: `.pos-container`
+          pasó a ser columna y esta caja es la que sigue siendo fila. Los dos paneles no
+          cambian de lugar ni de ancho. */}
+      <div className="pos-split">
+        <div className="pos-left">
+          <div className="pos-scroll">
+            {conStock.length === 0 && sinStock.length === 0 ? (
+              catalogoVacio ? (
+                /* PRIMERA VEZ. El POS acaba de instalarse y el catálogo está vacío de verdad. Este
+                   caso NOexistía antes: caía en el mismo mensaje de búsqueda, de modo que el primer
+                   minuto de uso de una app recién instalada era una grilla vacía sin explicación y
+                   sin salida — sin productos no hay venta, ni escáner, ni balanza. */
+                <div className="pos-primera-vez">
+                  <i className="fa-solid fa-box-open" style={{fontSize:"36px"}} aria-hidden="true"></i>
+                  <h3>Aún no cargaste ningún producto</h3>
+                  <p style={{maxWidth:"420px",textAlign:"center",lineHeight:"1.5"}}>
+                    Para poder cobrar necesitás al menos un producto con precio y stock.
+                    Podés empezar con un catálogo de ejemplo y borrarlo cuando quieras.
+                  </p>
+                  {confirmDemo ? (
+                    <div className="pos-primera-vez-confirm" role="group" aria-label="Confirmar carga del catálogo de ejemplo">
+                      <p style={{textAlign:"center",maxWidth:"420px",lineHeight:"1.5"}}>
+                        Se van a crear <strong>{CATALOGO_DEMO.length} productos ficticios</strong> con
+                        precios y stock de ejemplo. No se borra nada existente, y podés eliminarlos
+                        desde <strong>Productos</strong> cuando cargues los tuyos.
+                      </p>
+                      <div style={{display:"flex",gap:"8px"}}>
+                        <button className="btn-primary" onClick={sembrarCatalogoDemo} disabled={isSubmitting}>
+                          {isSubmitting ? "Cargando..." : `Sí, cargar ${CATALOGO_DEMO.length} productos de ejemplo`}
+                        </button>
+                        <button className="btn-secondary" onClick={() => setConfirmDemo(false)} disabled={isSubmitting}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Un solo botón, y es el que resuelve el problema. El POS abre en `/pos` y esta
+                       build no tiene login, así que la pantalla de Productos es un placeholder y no
+                       es a dónde puede ir el cajero: ofrecer «Cargar mis productos» como alternativa
+                       sería mandar a un sitio que dice «todavía no existe». Sin productos esta
+                       pantalla no puede cobrar nada, entonces sembrar el catálogo es la acción, no
+                       un adorno. */
+                    <button className="btn-primary" onClick={() => setConfirmDemo(true)}>
+                      <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Cargar catálogo de ejemplo
+                    </button>
+                  )}
+                </div>
+              ) : filtrando ? (
+                /* HAY catálogo pero el filtro no matchea. La acción es cambiar el filtro, no cargar
+                   datos: ofrecer «cargar ejemplo» acá metería productos de mentira en una tienda que
+                   ya tiene los suyos. */
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
+                  <i className="fa-solid fa-search" style={{fontSize:"32px"}} aria-hidden="true"></i>
+                  <p style={{fontSize:"14px"}}>Ningún producto coincide con la búsqueda</p>
+                  <button className="btn-secondary" onClick={() => { setFiltro(""); setCategoriaActiva("Todas"); }}>
+                    Quitar filtros
+                  </button>
+                </div>
+              ) : (
+                /* Hay catálogo y no hay filtros, pero los productos visibles están todos sin stock.
+                   Es information, no un vacío: el artículo existe y hay que reponerlo. */
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
+                  <i className="fa-solid fa-triangle-exclamation" style={{fontSize:"32px"}} aria-hidden="true"></i>
+                  <p style={{fontSize:"14px"}}>Todos tus productos están sin stock</p>
+                </div>
+              )
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:"24px"}}>
+                {conStock.length > 0 && (
+                  <div className="pos-products">
+                    {conStock.map((p) => {
+                      const stockMilli = p.stockMilli ?? 0;
+                      const enTicket = ticket.find((i) => i.id === p.id);
+                      // `esPesable` viene GENERADO por la base (`es_pesable`) y no se re-deriva acá:
+                      // la escala la usa también la guarda de la balanza y el badge, y si cada uno
+                      // calcula su propia respuesta del `unidad_medida` terminan discrepando.
+                      const esPesable = p.esPesable;
+                      let cardClass = "pos-product-card";
+                      if (enTicket) cardClass += " en-carrito";
+                      else if (stockMilli <= 5 * QTY_SCALE) cardClass += " stock-bajo";
+                      return (
+                        // `data-producto-id` is not decoration. The grid is sorted by name, so the FIRST
+                        // card is not the first row by id, and anything that needs to know which product
+                        // a card is — the payment drive, a test, a support tool pointed at a screenshot —
+                        // would otherwise have to match on the product's NAME, which is not unique and
+                        // is display text. The id belongs in the DOM for the same reason `id` does.
+                        <div key={p.id} data-producto-id={p.id} className={cardClass} onClick={() => agregarProducto(p)}>
+                          {enTicket && <span className="badge-cart-qty">{formatCantidad(enTicket.qtyMilli, { unidad: p.unidadMedida })}</span>}
+                          <div className="icon-product">
+                            {p.imagen ? <img src={p.imagen} alt={p.nombre} /> : <i className="fa-solid fa-cube"></i>}
+                          </div>
+                          <div className="name">{p.nombre}</div>
+                          <div className="price">{formatCentavos(p.precioCentavos)}</div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}}>
+                            <div className="stock" style={{color:stockMilli <= 5 * QTY_SCALE ? "var(--kanagawa-orange)" : "var(--kanagawa-green)"}}>
+                              {formatCantidad(stockMilli, { unidad: p.unidadMedida })}
+                            </div>
+                            {esPesable && (
+                              <div style={{display:"flex",gap:"2px"}}>
+                                <div
+                                  onClick={(e) => { e.stopPropagation(); setCalcProducto(p); }}
+                                  style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
+                                  title="Calcular por peso"
+                                >⚖️</div>
+                                <div
+                                  onClick={(e) => { e.stopPropagation(); setModalFraccionar(p); }}
+                                  style={{cursor:"pointer",fontSize:"14px",color:"var(--kanagawa-blue)",padding:"2px 4px",borderRadius:"4px",lineHeight:1,background:"rgba(137,180,250,0.1)"}}
+                                  title="Fraccionar"
+                                >✂️</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {sinStock.length > 0 && (
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
+                      <span style={{fontSize:"12px",fontWeight:600,color:"var(--kanagawa-fg-muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>Sin stock</span>
+                      <div style={{flex:1,height:"1px",background:"var(--kanagawa-border)"}} />
+                    </div>
+                    <div className="pos-products">
+                      {sinStock.map((p) => (
+                        <div key={p.id} className="pos-product-card stock-cero">
+                          <div className="icon-product">
+                            {p.imagen ? <img src={p.imagen} alt={p.nombre} /> : <i className="fa-solid fa-cube"></i>}
+                          </div>
+                          <div className="name" style={{textDecoration:"line-through",color:"var(--kanagawa-fg-muted)"}}>{p.nombre}</div>
+                          <div className="price" style={{color:"var(--kanagawa-comment)"}}>{formatCentavos(p.precioCentavos)}</div>
+                          <div className="stock" style={{color:"var(--kanagawa-red)"}}>Sin stock</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <span className="badge-cart">{ticket.length}</span>
         </div>
 
-        <div className="cart-scroll">
-          {ticket.length === 0 ? (
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"200px",color:"var(--kanagawa-comment)",gap:"8px"}}>
-              <i className="fa-solid fa-cash-register" style={{fontSize:"36px"}}></i>
-              <p style={{fontSize:"14px"}}>Seleccioná productos del catálogo</p>
+        <div className="pos-cart">
+          <div className="cart-header">
+            <div>
+              <h3 style={{fontSize:"16px",fontWeight:700,margin:0,color:"var(--kanagawa-fg)"}}>Ticket</h3>
+              <p style={{fontSize:"12px",color:"var(--kanagawa-comment)",margin:"2px 0 0"}}>{ticket.length} artículo{ticket.length !== 1 ? "s" : ""}</p>
             </div>
-          ) : (
-            ticket.map((item) => {
-              // El subtotal de la línea se calcula con la MISMA función que el total del ticket y
-              // que el repo usa al escribir. La web hacía `parseFloat(item.precio) * item.qty` y
-              // después `toFixed(2)` para mostrar: si tres líneas de $33,33 dan $99,99, la línea
-              // mostraba un centavo que el total no tenía.
-              const subtotalCentavos = lineTotalCentavos(item.precioCentavos, item.qtyMilli);
-              return (
-                <div key={item.id} className="cart-item">
-                  <div className="item-info">
-                    <div className="details">
-                      <p className="name">{item.nombre}</p>
-                      {item.pesado ? (
-                        <p className="unit" style={{color:"var(--kanagawa-blue)"}}>
-                          {formatCantidad(item.qtyMilli, { unidad: item.unidadMedida || "kg" })}
-                        </p>
-                      ) : (
-                        <p className="unit">{formatCentavos(item.precioCentavos)} x {item.unidadMedida || "unidad"}</p>
+            <span className="badge-cart">{ticket.length}</span>
+          </div>
+
+          <div className="cart-scroll">
+            {ticket.length === 0 ? (
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"200px",color:"var(--kanagawa-comment)",gap:"8px"}}>
+                <i className="fa-solid fa-cash-register" style={{fontSize:"36px"}}></i>
+                <p style={{fontSize:"14px"}}>Seleccioná productos del catálogo</p>
+              </div>
+            ) : (
+              ticket.map((item) => {
+                // El subtotal de la línea se calcula con la MISMA función que el total del ticket y
+                // que el repo usa al escribir. La web hacía `parseFloat(item.precio) * item.qty` y
+                // después `toFixed(2)` para mostrar: si tres líneas de $33,33 dan $99,99, la línea
+                // mostraba un centavo que el total no tenía.
+                const subtotalCentavos = lineTotalCentavos(item.precioCentavos, item.qtyMilli);
+                return (
+                  <div key={item.id} className="cart-item">
+                    <div className="item-info">
+                      <div className="details">
+                        <p className="name">{item.nombre}</p>
+                        {item.pesado ? (
+                          <p className="unit" style={{color:"var(--kanagawa-blue)"}}>
+                            {formatCantidad(item.qtyMilli, { unidad: item.unidadMedida || "kg" })}
+                          </p>
+                        ) : (
+                          <p className="unit">{formatCentavos(item.precioCentavos)} x {item.unidadMedida || "unidad"}</p>
+                        )}
+                      </div>
+                      {/* Una línea pesada NO tiene control de cantidad: los gramos los puso la
+                          balanza y el +/− los cambiaría de a 1 kg, que es exactamente el error que
+                          hacía que medio kilo se vendiera como un kilo. Para eso está la balanza. */}
+                      {!item.pesado && (
+                        <div className="qty-control">
+                          <button onClick={() => cambiarQty(item.id, -1)}><i className="fa-solid fa-minus" style={{fontSize:"10px"}}></i></button>
+                          <input type="number" min={1} max={Math.floor((item.stockMilli ?? 0) / QTY_SCALE)}
+                            value={item.qtyMilli / QTY_SCALE}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10) || 1;
+                              const max = Math.floor((item.stockMilli ?? 0) / QTY_SCALE);
+                              if (v > max) { showToast("Stock insuficiente", "warn"); return; }
+                              setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qtyMilli: v * QTY_SCALE } : i));
+                            }}
+                            onBlur={(e) => {
+                              if (!e.target.value || parseInt(e.target.value, 10) < 1) {
+                                setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qtyMilli: QTY_SCALE } : i));
+                              }
+                            }}
+                          />
+                          <button onClick={() => cambiarQty(item.id, +1)}><i className="fa-solid fa-plus" style={{fontSize:"10px"}}></i></button>
+                        </div>
                       )}
                     </div>
-                    {/* Una línea pesada NO tiene control de cantidad: los gramos los puso la
-                        balanza y el +/− los cambiaría de a 1 kg, que es exactamente el error que
-                        hacía que medio kilo se vendiera como un kilo. Para eso está la balanza. */}
-                    {!item.pesado && (
-                      <div className="qty-control">
-                        <button onClick={() => cambiarQty(item.id, -1)}><i className="fa-solid fa-minus" style={{fontSize:"10px"}}></i></button>
-                        <input type="number" min={1} max={Math.floor((item.stockMilli ?? 0) / QTY_SCALE)}
-                          value={item.qtyMilli / QTY_SCALE}
-                          onChange={(e) => {
-                            const v = parseInt(e.target.value, 10) || 1;
-                            const max = Math.floor((item.stockMilli ?? 0) / QTY_SCALE);
-                            if (v > max) { showToast("Stock insuficiente", "warn"); return; }
-                            setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qtyMilli: v * QTY_SCALE } : i));
-                          }}
-                          onBlur={(e) => {
-                            if (!e.target.value || parseInt(e.target.value, 10) < 1) {
-                              setTicket((prev) => prev.map((i) => i.id === item.id ? { ...i, qtyMilli: QTY_SCALE } : i));
-                            }
-                          }}
-                        />
-                        <button onClick={() => cambiarQty(item.id, +1)}><i className="fa-solid fa-plus" style={{fontSize:"10px"}}></i></button>
-                      </div>
-                    )}
+                    <span className="item-total">{formatCentavos(subtotalCentavos)}</span>
+                    <button className="remove-btn" onClick={() => quitarItem(item.id)}><i className="fa-solid fa-times"></i></button>
                   </div>
-                  <span className="item-total">{formatCentavos(subtotalCentavos)}</span>
-                  <button className="remove-btn" onClick={() => quitarItem(item.id)}><i className="fa-solid fa-times"></i></button>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="cart-footer">
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"14px",color:"var(--kanagawa-fg-muted)",marginBottom:"4px"}}>
-            <span>Subtotal</span>
-            <span>{formatCentavos(totalCentavos)}</span>
-          </div>
-          <div className="cart-total">
-            <span>Total</span>
-            <span className="amount">{formatCentavos(totalCentavos)}</span>
-          </div>
-          <div className="cart-actions">
-            {ticket.length > 0 && (
-              <button onClick={vaciarTicket} className="btn-secondary">
-                <i className="fa-solid fa-trash"></i> Vaciar
-              </button>
+                );
+              })
             )}
-            <button onClick={() => ticket.length > 0 && setModalCobro(true)} disabled={ticket.length === 0 || procesando || isSubmitting}
-              className="btn-success" style={{gridColumn:ticket.length===0?"1/-1":""}}>
-              <i className="fa-solid fa-cash-register"></i> {procesando || isSubmitting ? "Procesando..." : `Cobrar ${formatCentavos(totalCentavos)}`}
-            </button>
           </div>
-          {/* The hint a cashier actually needs. The shortcut existed nowhere in the UI before this,
-              so the only way to learn it was to read the source. */}
-          {ticket.length > 0 && !procesando && !isSubmitting && (
-            <div className="cart-hint" style={{textAlign:"center",fontSize:"11px",color:"var(--kanagawa-fg-muted)",marginTop:"6px"}}>
-              <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>F2</kbd>
-              {" "}para cobrar · <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>Esc</kbd>
-              {" "}para cerrar
+
+          <div className="cart-footer">
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:"14px",color:"var(--kanagawa-fg-muted)",marginBottom:"4px"}}>
+              <span>Subtotal</span>
+              <span>{formatCentavos(totalCentavos)}</span>
             </div>
-          )}
+            <div className="cart-total">
+              <span>Total</span>
+              <span className="amount">{formatCentavos(totalCentavos)}</span>
+            </div>
+            <div className="cart-actions">
+              {ticket.length > 0 && (
+                <button onClick={vaciarTicket} className="btn-secondary">
+                  <i className="fa-solid fa-trash"></i> Vaciar
+                </button>
+              )}
+              <button onClick={() => ticket.length > 0 && setModalCobro(true)} disabled={ticket.length === 0 || procesando || isSubmitting}
+                className="btn-success" style={{gridColumn:ticket.length===0?"1/-1":""}}>
+                <i className="fa-solid fa-cash-register"></i> {procesando || isSubmitting ? "Procesando..." : `Cobrar ${formatCentavos(totalCentavos)}`}
+              </button>
+            </div>
+            {/* The hint a cashier actually needs. The shortcut existed nowhere in the UI before this,
+                so the only way to learn it was to read the source. */}
+            {ticket.length > 0 && !procesando && !isSubmitting && (
+              <div className="cart-hint" style={{textAlign:"center",fontSize:"11px",color:"var(--kanagawa-fg-muted)",marginTop:"6px"}}>
+                <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>F2</kbd>
+                {" "}para cobrar · <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>Esc</kbd>
+                {" "}para cerrar
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
