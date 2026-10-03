@@ -20,6 +20,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { stagingEnv } from './staging-temp.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -33,11 +34,15 @@ if (!existsSync(bin)) {
 }
 
 console.log('build:release — building WITHOUT the launch probe (MINIMARCK_PROBE=0)')
+// `stagingEnv` is the same esbuild temp override the development build applies. It is required
+// here too: this script invokes `electron-vite build` itself rather than going through
+// `npm run build`, so without it the installer build would fail at the renderer phase with
+// "Acceso denegado" while the development build passed. One helper, so the two cannot drift.
 const result = spawnSync(bin, ['build'], {
   cwd: root,
   stdio: 'inherit',
   shell: process.platform === 'win32',
-  env: { ...process.env, MINIMARCK_PROBE: '0' }
+  env: { ...stagingEnv(root), MINIMARCK_PROBE: '0' }
 })
 
 if (result.status !== 0) {

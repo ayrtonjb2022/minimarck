@@ -9,8 +9,8 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "node scripts/build.mjs dev",
+    "build": "node scripts/build.mjs",
     "launch": "npm run build && electron out/main/index.js",
     "spike": "node scripts/spike.mjs",
     "probe:launch": "node scripts/probe-launch.mjs",
