@@ -12,6 +12,10 @@ import Acceso from "./pages/Acceso";
 import Usuarios from "./pages/Usuarios";
 import Reportes from "./pages/Reportes";
 import Panel from "./pages/Panel";
+import Productos from "./pages/Productos";
+import Categorias from "./pages/Categorias";
+import Contabilidad from "./pages/Contabilidad";
+import Respaldos from "./pages/Respaldos";
 import ControlesDeTurno from "./components/common/ControlesDeTurno";
 
 /**
@@ -48,10 +52,7 @@ import ControlesDeTurno from "./components/common/ControlesDeTurno";
  */
 
 const PANTALLAS_FALTANTES = [
-  { ruta: "/productos", nombre: "Productos", motivo: "el catalogo se carga, la edicion todavia no" },
-  { ruta: "/categorias", nombre: "Categorías", motivo: "el filtro del POS ya las usa" },
   { ruta: "/caja", nombre: "Caja", motivo: "se abre al vender, el arqueo manual no" },
-  { ruta: "/contabilidad", nombre: "Contabilidad", motivo: "son 15 operaciones del contrato y ninguna esta" },
   { ruta: "/configuracion", nombre: "Configuracion", motivo: "no esta en el contrato de 89 operaciones" },
 ];
 
@@ -66,7 +67,7 @@ const PANTALLAS_FALTANTES = [
  * mount points, so there is a single definition to keep honest.
  */
 const TopBar = ({ titulo }) => {
-  const { user, negocio, logout } = useAuth();
+  const { user, negocio, logout, puedeAdministrarUsuarios } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -96,7 +97,7 @@ const TopBar = ({ titulo }) => {
           <i className="fa-solid fa-receipt" aria-hidden="true"></i> Ventas
         </NavLink>
         <NavLink to="/deudores" className={({ isActive }) => (isActive ? "active" : "")}>
-          <i className="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Deudores
+          <i className="fa-solid fa-coins" aria-hidden="true"></i> Deudores
         </NavLink>
         <NavLink to="/proveedores" className={({ isActive }) => (isActive ? "active" : "")}>
           <i className="fa-solid fa-truck-field" aria-hidden="true"></i> Proveedores
@@ -104,6 +105,43 @@ const TopBar = ({ titulo }) => {
         <NavLink to="/compras" className={({ isActive }) => (isActive ? "active" : "")}>
           <i className="fa-solid fa-cart-plus" aria-hidden="true"></i> Compras
         </NavLink>
+        {/* The catalogue, and the buckets it is filed under. These are the two screens that answer
+            "what does this shop sell, and for how much", which is the question an operator asks
+            right before ringing something up — so they belong in the strip rather than behind a
+            settings menu that does not exist yet. */}
+        <NavLink to="/productos" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-box-open" aria-hidden="true"></i> Catálogo
+        </NavLink>
+        <NavLink to="/categorias" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-tags" aria-hidden="true"></i> Categorías
+        </NavLink>
+        {/* The ledger. It sits after the shop's own operations because that is the order an owner
+            reads it in: sell, buy, and then look at what the numbers say. The tab strip inside
+            groups its four readings. */}
+        <NavLink to="/contabilidad" className={({ isActive }) => (isActive ? "active" : "")}>
+          <i className="fa-solid fa-scale-balanced" aria-hidden="true"></i> Contabilidad
+        </NavLink>
+        {/* The shop's own file. LAST in the strip, and shown to whoever may run the usuarios module
+            — the same predicate the route checks. A restore replaces the database including the
+            users, so offering it to a vendedor would be offering the keys to the shop. */}
+        {puedeAdministrarUsuarios ? (
+          <NavLink to="/respaldos" className={({ isActive }) => (isActive ? "active" : "")}>
+            <i className="fa-solid fa-database" aria-hidden="true"></i> Respaldos
+          </NavLink>
+        ) : null}
+        {/* `/usuarios` has been a mounted, role-gated route since the sign-in feature landed and it
+            was reachable only by typing the URL: nothing in the chrome linked to it. Same defect as
+            the handover control, and the same fix — a link next to the thing it belongs to. It is
+            shown to the roles the route itself admits, so the strip cannot offer a door that
+            answers "no".
+            `puedeAdministrarUsuarios` is `admin || supervisor`, exactly the predicate the route
+            checks, and it is imported from the context rather than re-derived here so the two
+            cannot drift. */}
+        {puedeAdministrarUsuarios ? (
+          <NavLink to="/usuarios" className={({ isActive }) => (isActive ? "active" : "")}>
+            <i className="fa-solid fa-users" aria-hidden="true"></i> Usuarios
+          </NavLink>
+        ) : null}
       </nav>
 
       <div className="mm-topbar-right">
@@ -177,7 +215,7 @@ const NoDisponible = () => {
               <i className="fa-solid fa-cash-register" aria-hidden="true"></i> Ir a vender
             </NavLink>
             <NavLink to="/deudores" className="btn-secondary">
-              <i className="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Ver deudores
+              <i className="fa-solid fa-coins" aria-hidden="true"></i> Ver deudores
             </NavLink>
           </div>
         </div>
@@ -359,6 +397,77 @@ const App = () => {
               <Compras />
             </main>
           </div>
+        }
+      />
+      {/* The catalogue, and the categories it is filed under.
+          NOT behind `CajaGuard`, for the same reason `Proveedores` is not: pricing a product and
+          organising the shelf are not till operations, and `productos.*` never touches the drawer.
+          Putting them behind the open-register guard would mean a shopkeeper cannot fix a price on
+          a Monday morning before opening. */}
+      <Route
+        path="/productos"
+        element={
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Productos" />
+              <Productos />
+            </main>
+          </div>
+        }
+      />
+      <Route
+        path="/categorias"
+        element={
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Categorías" />
+              <Categorias />
+            </main>
+          </div>
+        }
+      />
+      {/* The ledger, and the debts the shop itself owes.
+          NOT behind `CajaGuard`, and for the same reason `Proveedores` is not: reading the journal
+          and paying a bank loan are not till operations. The ONE thing here that touches the drawer
+          — a debt payment in cash — does not go through the till at all: `pagos_deuda_contabilidad`
+          is a separate table from `movimientos_caja`, and refusing to show the ledger because the
+          drawer happens to be closed would be the guard backwards. */}
+      <Route
+        path="/contabilidad"
+        element={
+          <div className="app-layout">
+            <main className="main">
+              <TopBar titulo="Contabilidad" />
+              <Contabilidad />
+            </main>
+          </div>
+        }
+      />
+      {/* The shop's file, and the only screen that can undo a disaster.
+          GATED BY ROLE, unlike every other route here: a restore replaces the database INCLUDING
+          the users table, so a screen that could reach it would be a way around the sign-in it was
+          supposed to be behind. The gate is the same `puedeAdministrarUsuarios` the nav link uses,
+          so the strip cannot offer a door that answers "no". */}
+      <Route
+        path="/respaldos"
+        element={
+          puedeAdministrarUsuarios ? (
+            <div className="app-layout">
+              <main className="main">
+                <TopBar titulo="Respaldos" />
+                <Respaldos />
+              </main>
+            </div>
+          ) : (
+            <div className="app-layout">
+              <main className="main">
+                <TopBar titulo="Respaldos" />
+                <div className="card">
+                  <p>Sólo el dueño o un supervisor pueden ver y restaurar respaldos.</p>
+                </div>
+              </main>
+            </div>
+          )
         }
       />
       <Route path="*" element={<NoDisponible />} />

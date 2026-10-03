@@ -34,6 +34,54 @@ export const formatCurrency = formatCentavos;
 export const formatPorcentaje = (tasa) => formatRate(tasa);
 
 /**
+ * THE INVERSE OF `formatCentavos`, FOR A FORM FIELD RATHER THAN FOR READING.
+ *
+ * `formatCentavos(105050)` is `$1.050,50` — the right thing to SHOW and the wrong thing to put in
+ * an `<input>`, because the symbol and the thousands separator are both refused by `toCents` on the
+ * way back (`money.js`: `'1.050,50'` parses as 1050 in Argentina and 1.05 in the US, so it refuses
+ * rather than guesses). So an edit form needs the bare amount, exactly: `centavosAEntrada(105050)`
+ * is `"1050.50"`.
+ *
+ * WHY NOT `(centavos / 100).toFixed(2)`, which is what four other screens do inline. That routes an
+ * integer through a binary float and back, and `toFixed` ROUNDS: for the amounts a shop actually
+ * sees it comes out right, and for one it does not, the operator saves a price a centavo off the
+ * one on screen. The arithmetic here is INTEGER all the way — integer division for the whole part,
+ * `% 100` for the cents — so there is no step in which to be wrong. The sign is explicit because
+ * `-50 % 100` is `-50`, not `50`.
+ *
+ * A non-integer input is `""`: a field that cannot be computed reads as empty and lets the parser
+ * produce the refusal, never as the string `"NaN"`.
+ *
+ * IT ONLY ACCEPTS A NUMBER, NOT A NUMERIC STRING. `Number('2')` is `2`, so a lenient `Number()`
+ * makes `centavosAEntrada('2')` print `"0.02"` — a silent division by a hundred of a value that was
+ * never in centavos. The repository hands back integers (`mapProducto` copies the column), so the
+ * strict `typeof` check costs nothing and removes a failure mode that would show up as a price a
+ * hundred times too small.
+ */
+export const centavosAEntrada = (centavos) => {
+  if (typeof centavos !== "number" || !Number.isSafeInteger(centavos)) return "";
+  const signo = centavos < 0 ? "-" : "";
+  const abs = Math.abs(centavos);
+  return `${signo}${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+};
+
+/**
+ * The same conversion for a quantity in THOUSANDTHS, for the stock fields.
+ *
+ * `toMilli('0,5')` is 500, so the form shows `"0.5"` for 500. Trailing zeros are trimmed — `"2"`
+ * rather than `"2.000"` — because a stock box reading `2.000` invites the operator to wonder
+ * whether the shop has two units or two thousand, and the unit is already labelled next to it.
+ */
+export const milliAEntrada = (milli) => {
+  if (typeof milli !== "number" || !Number.isSafeInteger(milli)) return "";
+  const signo = milli < 0 ? "-" : "";
+  const abs = Math.abs(milli);
+  const entero = Math.trunc(abs / 1000);
+  const resto = String(abs % 1000).padStart(3, "0").replace(/0+$/, "");
+  return resto === "" ? `${signo}${entero}` : `${signo}${entero}.${resto}`;
+};
+
+/**
  * A quantity, in thousandths of a unit. `formatMilli(500, {unidad: 'kg'})` is `500 g`.
  *
  * Used for the weigh column: a ticket line for half a kilo of cheese is `500`, and printing

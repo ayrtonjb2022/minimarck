@@ -1421,6 +1421,36 @@ body {
   color: var(--kanagawa-green);
   font-size: 13px;
 }
+/* The recovery hint under a failed sign-in. It is NOT an error style: the sign-in failed, but what
+   is on screen is the way out, so it must not read as another failure. Neutral border, muted text,
+   and the command itself in monospace because it gets typed, not read. */
+.acceso-ayuda {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(127, 110, 25, 0.08);
+  border: 1px solid var(--kanagawa-border);
+  color: var(--kanagawa-fg-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.acceso-ayuda p {
+  margin: 0 0 6px;
+}
+.acceso-ayuda p:last-child {
+  margin-bottom: 0;
+}
+.acceso-ayuda code {
+  display: block;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(127, 110, 25, 0.1);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--kanagawa-fg);
+  user-select: all;
+}
 .acceso-boton {
   width: 100%;
   justify-content: center;
@@ -1485,3 +1515,28 @@ body {
   font-size: 15px; font-weight: 600; margin: 24px 0 12px;
 }
 .mm-sub:first-of-type { margin-top: 0; }
+
+/* ── A FLAT TAB STRIP, FOR SCREENS THAT HAVE NO GROUPS ────────────────────────────────────────
+ *
+ * `.mm-reportes-tabs` is a COLUMN of groups, because the ten reports are filed under Operativos /
+ * Financieros / Diagnóstico and the headings are part of how they are read. Contabilidad has four
+ * sections with no taxonomy between them, so it needs the same tab but in a row.
+ *
+ * Written as its own pair rather than by reusing `.mm-reportes-tab` inside a flex container: the
+ * report tab's icon rule is `margin-right: 6px`, and in a row of tabs where some carry a warning
+ * triangle the spacing has to be the icon's own `gap`, not a margin the JSX has to remember to
+ * cancel. Two small rules beat one shared rule with three overrides.
+ */
+.mm-tabs {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  margin-bottom: 20px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--kanagawa-border);
+}
+.mm-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border: none; background: transparent; color: var(--kanagawa-fg-muted);
+  font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px;
+}
+.mm-tab:hover { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+.mm-tab.activa { color: var(--kanagawa-blue); font-weight: 600; }
+

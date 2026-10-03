@@ -5,16 +5,16 @@ import { buscarPorCodigo, crear, listar, obtener, actualizar, eliminar } from '.
 /**
  * The `productos.*` handlers, backed by the real database.
  *
- * Four of the six contract operations are implemented: `list`, `get`, `findByCode` and `create`.
- * `update` and `remove` have no handler in this build, so the registry answers NOT_IMPLEMENTED
- * (501) for them — the same truthful answer every unimplemented contract member already gives,
- * and better than registering a stub that returns something plausible and loses a product edit.
+ * ALL SIX contract operations are implemented: `list`, `get`, `findByCode`, `create`, `update` and
+ * `remove`. This header used to say that `update` and `remove` had no handler and answered
+ * NOT_IMPLEMENTED (501) — true when the POS was the only screen, and false from the moment the
+ * catalogue screen landed. The operations were added without this paragraph following them, which
+ * is how a file ends up describing a build that no longer exists.
  *
- * WHY THE READS EXIST NOW. A point of sale cannot show a grid it has no query for, and
- * `ventas.repo.js#crear` resolves each line against `productos` by id — so without these the
- * sale path in this app is unreachable even though it is complete and tested. The POS screen is
- * the feature; this is the minimum the feature needs, and it is already inside the frozen
- * contract.
+ * WHY THE READS EXIST. A point of sale cannot show a grid it has no query for, and
+ * `ventas.repo.js#crear` resolves each line against `productos` by id — so without them the sale
+ * path in this app is unreachable even though it is complete and tested. The POS screen is the
+ * feature; this is the minimum the feature needs, and it is already inside the frozen contract.
  *
  * THE TENANT STILL COMES FROM THE REQUEST. Nothing here captures a business id at registration
  * time: every statement is scoped by `ctx.negocioId`, which `installIpc` fills from the resolved

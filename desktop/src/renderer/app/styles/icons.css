@@ -245,3 +245,125 @@
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' d='M12 3a9 9 0 0 1 9 9'/%3E%3Cpath fill='none' stroke='black' stroke-opacity='0.25' stroke-width='2.6' stroke-linecap='round' d='M12 21a9 9 0 0 1-9-9'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' d='M12 3a9 9 0 0 1 9 9'/%3E%3Cpath fill='none' stroke='black' stroke-opacity='0.25' stroke-width='2.6' stroke-linecap='round' d='M12 21a9 9 0 0 1-9-9'/%3E%3C/svg%3E");
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ALIASES. The vendored JSX says `fa-magnifying-glass`, `fa-users`, `fa-xmark` — Font Awesome 6
+ * names — while this file drew `fa-search`, `fa-shop`/etc. under the names an earlier draft used.
+ * A class with no glyph is a 1em EMPTY BOX with no error anywhere: it renders, it takes space, and
+ * it shows nothing. So the names the code actually writes get an alias to the glyph that already
+ * exists, instead of a second drawing of the same picture that can drift from the first.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* `fa-users` already exists in this file; `fa-user-plus` must not become a second people glyph. */
+.fa-solid.fa-user-plus, .fa-regular.fa-user-plus {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='9' cy='8' r='3.4'/%3E%3Cpath d='M2.8 20.5c0-3.6 2.8-5.6 6.2-5.6s6.2 2 6.2 5.6'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M18.5 8v6M15.5 11h6'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='9' cy='8' r='3.4'/%3E%3Cpath d='M2.8 20.5c0-3.6 2.8-5.6 6.2-5.6s6.2 2 6.2 5.6'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M18.5 8v6M15.5 11h6'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A truck whose trailer is a cloud with an arrow: the purchase order leaving the shop. */
+.fa-solid.fa-truck-field, .fa-regular.fa-truck-field {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M1.5 7.5h11v8h-11z'/%3E%3Cpath d='M12.5 10.5h3.7l3.3 3.2v1.8h-7z'/%3E%3C/g%3E%3Cg fill='black'%3E%3Ccircle cx='5.5' cy='18' r='1.7'/%3E%3Ccircle cx='16' cy='18' r='1.7'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 4.2a2.6 2.6 0 0 1 5 0 2 2 0 0 1 1.6 3.4H12.4A2.1 2.1 0 0 1 13 4.2z'/%3E%3Cpath d='M15.5 8.6V2.9M14 4.4l1.5-1.5L17 4.4'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M1.5 7.5h11v8h-11z'/%3E%3Cpath d='M12.5 10.5h3.7l3.3 3.2v1.8h-7z'/%3E%3C/g%3E%3Cg fill='black'%3E%3Ccircle cx='5.5' cy='18' r='1.7'/%3E%3Ccircle cx='16' cy='18' r='1.7'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 4.2a2.6 2.6 0 0 1 5 0 2 2 0 0 1 1.6 3.4H12.4A2.1 2.1 0 0 1 13 4.2z'/%3E%3Cpath d='M15.5 8.6V2.9M14 4.4l1.5-1.5L17 4.4'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* `fa-box-open`: a box with its flaps up. Used for the empty-catalogue panel and the Catálogo nav. */
+.fa-solid.fa-box-open, .fa-regular.fa-box-open {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M3.5 8.5h17v11h-17z'/%3E%3Cpath d='M3.5 8.5 1.8 5.4l4-1.9 2.5 3.2'/%3E%3Cpath d='M20.5 8.5l1.7-3.1-4-1.9-2.5 3.2'/%3E%3Cpath d='M12 8.5v4'/%3E%3C/g%3E%3Cpath fill='black' d='M8.6 13.2h6.8v1.6H8.6z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M3.5 8.5h17v11h-17z'/%3E%3Cpath d='M3.5 8.5 1.8 5.4l4-1.9 2.5 3.2'/%3E%3Cpath d='M20.5 8.5l1.7-3.1-4-1.9-2.5 3.2'/%3E%3Cpath d='M12 8.5v4'/%3E%3C/g%3E%3Cpath fill='black' d='M8.6 13.2h6.8v1.6H8.6z'/%3E%3C/svg%3E");
+}
+
+/* A cart with a plus: add something to the shop. Same cart as `fa-shopping-cart`, plus the sign. */
+.fa-solid.fa-cart-plus, .fa-regular.fa-cart-plus {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.5h2.2l2.4 11.2h8.2'/%3E%3C/g%3E%3Cg fill='black'%3E%3Ccircle cx='9' cy='19.2' r='1.7'/%3E%3Ccircle cx='15.4' cy='19.2' r='1.7'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M18.5 3.5v5M16 6h5'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.5h2.2l2.4 11.2h8.2'/%3E%3C/g%3E%3Cg fill='black'%3E%3Ccircle cx='9' cy='19.2' r='1.7'/%3E%3Ccircle cx='15.4' cy='19.2' r='1.7'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M18.5 3.5v5M16 6h5'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A crown: the ranking mark on "top products". */
+.fa-solid.fa-crown, .fa-regular.fa-crown {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2' stroke-linejoin='round' d='M2.5 7.5l4.2 4 5.3-7 5.3 7 4.2-4-2 10.5H4.5z'/%3E%3Cpath fill='black' d='M4.5 18.5h15v2h-15z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2' stroke-linejoin='round' d='M2.5 7.5l4.2 4 5.3-7 5.3 7 4.2-4-2 10.5H4.5z'/%3E%3Cpath fill='black' d='M4.5 18.5h15v2h-15z'/%3E%3C/svg%3E");
+}
+
+/* Stacked coins: a till's worth of money, and the "Caja" report. */
+.fa-solid.fa-coins, .fa-regular.fa-coins {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9'%3E%3Cellipse cx='9' cy='6.4' rx='6.1' ry='2.7'/%3E%3Cpath d='M2.9 6.4v3.4c0 1.5 2.7 2.7 6.1 2.7s6.1-1.2 6.1-2.7V6.4'/%3E%3Cpath d='M2.9 9.8v3.4c0 1.5 2.7 2.7 6.1 2.7 1 0 1.9-.1 2.7-.3'/%3E%3Ccircle cx='16.4' cy='15.6' r='4.6'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M16.4 13.2v4.8M15 14.2h2.1a1.1 1.1 0 0 1 0 2.2h-2.1'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9'%3E%3Cellipse cx='9' cy='6.4' rx='6.1' ry='2.7'/%3E%3Cpath d='M2.9 6.4v3.4c0 1.5 2.7 2.7 6.1 2.7s6.1-1.2 6.1-2.7V6.4'/%3E%3Cpath d='M2.9 9.8v3.4c0 1.5 2.7 2.7 6.1 2.7 1 0 1.9-.1 2.7-.3'/%3E%3Ccircle cx='16.4' cy='15.6' r='4.6'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M16.4 13.2v4.8M15 14.2h2.1a1.1 1.1 0 0 1 0 2.2h-2.1'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A document with a currency mark: the expenses report, and a currency invoice. */
+.fa-solid.fa-file-invoice-dollar, .fa-regular.fa-file-invoice-dollar {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M4.5 2.5h9l6 6v13h-15z'/%3E%3Cpath d='M13.5 2.5v6h6'/%3E%3Cpath d='M12 12.5v7M10.3 13.8h2.8a1.5 1.5 0 0 1 0 3h-2.8'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M4.5 2.5h9l6 6v13h-15z'/%3E%3Cpath d='M13.5 2.5v6h6'/%3E%3Cpath d='M12 12.5v7M10.3 13.8h2.8a1.5 1.5 0 0 1 0 3h-2.8'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A balance: profitability, and the "is this worth it" screen. */
+.fa-solid.fa-scale-balanced, .fa-regular.fa-scale-balanced {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.5v17M8 20.5h8'/%3E%3Cpath d='M4 7.5h16M12 3.5 4 7.5l-2 5.5h8zM12 3.5l8 4 2 5.5h-8z'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.5v17M8 20.5h8'/%3E%3Cpath d='M4 7.5h16M12 3.5 4 7.5l-2 5.5h8zM12 3.5l8 4 2 5.5h-8z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A signed document with an upward trend: the income statement. */
+.fa-solid.fa-money-bill-trend-up, .fa-regular.fa-money-bill-trend-up {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='2.5' y='6.5' width='19' height='11' rx='1.5'/%3E%3Cpath d='M6.5 14.5l3.5-4 2.5 2.5 4.5-5'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 8h2.5v2.5'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='2.5' y='6.5' width='19' height='11' rx='1.5'/%3E%3Cpath d='M6.5 14.5l3.5-4 2.5 2.5 4.5-5'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 8h2.5v2.5'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A key: the password-reset control, and the "who can get in" idea behind it. */
+.fa-solid.fa-key, .fa-regular.fa-key {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='7.5' cy='16.5' r='4'/%3E%3Cpath d='M10.4 13.6 20 4M17 7l2.2 2.2M14.6 9.4 16.8 11.6'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='7.5' cy='16.5' r='4'/%3E%3Cpath d='M10.4 13.6 20 4M17 7l2.2 2.2M14.6 9.4 16.8 11.6'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A square with a check: something that finished, and the drive harness's PASS marks. */
+.fa-solid.fa-circle-check, .fa-regular.fa-circle-check {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9.2'/%3E%3Cpath d='M7.6 12.4l3.1 3.1 5.7-6.6'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9.2'/%3E%3Cpath d='M7.6 12.4l3.1 3.1 5.7-6.6'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A circle with a slash: cancelled, and no entry. */
+.fa-solid.fa-ban, .fa-regular.fa-ban {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9.2'/%3E%3Cpath d='M5.6 5.6l12.8 12.8'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9.2'/%3E%3Cpath d='M5.6 5.6l12.8 12.8'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A wand with its sparkles: the "load the demo catalogue" action, which is a small piece of magic. */
+.fa-solid.fa-wand-magic-sparkles, .fa-regular.fa-wand-magic-sparkles {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M4 20 15 9'/%3E%3C/g%3E%3Cg fill='black'%3E%3Cpath d='M17.6 2.4l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z'/%3E%3Cpath d='M20.4 14.6l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z'/%3E%3Cpath d='M9.3 3.6l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M4 20 15 9'/%3E%3C/g%3E%3Cg fill='black'%3E%3Cpath d='M17.6 2.4l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z'/%3E%3Cpath d='M20.4 14.6l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z'/%3E%3Cpath d='M9.3 3.6l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A person with a clock: the turno being handed over, and "who has been on the till". */
+.fa-solid.fa-user-clock, .fa-regular.fa-user-clock {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='8.6' cy='7.4' r='3.4'/%3E%3Cpath d='M2.4 19.6c0-3.6 2.8-5.6 6.2-5.6 1.5 0 2.9.3 4 1'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='16.6' cy='15.4' r='5.2'/%3E%3Cpath d='M16.6 12.6v3l2.1 1.2'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='8.6' cy='7.4' r='3.4'/%3E%3Cpath d='M2.4 19.6c0-3.6 2.8-5.6 6.2-5.6 1.5 0 2.9.3 4 1'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='16.6' cy='15.4' r='5.2'/%3E%3Cpath d='M16.6 12.6v3l2.1 1.2'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Stacked discs: the database file, so backups read as "the shop's data" rather than "a folder". */
+.fa-solid.fa-database, .fa-regular.fa-database {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9'%3E%3Cellipse cx='12' cy='5.6' rx='8' ry='3.1'/%3E%3Cpath d='M4 5.6v4.2c0 1.7 3.6 3.1 8 3.1s8-1.4 8-3.1V5.6'/%3E%3Cpath d='M4 9.8V14c0 1.7 3.6 3.1 8 3.1s8-1.4 8-3.1V9.8'/%3E%3Cpath d='M4 14v4.4c0 1.7 3.6 3.1 8 3.1s8-1.4 8-3.1V14'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9'%3E%3Cellipse cx='12' cy='5.6' rx='8' ry='3.1'/%3E%3Cpath d='M4 5.6v4.2c0 1.7 3.6 3.1 8 3.1s8-1.4 8-3.1V5.6'/%3E%3Cpath d='M4 9.8V14c0 1.7 3.6 3.1 8 3.1s8-1.4 8-3.1V9.8'/%3E%3Cpath d='M4 14v4.4c0 1.7 3.6 3.1 8 3.1s8-1.4 8-3.1V14'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Bars of different heights: the reports entry in the top strip. */
+.fa-solid.fa-chart-column, .fa-regular.fa-chart-column {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='black'%3E%3Crect x='3' y='13' width='4.2' height='8'/%3E%3Crect x='9.9' y='8.5' width='4.2' height='12.5'/%3E%3Crect x='16.8' y='3.5' width='4.2' height='17.5'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='black'%3E%3Crect x='3' y='13' width='4.2' height='8'/%3E%3Crect x='9.9' y='8.5' width='4.2' height='12.5'/%3E%3Crect x='16.8' y='3.5' width='4.2' height='17.5'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A dial: the panel, which answers questions at a glance. */
+.fa-solid.fa-gauge-high, .fa-regular.fa-gauge-high {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 18a9 9 0 1 1 18 0'/%3E%3Cpath d='M12 16.5 16.8 9'/%3E%3C/g%3E%3Cg fill='black'%3E%3Ccircle cx='12' cy='16.5' r='1.8'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 18a9 9 0 1 1 18 0'/%3E%3Cpath d='M12 16.5 16.8 9'/%3E%3C/g%3E%3Cg fill='black'%3E%3Ccircle cx='12' cy='16.5' r='1.8'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* A badge on a lanyard: the person signed in on this till. */
+.fa-solid.fa-id-badge, .fa-regular.fa-id-badge {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='4' y='4.5' width='16' height='17' rx='2'/%3E%3Cpath d='M9 4.5V2.5h6v2'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='12' cy='11' r='2.4'/%3E%3Cpath d='M8.2 17.4c0-2 1.7-3.1 3.8-3.1s3.8 1.1 3.8 3.1'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Crect x='4' y='4.5' width='16' height='17' rx='2'/%3E%3Cpath d='M9 4.5V2.5h6v2'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='12' cy='11' r='2.4'/%3E%3Cpath d='M8.2 17.4c0-2 1.7-3.1 3.8-3.1s3.8 1.1 3.8 3.1'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Two people with a swap arrow: the one control that both signs somebody in and takes the till back. */
+.fa-solid.fa-user-switch, .fa-regular.fa-user-switch {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='7.4' cy='6.6' r='2.9'/%3E%3Cpath d='M2.5 18.4c0-3.1 2.3-4.8 4.9-4.8 1.1 0 2.1.3 2.9.8'/%3E%3Ccircle cx='16.6' cy='17.4' r='2.9'/%3E%3Cpath d='M21.5 5.6c0 3.1-2.3 4.8-4.9 4.8-1.1 0-2.1-.3-2.9-.8'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.6h5M6.4 8.8 8.2 10.6 6.4 12.4'/%3E%3Cpath d='M21 13.4h-5M17.6 15.2 15.8 13.4 17.6 11.6'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='7.4' cy='6.6' r='2.9'/%3E%3Cpath d='M2.5 18.4c0-3.1 2.3-4.8 4.9-4.8 1.1 0 2.1.3 2.9.8'/%3E%3Ccircle cx='16.6' cy='17.4' r='2.9'/%3E%3Cpath d='M21.5 5.6c0 3.1-2.3 4.8-4.9 4.8-1.1 0-2.1-.3-2.9-.8'/%3E%3C/g%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.6h5M6.4 8.8 8.2 10.6 6.4 12.4'/%3E%3Cpath d='M21 13.4h-5M17.6 15.2 15.8 13.4 17.6 11.6'/%3E%3C/g%3E%3C/svg%3E");
+}

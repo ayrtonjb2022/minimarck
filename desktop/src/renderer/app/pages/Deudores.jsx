@@ -136,7 +136,7 @@ const Deudores = () => {
               className="btn-secondary"
               disabled={loading}
             >
-              <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Buscar
+              <i className="fa-solid fa-search" aria-hidden="true"></i> Buscar
             </button>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
               <input
@@ -213,7 +213,7 @@ const Deudores = () => {
                         title={debe > 0 ? `Cobrar a ${d.nombre}` : `Ver la cuenta de ${d.nombre}`}
                         aria-label={debe > 0 ? `Cobrar a ${d.nombre}` : `Ver la cuenta de ${d.nombre}`}
                       >
-                        <i className={`fa-solid ${debe > 0 ? "fa-hand-holding-dollar" : "fa-eye"}`} aria-hidden="true"></i>
+                        <i className={`fa-solid ${debe > 0 ? "fa-coins" : "fa-eye"}`} aria-hidden="true"></i>
                         {debe > 0 ? " Cobrar" : " Ver"}
                       </button>
                     </td>

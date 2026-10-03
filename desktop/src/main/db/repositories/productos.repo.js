@@ -15,12 +15,18 @@ import { esViolacionUnicaEn } from '../errores-sqlite.js'
  * `productos: [list, get, findByCode, create, update, remove]` and
  * `categorias: [list, get, create, update, remove]`. Nothing was added to `OPS` (still 89).
  *
- * WHAT IS IMPLEMENTED, AND WHAT IS NOT. `list`, `get`, `findByCode` and `create` for products;
- * `list` and `create` for categories. `update`, `remove` and the rest are contract members whose
- * handler is not in this build, so the registry answers `NOT_IMPLEMENTED` (501) for them — the
- * truthful answer, and the same one every other unimplemented contract member already gives. A
- * product edit screen is a different piece of work; what a sale needs is to READ the catalogue
- * and to be able to add the one product the cashier is looking at.
+ * WHAT IS IMPLEMENTED. All of it: `list`, `get`, `findByCode`, `create`, `update` and `remove` for
+ * products, and `list`, `get`, `create`, `update` and `remove` for categories. This paragraph spent
+ * a while claiming that `update` and `remove` "are contract members whose handler is not in this
+ * build" — true when the POS was the only reader, and stale from the moment the catalogue screen
+ * landed. A repository describing operations it now has is worse than one describing none: the next
+ * reader trusts it and looks elsewhere for the bug.
+ *
+ * WHAT `remove` MEANS. It is two operations behind one name, and which one runs is decided by the
+ * DATA: a product with sales in its history is DEACTIVATED, so no past ticket loses the item it
+ * points at, and one that was never sold is soft-deleted. The return value says which happened
+ * (`{ id, desactivado }`) instead of leaving the caller to guess. This is a divergence from the web,
+ * which refuses the delete outright in production; `DIVERGENCES.md` records it.
  *
  * UNITS. This file speaks the RENDERER's language on the way in and the DATABASE's on the way
  * out, exactly like `ventas.repo.js` and `cajas.repo.js`:
