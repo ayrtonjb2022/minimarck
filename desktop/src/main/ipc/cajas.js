@@ -59,7 +59,15 @@ export function registerCajasHandlers(registry, { conn }) {
      */
     open: (payload, reqCtx) => abrir(ctx(reqCtx), { saldoInicial: payload?.saldoInicial ?? 0, observaciones: payload?.observaciones ?? null }),
 
-    close: (payload, reqCtx) => cerrar(ctx(reqCtx), payload?.id, { observaciones: payload?.observaciones ?? null }),
+    // `conteo` is forwarded UNTOUCHED — no `?? 0`. A missing count and a count of zero are different
+// facts, and the default here would be exactly the wrong one: a till nobody counted would close
+// with a full-drawer shortage written into the ledger. `cerrar` reads `null` as "not counted" and
+// keeps the pre-count behaviour.
+close: (payload, reqCtx) =>
+  cerrar(ctx(reqCtx), payload?.id, {
+    conteo: payload?.conteo ?? null,
+    observaciones: payload?.observaciones ?? null
+  }),
 
     /** Closed tills plus the live balance of the open one. */
     generalBalance: (_payload, reqCtx) => {

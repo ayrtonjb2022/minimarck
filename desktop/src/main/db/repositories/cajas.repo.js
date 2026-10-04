@@ -111,9 +111,10 @@ export function registrarMovimiento(
   // ONLY for `origen: 'manual'`. A sale, a purchase, a debtor payment and a till closing each
   // already post their OWN entry, at a different moment and against different accounts: the sale
   // posts the revenue AND the CMV, the purchase posts inventory against a payment method, the
-  // payment posts the receivable, the closing posts nothing because it moves no money. Posting
-  // again here would double every one of them, and a double-posted drawer is the same class of
-  // defect as an unposted one, so the guard is the whole design.
+  // payment posts the receivable, and the closing posts the count difference against
+  // `5.4.02 Faltantes de Caja` / `4.2.02 Sobrantes de Caja` when the count does not match.
+  // Posting again here would double every one of them, and a double-posted drawer is the same
+  // class of defect as an unposted one, so the guard is the whole design.
   //
   // The polarity is deliberate. The default is "post", because a caller that forgets is the bug
   // we are fixing; the ONE caller that already posts — a debtor payment, which is `manual` too
@@ -169,6 +170,63 @@ function asentarMovimientoManual(ctx, { tipo, concepto, monto, fecha, movimiento
         debeCentavos: 0,
         haberCentavos: monto,
         descripcion: tipo === 'ingreso' ? concepto : 'Efectivo en caja'
+      }
+    ]
+  })
+}
+
+/**
+ * Post a CASH COUNT difference to the journal, in the caller's transaction.
+ *
+ * Two lines, balanced by construction, and the polarity is chosen by the SIGN of the difference
+ * rather than by anything the caller could pass backwards:
+ *
+ *   faltante (difference < 0) — the drawer holds LESS than the movements say. The loss is an
+ *             expense (`5.4.02 Faltantes de Caja`, debit) and the drawer gives up the missing
+ *             cash (`1.1.01 Caja`, credit). Crediting the drawer is the half that is easy to leave
+ *             out, and leaving it out is the bug: the count would say `Caja` fell and the account
+ *             would not, so `reportes.cash.coincide` would stop matching.
+ *   sobrante (difference > 0) — the drawer holds MORE than the movements say. The drawer takes
+ *             the extra cash in (`1.1.01 Caja`, debit) and `4.2.02 Sobrantes de Caja` says it was
+ *             found rather than earned.
+ *
+ * After this entry, `1.1.01 Caja` equals the money physically in the drawer. That is the entire
+ * point of the exercise and the property every test below pins: the ledger's cash account and a
+ * person's count of the till are the same number, which is the only reason to keep both.
+ *
+ * `tipo` is `ingreso` or `egreso`, NOT `cierre`: `asientos_contables.tipo` is CHECK-constrained to
+ * `('ingreso','egreso','ajuste','apertura')`, and the two available words are the honest ones —
+ * an overage is money coming in, a shortage is money gone. `ajuste` would be vaguer than the truth,
+ * and `cierre` would need a migration this change is not allowed to write.
+ */
+function asentarArqueo(ctx, { diferencia, movimientoId, fecha, cajaId }) {
+  const cuentas = asegurarPlan(ctx)
+  const cajaIdCuenta = cuentas.get(CUENTA.CAJA).id
+  const sobrante = diferencia > 0
+  const monto = Math.abs(diferencia)
+  const contraparte = sobrante ? CUENTA.SOBRANTES : CUENTA.FALTANTES
+  const contraparteId = cuentas.get(contraparte).id
+
+  asentar(ctx, {
+    fecha,
+    descripcion: `Arqueo de caja ${cajaId} - ${sobrante ? 'sobrante' : 'faltante'}`,
+    tipo: sobrante ? 'ingreso' : 'egreso',
+    // `caja-movimiento:<id>` for the same reason the manual movement uses it: a reference that
+    // could be read as either the till or one of its movements is a reference nobody can trust
+    // when an entry and a till disagree.
+    referencia: `caja-movimiento:${movimientoId}`,
+    partidas: [
+      {
+        cuentaId: sobrante ? cajaIdCuenta : contraparteId,
+        debeCentavos: monto,
+        haberCentavos: 0,
+        descripcion: sobrante ? 'Efectivo en caja' : 'Faltante de caja'
+      },
+      {
+        cuentaId: sobrante ? contraparteId : cajaIdCuenta,
+        debeCentavos: 0,
+        haberCentavos: monto,
+        descripcion: sobrante ? 'Sobrante de caja' : 'Efectivo en caja'
       }
     ]
   })
@@ -309,9 +367,21 @@ export function abrir(ctx, { saldoInicial = 0, observaciones = null } = {}) {
 /**
  * Close the till (CAJA-2).
  *
- * `saldo_final_centavos` is the balance the till's own movements produce, not a number the
- * operator typed in: the web has no field for a counted amount either, and letting the till close
- * onto a figure that no movement supports is how a drawer becomes permanently unaccountable.
+ * `conteo` is what the operator physically counted, as pesos (`'1050.50'`, `1050.5`) or centavos.
+ * It is optional, and when it is ABSENT this function closes exactly as it did before: onto the
+ * balance the till's own movements produce, which is what the web does and what `CAJA-2` asks for.
+ *
+ * When a count IS given, it does not simply overwrite the balance. The gap between the count and
+ * the movements is a CASH EVENT, so it is written as a `caja_cierre` movement — which updates the
+ * till's own totals — and posted to the journal against `5.4.02 Faltantes de Caja` (short) or
+ * `4.2.02 Sobrantes de Caja` (over). After that, the movement history and the counted figure are
+ * the same money: `saldo_final_centavos` is the count, and it is supported by a movement like any
+ * other value, so the drawer stays accountable. That is the difference from the old behaviour, and
+ * it is why the count cannot be stored as a bare overwrite.
+ *
+ * The difference is deliberately NOT refused and NOT silently accepted. A drawer that does not
+ * match is the ordinary end of a real day, so the decision belongs to the operator and this layer
+ * records what they chose; the screen makes them acknowledge it before it gets here.
  *
  * A NEGATIVE balance cannot be closed, and the refusal is explicit. The schema forbids it
  * (`cajas.saldo_final_centavos >= 0`) while the SAME file's note on `movimientos_caja` states that
@@ -321,11 +391,29 @@ export function abrir(ctx, { saldoInicial = 0, observaciones = null } = {}) {
  * the number, says what to do, and leaves the fix to whoever owns `001_init.sql`. See
  * `DIVERGENCES.md`.
  */
-export function cerrar(ctx, id, { observaciones = null } = {}) {
+export function cerrar(ctx, id, { conteo = null, observaciones = null } = {}) {
   requireTenant(ctx.negocioId)
   const cajaId = Number(id)
   if (!Number.isSafeInteger(cajaId) || cajaId < 1) {
     throw new IpcError('CAJA_ID_INVALIDO', 400, `Id de caja inválido: ${id}`)
+  }
+
+  // The count is OPTIONAL, and a missing one is not zero. `null`/`undefined`/`''` all mean "nobody
+  // counted", which is a real state — the web has no count field at all — and it falls through to
+  // the old behaviour of closing onto the movements' own balance. Treating it as `0` would invent a
+  // full-drawer shortage out of an operator who simply did not count.
+  //
+  // It is parsed OUTSIDE the transaction on purpose. `toCents` is pure, and a malformed amount
+  // should fail before the write lock is taken rather than after.
+  const conteoCentavos =
+    conteo === null || conteo === undefined || conteo === ''
+      ? null
+      : toCents(conteo, 'monto contado')
+  // `004_arqueo` added `CHECK (monto_contado_centavos >= 0)`, so a negative count would be refused
+  // by SQLite as a bare constraint failure. It is refused here, with the same code, because a
+  // negative count is a typo and a bare CHECK is not something an operator can act on.
+  if (conteoCentavos !== null && conteoCentavos < 0) {
+    throw new IpcError('CAJA_CONTEO_NEGATIVO', 400, 'El monto contado no puede ser negativo')
   }
 
   return ctx.tx(() => {
@@ -343,26 +431,88 @@ export function cerrar(ctx, id, { observaciones = null } = {}) {
       throw new IpcError('CAJA_NO_SUYA', 403, 'Solo quien abrió la caja puede cerrarla')
     }
 
-    const saldo = saldoCaja(caja)
-    if (saldo < 0) {
+    // What the movements say, BEFORE the count is reconciled. This is the "esperado" the operator
+    // is compared against and it is deliberately computed first: a count can only be a difference
+    // from something, and the something has to be the drawer's own history rather than the number
+    // the count is about to overwrite.
+    const esperado = saldoCaja(caja)
+    if (esperado < 0) {
       throw new IpcError(
         'CAJA_SALDO_NEGATIVO',
         409,
-        `La caja cierra en ${saldo} centavos: registró más egresos que ingresos. ` +
+        `La caja cierra en ${esperado} centavos: registró más egresos que ingresos. ` +
           'Registrá el ingreso faltante con cajaMovimientos.create antes de cerrarla.'
       )
     }
 
     const ts = new Date().toISOString()
+    let diferencia = null
+
+    if (conteoCentavos !== null) {
+      // Signed: POSITIVE means the drawer holds more than the movements say (sobrante), NEGATIVE
+      // means less (faltante). `assertCents` normalises a `-0` difference to `0`, which matters
+      // because `-0 === 0` would otherwise take the `!== 0` branch below and post an empty entry.
+      diferencia = assertCents(conteoCentavos - esperado, 'diferencia de arqueo')
+
+      // A difference IS a cash event, so it is recorded as a movement like any other one rather
+      // than being netted silently into the close. Two reasons, and the second is the important
+      // one: the drawer must have a readable history an owner can look at later ("the till was
+      // $30 short on Tuesday"), and the movement updates the till's own total, so AFTER this call
+      // `saldoCaja(caja)` equals the counted cash. That is what makes `saldo_final_centavos`
+      // honest instead of a second, separately-maintained number.
+      if (diferencia !== 0) {
+        registrarMovimiento(ctx, {
+          caja,
+          tipo: diferencia > 0 ? 'ingreso' : 'egreso',
+          concepto: diferencia > 0 ? 'SOBRANTE DE CAJA' : 'FALTANTE DE CAJA',
+          montoCentavos: Math.abs(diferencia),
+          referencia: `caja:${cajaId}`,
+          origen: 'caja_cierre',
+          // `libro: false` because the entry is posted right below against the count-difference
+          // accounts. Left to the default this would post a SECOND entry for the same movement,
+          // this time against `4.2.01` / `5.4.01`, and the drawer would be double-counted.
+          libro: false
+        })
+
+        // `registrarMovimiento` returns the running balances but not the row id, and the entry's
+        // `referencia` has to name the movement it explains. Reading the id back inside the same
+        // transaction is honest about where it came from; a hand-built id would be a guess.
+        const movimientoId = ctx.db
+          .prepare(
+            `SELECT id FROM movimientos_caja
+              WHERE caja_id = ? AND origen = 'caja_cierre' AND negocio_id = ?
+              ORDER BY id DESC LIMIT 1`
+          )
+          .get(cajaId, ctx.negocioId).id
+
+        // SAME TRANSACTION as the movement and the close, for the reason the float's entry is: a
+        // difference sitting in the drawer with its journal entry rolled back is the exact gap this
+        // whole feature exists to close. Either the count, its movement, its entry and the close
+        // all exist, or none of them do.
+        asentarArqueo(ctx, { diferencia, movimientoId, fecha: ts, cajaId })
+      }
+    }
+
+    // The PHYSICAL count wins when there is one, and only then. `saldo_final_centavos` is what the
+    // drawer really held, which is the whole reason a till is counted.
+    const saldoFinal = conteoCentavos === null ? esperado : conteoCentavos
     ctx.db
       .prepare(
         `UPDATE cajas
-            SET fecha_cierre = ?, saldo_final_centavos = ?, estado = 'cerrada', usuario_cierre = ?,
+            SET fecha_cierre = ?, saldo_final_centavos = ?, monto_contado_centavos = ?,
+                diferencia_centavos = ?, estado = 'cerrada', usuario_cierre = ?,
                 observaciones = COALESCE(?, observaciones), updated_at = ?
           WHERE id = ?`
       )
-      .run(ts, saldo, ctx.actorId, observaciones, ts, cajaId)
-    return ctx.db.prepare('SELECT * FROM cajas WHERE id = ?').get(cajaId)
+      .run(ts, saldoFinal, conteoCentavos, diferencia, ctx.actorId, observaciones, ts, cajaId)
+
+    // `saldo_esperado_centavos` is returned alongside the row and is NOT a column: it is the
+    // figure the count was compared against, and it is gone once the movement has been folded in
+    // (the close above overwrote the totals the caller's `caja` snapshot still holds). The screen
+    // needs it to show "esperado / contado / diferencia" after the fact, and a UI that recomputed
+    // it from the closed row would read the ALREADY-RECONCILED balance and always print zero.
+    const cerrada = ctx.db.prepare('SELECT * FROM cajas WHERE id = ?').get(cajaId)
+    return { ...cerrada, saldo_esperado_centavos: esperado }
   })
 }
 

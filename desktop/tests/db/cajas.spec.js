@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, afterEach } from 'vitest'
+﻿import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   abrir,
   cerrar,
@@ -11,6 +11,7 @@ import {
 } from '../../src/main/db/repositories/cajas.repo.js'
 import { crear } from '../../src/main/db/repositories/ventas.repo.js'
 import { balanceAsiento, CUENTA } from '../../src/main/db/repositories/cuentas.repo.js'
+import { hoyLocal } from '../../src/main/db/reportes/fechas.js'
 import { tienda, ctxDe, abrirCaja, insertarProducto } from './fixtures/tienda.js'
 
 /**
@@ -27,6 +28,9 @@ import { tienda, ctxDe, abrirCaja, insertarProducto } from './fixtures/tienda.js
  *   - One open register per business — the application check for the message, the partial unique
  *     index `ux_cajas_abierta` for the guarantee.
  *   - The till is closed by whoever opened it, with the balance its OWN movements produce.
+ *   - A cash COUNT is not allowed to overwrite that balance: the gap between the count and the
+ *     movements is a cash event, so it is written as a `caja_cierre` movement AND posted to
+ *     `5.4.02` / `4.2.02` — which is what makes `1.1.01 Caja` equal the money in the drawer.
  *   - A NEGATIVE balance cannot be closed: the schema's `saldo_final_centavos >= 0` CHECK and the
  *     schema's own note that a negative register is "a real state a shop can reach" contradict
  *     each other (header section 7 of `001_init.sql`), so `cerrar` reports the number and refuses
@@ -321,6 +325,232 @@ describe('cerrar — closing the drawer', () => {
     const viva = t.conn.db.prepare('SELECT * FROM cajas WHERE id = ?').get(caja.id)
     expect(viva.estado).toBe('abierta')
     expect(saldoCaja(viva)).toBe(-10000)
+  })
+})
+
+/**
+ * The cash count (arqueo): the number a person counts in the drawer, and what happens when it does
+ * not match what the movements say.
+ *
+ * The claim every test here defends is a single sentence: after a close, `1.1.01 Caja` in the
+ * ledger equals the money physically in the drawer. A till that closes onto a typed figure without
+ * a movement behind it breaks that sentence — the drawer and the books stop being the same money,
+ * and every report built on the books becomes quietly wrong.
+ */
+describe('cerrar con conteo — counting the cash, and what the difference does', () => {
+  /**
+   * A shop with a 500,00 float, a 100,00 cash sale and a 20,00 expense: the movements say
+   * 50000 + 10000 - 2000 = 58000. Returns the pieces so each test can count something different.
+   */
+  function diaConVentasYGasto() {
+    const { t, ctx, caja } = tumbar()
+    const producto = insertarProducto(t, { negocioId: t.negocioId, usuarioId: t.usuarioId })
+    crear(ctx, {
+      items: [{ productoId: producto.id, cantidad: '0.5' }],
+      metodoPago: 'efectivo',
+      montoRecibido: 200
+    })
+    registrarMovimiento(ctx, {
+      caja,
+      tipo: 'egreso',
+      concepto: 'Bolsas para el local',
+      montoCentavos: 2000,
+      origen: 'manual'
+    })
+    return { t, ctx, caja, esperado: 58000 }
+  }
+
+  it('a count that MATCHES closes with no difference and writes no extra movement', () => {
+    const { t, ctx, caja, esperado } = diaConVentasYGasto()
+    const antes = movimientosDe(t, caja.id).length
+
+    const cerrada = cerrar(ctx, caja.id, { conteo: '580.00' })
+
+    expect(cerrada.saldo_final_centavos).toBe(esperado)
+    expect(cerrada.monto_contado_centavos).toBe(esperado)
+    expect(cerrada.diferencia_centavos).toBe(0)
+    // A drawer that matches has had no cash event, so no row and no entry: `registrarMovimiento`
+    // refuses `monto_centavos < 1` and an empty entry would be a lie in the other direction.
+    expect(movimientosDe(t, caja.id)).toHaveLength(antes)
+    expect(saldoCuenta(t, '1.1.01')).toBe(esperado)
+  })
+
+  it('a SHORT count books the missing cash as a faltante, and the ledger ends at the real amount', () => {
+    const { t, ctx, caja, esperado } = diaConVentasYGasto()
+
+    const cerrada = cerrar(ctx, caja.id, { conteo: '575.00' })
+
+    // the count is what the till finally held
+    expect(cerrada.saldo_final_centavos).toBe(57500)
+    expect(cerrada.monto_contado_centavos).toBe(57500)
+    // and the difference is stored SIGNED, negative meaning short
+    expect(cerrada.diferencia_centavos).toBe(-500)
+
+    // the difference is a MOVEMENT, so the drawer has a readable history
+    const movs = movimientosDe(t, caja.id)
+    const arqueo = movs.find((m) => m.origen === 'caja_cierre')
+    expect(arqueo.tipo).toBe('egreso')
+    expect(arqueo.monto_centavos).toBe(500)
+    // ...and its running balance lands exactly on the counted cash
+    expect(arqueo.saldo_nuevo_centavos).toBe(57500)
+
+    // THE HEADLINE: the ledger's cash account is the money in the drawer.
+    expect(saldoCuenta(t, '1.1.01')).toBe(57500)
+    // the loss is its own line in the income statement, not dissolved into `5.4.01`
+    expect(saldoCuenta(t, '5.4.02')).toBe(500)
+    expect(saldoCuenta(t, '5.4.01')).toBe(2000) // the manual expense, untouched
+  })
+
+  it('an OVER count books the extra cash as a sobrante, and the ledger ends at the real amount', () => {
+    const { t, ctx, caja } = diaConVentasYGasto()
+
+    const cerrada = cerrar(ctx, caja.id, { conteo: '585.00' })
+
+    expect(cerrada.saldo_final_centavos).toBe(58500)
+    expect(cerrada.diferencia_centavos).toBe(500)
+
+    const arqueo = movimientosDe(t, caja.id).find((m) => m.origen === 'caja_cierre')
+    expect(arqueo.tipo).toBe('ingreso')
+    expect(arqueo.monto_centavos).toBe(500)
+    expect(arqueo.saldo_nuevo_centavos).toBe(58500)
+
+    expect(saldoCuenta(t, '1.1.01')).toBe(58500)
+    // `saldoCuenta` is debe-minus-haber, and an income account carries a CREDIT, so the
+    // sobrante shows up negative here. Reading it as a negative expense would be the bug.
+    expect(saldoCuenta(t, '4.2.02')).toBe(-500)
+  })
+
+  it('the difference entry is double entry: the whole ledger still balances', () => {
+    const { t, ctx, caja } = diaConVentasYGasto()
+    const antesDePrueba = t.conn.db
+      .prepare(
+        `SELECT COALESCE(SUM(d.debe_centavos), 0) - COALESCE(SUM(d.haber_centavos), 0) AS n
+           FROM detalles_asientos d WHERE d.negocio_id = ?`
+      )
+      .get(t.negocioId).n
+    expect(antesDePrueba).toBe(0)
+
+    cerrar(ctx, caja.id, { conteo: '575.00' })
+
+    // A debit and a credit of equal size are the only thing that makes double entry double entry,
+    // so this is asserted over EVERY account rather than only the two the test cares about.
+    const despues = t.conn.db
+      .prepare(
+        `SELECT COALESCE(SUM(d.debe_centavos), 0) - COALESCE(SUM(d.haber_centavos), 0) AS n
+           FROM detalles_asientos d WHERE d.negocio_id = ?`
+      )
+      .get(t.negocioId).n
+    expect(despues).toBe(0)
+
+    // ...and the entry is named `ingreso`/`egreso`, not `cierre`: `asientos_contables.tipo` is
+    // CHECK-constrained and `cierre` is not one of the four words it allows.
+    const entry = t.conn.db
+      .prepare("SELECT * FROM asientos_contables WHERE referencia LIKE 'caja-movimiento:%' ORDER BY id DESC LIMIT 1")
+      .get()
+    expect(entry.tipo).toBe('egreso')
+    expect(entry.monto_total_centavos).toBe(500)
+  })
+
+  it('NO count is not a count of zero: the till closes on its movements and both columns stay NULL', () => {
+    const { t, ctx, caja, esperado } = diaConVentasYGasto()
+
+    const cerrada = cerrar(ctx, caja.id)
+
+    expect(cerrada.saldo_final_centavos).toBe(esperado)
+    expect(cerrada.monto_contado_centavos).toBeNull()
+    expect(cerrada.diferencia_centavos).toBeNull()
+    expect(movimientosDe(t, caja.id).some((m) => m.origen === 'caja_cierre')).toBe(false)
+    expect(saldoCuenta(t, '1.1.01')).toBe(esperado)
+  })
+
+  it('a count of ZERO is a real count, and books the whole drawer as a faltante', () => {
+    // The `?? 0` / `|| 0` trap, stated as a test: a drawer counted at zero is empty, and an
+    // operator who counted nothing is not the same operator who found nothing.
+    const { t, ctx, caja } = tumbar()
+
+    const cerrada = cerrar(ctx, caja.id, { conteo: 0 })
+
+    expect(cerrada.monto_contado_centavos).toBe(0)
+    expect(cerrada.diferencia_centavos).toBe(-50000)
+    expect(cerrada.saldo_final_centavos).toBe(0)
+    expect(saldoCuenta(t, '1.1.01')).toBe(0)
+    expect(saldoCuenta(t, '5.4.02')).toBe(50000)
+  })
+
+  it('refuses a negative count with an actionable code instead of a bare CHECK failure', () => {
+    const { t, ctx, caja } = tumbar()
+
+    let err = null
+    try {
+      cerrar(ctx, caja.id, { conteo: '-50.00' })
+    } catch (e) {
+      err = e
+    }
+    expect(err?.code).toBe('CAJA_CONTEO_NEGATIVO')
+    expect(err?.status).toBe(400)
+
+    // the refusal left the till open and untouched
+    const viva = t.conn.db.prepare('SELECT * FROM cajas WHERE id = ?').get(caja.id)
+    expect(viva.estado).toBe('abierta')
+    expect(viva.monto_contado_centavos).toBeNull()
+  })
+
+  it('attributes the close to the SESSION operator, and a different one still cannot close it', () => {
+    const { t, ctx, caja } = diaConVentasYGasto()
+
+    // a renderer-supplied user id is not a thing `cerrar` accepts at all — the only actor is
+    // `ctx.actorId`, which the session builds. So the id in the row is the session's.
+    const cerrada = cerrar(ctx, caja.id, { conteo: '575.00' })
+    expect(cerrada.usuario_cierre).toBe(ctx.actorId)
+    expect(cerrada.usuario_cierre).toBe(t.usuarioId)
+
+    const arqueo = movimientosDe(t, caja.id).find((m) => m.origen === 'caja_cierre')
+    expect(arqueo.user_id).toBe(ctx.actorId)
+
+    const entrada = t.conn.db
+      .prepare("SELECT * FROM asientos_contables WHERE referencia LIKE 'caja-movimiento:%' ORDER BY id DESC LIMIT 1")
+      .get()
+    expect(entrada.user_id).toBe(ctx.actorId)
+  })
+
+  it('a close after 21:00 local is stamped with the true instant and reads back as the right day', () => {
+    // 2026-10-04 21:47 in Argentina (UTC-3) is 2026-10-05 00:47 UTC. This is the hour where
+    // SQLite's `date('now')` returns TOMORROW, which is how a till closed at night ends up filed
+    // under the next day. `cerrar` must write the real instant and let the reports' own offset
+    // conversion find the day.
+    const instante = Date.parse('2026-10-04T21:47:00.000-03:00')
+
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(instante)
+    try {
+      const { ctx, caja } = tumbar()
+      const cerrada = cerrar(ctx, caja.id, { conteo: '490.00' })
+
+      // the instant is exact — nothing rounded it to a day or truncated an offset
+      expect(Date.parse(cerrada.fecha_cierre)).toBe(instante)
+      // and the calendar day an operator means is the 4th, not the 5th. -180 is Argentina's
+      // fixed offset, passed explicitly so the assertion does not depend on the host's timezone.
+      expect(hoyLocal(new Date(cerrada.fecha_cierre), -180)).toBe('2026-10-04')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('grows the two difference accounts add-only, and rewrites no existing one', () => {
+    const { t, ctx, caja } = tumbar()
+    cerrar(ctx, caja.id, { conteo: '450.00' })
+
+    const codigos = t.conn.db
+      .prepare('SELECT codigo, tipo FROM cuentas_contables WHERE negocio_id = ? ORDER BY codigo')
+      .all(t.negocioId)
+      .map((c) => `${c.codigo}:${c.tipo}`)
+
+    expect(codigos).toContain('5.4.02:gasto')
+    expect(codigos).toContain('4.2.02:ingreso')
+    // the accounts that were already there kept their code AND their type
+    expect(codigos).toContain('1.1.01:activo')
+    expect(codigos).toContain('5.4.01:gasto')
+    expect(codigos).toContain('4.2.01:ingreso')
   })
 })
 

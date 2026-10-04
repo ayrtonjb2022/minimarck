@@ -75,7 +75,24 @@ export const PLAN_CONTABLE = Object.freeze([
   // and an existing account is never rewritten. That is the same add-only contract the rest of
   // this file keeps — see `3.1.01 Capital Social` and `2.1.01 Proveedores (Acreedores)`, which are
   // also in the web's chart and needed no migration either.
-  { codigo: '5.4.01', nombre: 'Otros Gastos', tipo: 'gasto', descripcion: 'Gastos cargados manualmente por el dueño' }
+  { codigo: '5.4.01', nombre: 'Otros Gastos', tipo: 'gasto', descripcion: 'Gastos cargados manualmente por el dueño' },
+  // The two accounts a CASH COUNT difference lands in, added as a pair because the difference
+  // always has both a direction and an amount, and a half of a pair is the bug.
+  //
+  // Why they are NOT `5.4.01` / `4.2.01`, which already exist and would balance just as well:
+  // those two say "money left the drawer for a reason the owner typed" and "money came in that
+  // no sale explains". A short till is neither of those — nobody decided it. It is a LOSS, and
+  // `5.4.02 Faltantes de Caja` says exactly that, so the income statement shows the shrinkage as
+  // its own line instead of dissolving it into a catch-all an accountant has to guess at. Same
+  // argument for the mirror: an overage is not "other income" (which reads as a real, recurring
+  // source of money) but money the shop found, named for what it is.
+  //
+  // Same add-only mechanism as `5.4.01` above, and for the same reason: the chart is not in any
+  // migration, so `asegurarPlan` inserts these per tenant with `ON CONFLICT DO NOTHING` inside
+  // the same transaction as the count that needs them. An existing shop grows both accounts the
+  // next time a till is counted with a difference, and neither existing account is ever rewritten.
+  { codigo: '5.4.02', nombre: 'Faltantes de Caja', tipo: 'gasto', descripcion: 'Diferencia en menos al arquear la caja' },
+  { codigo: '4.2.02', nombre: 'Sobrantes de Caja', tipo: 'ingreso', descripcion: 'Diferencia en más al arquear la caja' }
 ])
 
 /** The accounts a sale touches, named by CODE so no call site carries a literal. */
@@ -100,6 +117,12 @@ export const CUENTA = Object.freeze({
   // addition at all; naming it here keeps the pair visible in one place instead of one side
   // being a literal in a repository and the other a constant.
   OTROS_INGRESOS: '4.2.01',
+  // The pair a TILL COUNT difference lands in. Deliberately NOT `5.4.01` / `4.2.01`: a short
+  // till is a loss nobody chose and an overage is money the shop found, and folding either into
+  // the catch-all would make the income statement read as though the shrink were routine spend.
+  // See the note on `5.4.02` / `4.2.02` in `PLAN_CONTABLE`.
+  FALTANTES: '5.4.02',
+  SOBRANTES: '4.2.02',
   CMV: '5.1.01',
   // The account a purchase ON CREDIT lands in. Already in the seeded chart above as a `pasivo`
   // ("Proveedores (Acreedores)"), so crediting a supplier's goods posts to an existing account
