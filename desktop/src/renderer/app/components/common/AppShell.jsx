@@ -53,6 +53,11 @@ const SECCIONES = [
     entradas: [
       { to: "/pos", etiqueta: "Vender", icono: "fa-cash-register" },
       { to: "/ventas", etiqueta: "Ventas", icono: "fa-receipt" },
+      /* El cierre va con la venta y NO en "Administrar" porque es la otra mitad del mismo turno:
+         se abre una caja para vender, se cuenta esa caja para cerrar el día. Ponerlo en la sección de
+         configuración haría que cerrar el cajón sea una tarea de ajuste, y no lo es — es lo último
+         que hace el cajero antes de irse. */
+      { to: "/cierre-caja", etiqueta: "Cierre de caja", icono: "fa-wallet" },
     ],
   },
   {

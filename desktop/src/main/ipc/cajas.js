@@ -10,6 +10,7 @@ import {
   movimientos,
   listar,
   registrarMovimiento,
+  saldoCaja,
   saldoGeneral
 } from '../db/repositories/cajas.repo.js'
 import { createCtx } from '../db/ctx.js'
@@ -32,10 +33,19 @@ export function registerCajasHandlers(registry, { conn }) {
   const ctx = (reqCtx) => createCtx(conn, reqCtx ?? {})
 
   registry.register('cajas', {
-    /** The open till, or `null` — never an error. A closed shop is not a broken shop. */
+    /**
+     * The open till, or `null` — never an error. A closed shop is not a broken shop.
+     *
+     * `saldoActualCentavos` is added to the row rather than left for the frame to work out. The
+     * till's balance is `saldo_inicial + total_ingresos - total_egresos` (`saldoCaja`), and the
+     * close screen has to show that figure as "esperado" beside the counted cash — so a renderer
+     * that recomputed it would be a second copy of the formula that decides whether a drawer
+     * balances. Additive on an existing op; no contract operation was invented to carry it.
+     */
     active: (_payload, reqCtx) => {
       requireTenant(reqCtx?.negocioId)
-      return cajaActiva(conn.db, reqCtx.negocioId)
+      const caja = cajaActiva(conn.db, reqCtx.negocioId)
+      return caja ? { ...caja, saldoActualCentavos: saldoCaja(caja) } : null
     },
 
     /** Every till, newest first. */

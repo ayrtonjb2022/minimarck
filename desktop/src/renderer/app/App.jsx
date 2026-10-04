@@ -5,6 +5,7 @@ import CajaGuard from "./components/common/CajaGuard";
 import AppShell from "./components/common/AppShell";
 import PuntoDeVenta from "./pages/puntoDeVenta";
 import Ventas from "./pages/Ventas";
+import CierreDeCaja from "./pages/CierreDeCaja";
 import Deudores from "./pages/Deudores";
 import Proveedores from "./pages/Proveedores";
 import Compras from "./pages/Compras";
@@ -236,6 +237,19 @@ const App = () => {
         element={
           <AppShell titulo="Ventas" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
             <Ventas />
+          </AppShell>
+        }
+      />
+      {/* Deliberately NOT wrapped in `CajaGuard`, unlike `/pos` and `/ventas`. The guard exists to
+          stop somebody SELLING with no drawer open; this screen needs no drawer open to render,
+          because telling an operator "there is nothing to count" is a useful answer and a route
+          that bounced them to the POS would hide the reason. The screen reads `cajas.active` itself
+          and says so. */}
+      <Route
+        path="/cierre-caja"
+        element={
+          <AppShell titulo="Cierre de caja" colapsado={colapsado} onAlternarColapsado={alternarColapsado}>
+            <CierreDeCaja />
           </AppShell>
         }
       />
