@@ -31,6 +31,7 @@ import { runDeudoresDrive } from './deudores-drive.js'
 import { runComprasDrive } from './compras-drive.js'
 import { runReportesDrive } from './reportes-drive.js'
 import { runContabilidadDrive } from './contabilidad-drive.js'
+import { runCierreDrive } from './cierre-drive.js'
 import { runHandoverDrive, runHandoverRestartPhase } from './handover-drive.js'
 
 const isPackaged = app.isPackaged
@@ -491,6 +492,7 @@ async function main() {
     // And one for the accounting drive, same reason as every flag above. The ledger was the one
     // section no drive had ever opened, so it needed its own single-shot guard like the rest.
     let contabilidadDriveStarted = false
+let cierreDriveStarted = false
   let handoverDriveStarted = false
   let handoverRestartStarted = false
   win.webContents.on('did-finish-load', () => {
@@ -654,6 +656,30 @@ async function main() {
         .catch((err) => {
           clearTimeout(watchdog)
           console.error(`CONTABILIDAD_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
+          app.exit(1)
+        })
+    }
+
+    // The till close drive: the end of the day, in the real app, counting the drawer on screen.
+    // Every other drive OPENS a till and moves money through it; none of them ever COUNTED one,
+    // because until `/cierre-caja` existed there was nothing on screen to drive. Same gating, same
+    // watchdog discipline, and it drives THIS window — the one a shop reaches once a day, at
+    // closing, when it is busiest.
+    if (process.env.MINIMARCK_CIERRE_DRIVE && !cierreDriveStarted) {
+      cierreDriveStarted = true
+      const watchdog = setTimeout(() => {
+        console.error('CIERRE_DRIVE_ERROR timeout after 300s — the drive never reached finish()')
+        app.exit(1)
+      }, 300_000)
+      runCierreDrive(win, db)
+        .then((r) => {
+          clearTimeout(watchdog)
+          console.log(`CIERRE_DRIVE_RESULT ${JSON.stringify(r)}`)
+          app.exit(r.ok ? 0 : 1)
+        })
+        .catch((err) => {
+          clearTimeout(watchdog)
+          console.error(`CIERRE_DRIVE_ERROR ${err && err.stack ? err.stack : err}`)
           app.exit(1)
         })
     }

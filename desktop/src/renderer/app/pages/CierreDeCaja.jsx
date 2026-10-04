@@ -13,9 +13,23 @@ import { formatCents, toCents } from "../../../shared/money";
  *
  * `cajas.close` ya existía y ya estaba implementada, pero cerraba la caja sobre lo que dicen los
  * movimientos y no sobre lo que el operador cuenta. Sin una pantalla que pida el conteo, el cajero
- * no tiene dónde escribirlo: la diferencia se discovers recién cuando alguien revisa la caja un
+ * no tiene dónde escribirlo: la diferencia se descubre recién cuando alguien revisa la caja un
  * mes después, cuando ya no hay nadie que recuerde qué pasó. Contar es un hecho del día, y un hecho
  * del día que no se escribe en ningún lado no es un dato: es un olvido.
+ *
+ * ── EL `<div>` DE RAÍZ NO LLEVA `className="page"`, Y ES A PROPÓSITO ──────────────────────────────
+ *
+ * `index.css` arrastra un resto de la web: `.page { display: none }` con `.page.active
+ * { display: block }`, porque allá todas las páginas vivían en un mismo documento y una clase
+ * decidía cuál se veía. Esta app usa react-router y dibuja una ruta por vez, así que NADA le pone
+ * `.active`. Con `className="page"` la pantalla entera queda `display: none`: el campo, el botón y
+ * las cifras existen, están en el DOM, y no se pintan nunca.
+ *
+ * Lo confuso porque `querySelector` las encuentra igual: `esperarEn` daba verde, `buscar` leía
+ * `true` al hacer `el.click()` sobre un botón invisible, y los tests de jsdom —que no tienen motor
+ * de layout— tampoco se enteran. Sólo `tipear` falla, porque un input con `offsetWidth: 0` no
+ * acepta foco. Lo encontró `drive:cierre` en la app real; `Proveedores.jsx` ya había pagado este
+ * mismo peaje, y por eso el div es pelado.
  *
  * ── LAS TRES CIFRAS, Y POR QUÉ SON TRES Y NO DOS ──────────────────────────────────────────────
  *
@@ -144,7 +158,7 @@ const CierreDeCaja = () => {
   };
 
   if (cargando) {
-    return <div className="page"><p>Cargando caja…</p></div>;
+    return <div><p>Cargando caja…</p></div>;
   }
 
   // ── LA PANTALLA TRAS CERRAR ──────────────────────────────────────────────────────────────────
@@ -153,11 +167,11 @@ const CierreDeCaja = () => {
   // totales, así que un render que lo recalculara desde la fila cerrada mostraría siempre cero.
   if (cerrada) {
     return (
-      <div className="page">
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <h3 style={{ margin: 0, fontSize: "18px" }}>Caja cerrada</h3>
+<div>
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <h3 style={{ margin: 0, fontSize: "18px" }}>Caja cerrada</h3>
               <span className="tag" style={{ marginTop: "4px", display: "inline-block" }}>
                 {cerrada.fecha_cierre ? new Date(cerrada.fecha_cierre).toLocaleString("es-AR") : ""}
               </span>
@@ -167,15 +181,15 @@ const CierreDeCaja = () => {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
               <div className="stat-card">
                 <span>Esperado</span>
-                <strong>{formatCents(cerrada.saldo_esperado_centavos)}</strong>
+                <strong data-testid="cierre-resultado-esperado">{formatCents(cerrada.saldo_esperado_centavos)}</strong>
               </div>
               <div className="stat-card">
                 <span>Contado</span>
-                <strong>{formatCents(cerrada.monto_contado_centavos ?? 0)}</strong>
+                <strong data-testid="cierre-resultado-contado">{formatCents(cerrada.monto_contado_centavos ?? 0)}</strong>
               </div>
               <div className="stat-card">
                 <span>Diferencia</span>
-                <strong>
+                <strong data-testid="cierre-resultado-diferencia">
                   {(cerrada.diferencia_centavos ?? 0) === 0
                     ? "Sin diferencia"
                     : formatCents(cerrada.diferencia_centavos)}
@@ -209,7 +223,7 @@ const CierreDeCaja = () => {
   // ── NO HAY CAJA ABIERTA ──────────────────────────────────────────────────────────────────────
   if (!caja) {
     return (
-      <div className="page">
+      <div>
         <div className="card">
           <div className="card-header">
             <h3 style={{ margin: 0, fontSize: "18px" }}>No hay caja abierta</h3>
@@ -229,7 +243,7 @@ const CierreDeCaja = () => {
 
   // ── LA PANTALLA DE CONTAR ────────────────────────────────────────────────────────────────────
   return (
-    <div className="page">
+    <div>
       <div className="card">
         <div className="card-header">
           <div>
@@ -244,7 +258,7 @@ const CierreDeCaja = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
             <div className="stat-card">
               <span>Esperado (sistema)</span>
-              <strong>{formatCents(esperado)}</strong>
+              <strong data-testid="cierre-esperado">{formatCents(esperado)}</strong>
             </div>
 
             <div className="form-group" style={{ margin: 0 }}>
