@@ -246,13 +246,13 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' d='M12 3a9 9 0 0 1 9 9'/%3E%3Cpath fill='none' stroke='black' stroke-opacity='0.25' stroke-width='2.6' stroke-linecap='round' d='M12 21a9 9 0 0 1-9-9'/%3E%3C/svg%3E");
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════════════════════
+/* ==============================================================================================
  * ALIASES. The vendored JSX says `fa-magnifying-glass`, `fa-users`, `fa-xmark` — Font Awesome 6
  * names — while this file drew `fa-search`, `fa-shop`/etc. under the names an earlier draft used.
  * A class with no glyph is a 1em EMPTY BOX with no error anywhere: it renders, it takes space, and
  * it shows nothing. So the names the code actually writes get an alias to the glyph that already
  * exists, instead of a second drawing of the same picture that can drift from the first.
- * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+ * ============================================================================================== */
 
 /* `fa-users` already exists in this file; `fa-user-plus` must not become a second people glyph. */
 .fa-solid.fa-user-plus, .fa-regular.fa-user-plus {
