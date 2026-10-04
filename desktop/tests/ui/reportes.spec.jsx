@@ -952,6 +952,60 @@ describe('el negocio, y quién tiene derecho a preguntar por él', () => {
     expect(await globalThis.minimarck.call('auth', 'me', {})).toBeNull()
   })
 
+  it('PLIEGA la barra lateral a iconos y la vuelve a abrir, y el menú sigue sirviendo', async () => {
+    const { t } = escenario()
+    stores.push(t)
+    await _shop(t)
+    await montarApp('/reportes/ventas')
+    await waitFor(() => expect(document.querySelector('[data-testid="tab-ventas"]')).toBeTruthy())
+
+    // THE SCROLLING CONTAINER, named before anything is clicked. `.sidebar` is `height: 100vh` with
+    // `overflow: hidden` and `.sidebar-menu` is its `flex: 1` child, so `overflow-y: auto` on the
+    // MENU is the only thing that keeps the bottom entries reachable instead of clipped away. jsdom
+    // has no layout and never applies `index.css`, so this asserts the STRUCTURE the scroll rule
+    // hangs off — it does not, and cannot, claim to have measured a scrollbar.
+    const menu = document.querySelector('.sidebar .sidebar-menu')
+    expect(menu).toBeTruthy()
+    expect(menu.getAttribute('aria-label')).toBe('Secciones')
+
+    const barra = document.querySelector('aside.sidebar')
+    const plegar = screen.getByRole('button', { name: /Colapsar el men/ })
+    expect(barra.className).not.toContain('collapsed')
+    expect(plegar.getAttribute('aria-expanded')).toBe('true')
+
+    await userEvent.click(plegar)
+
+    // FOLDED, and SAYING SO. Two separate claims, and the second is the one that gets skipped: the
+    // `collapsed` class is what the stylesheet keys off (260px -> 72px, labels `display: none`), and
+    // `aria-expanded="false"` is what the operator who cannot see the rail narrow is told. An
+    // icon-only sidebar that still announces itself as expanded is a lie told to exactly the person
+    // least able to catch it.
+    expect(barra.className).toContain('collapsed')
+    const desplegar = screen.getByRole('button', { name: /Expandir el men/ })
+    expect(desplegar.getAttribute('aria-expanded')).toBe('false')
+    // The way back is the same control, still reachable by name from the keyboard. Matched WITHOUT
+    // the accented letter so the selector does not depend on the file's encoding round-tripping.
+    expect(screen.getAllByRole('button', { name: /Colapsar el men|Expandir el men/ })).toHaveLength(1)
+
+    // AND THE MENU STILL NAVIGATES while folded. This is the risk a collapse feature actually
+    // carries: the rail keeps its `NavLink`s, and the router — not the class — decides what is
+    // current, so folding must not cost the operator a route.
+    await userEvent.click(within(menu).getByText('Panel'))
+    await waitFor(() => expect(document.querySelector('[data-testid="tab-ventas"]')).toBeNull())
+    const activa = document.querySelector('.sidebar-menu a.active')
+    expect(activa).toBeTruthy()
+    expect(activa.textContent).toContain('Panel')
+
+    // The fold SURVIVED the navigation, because `colapsado` lives in `App` above `<Routes>`. A rail
+    // that re-opens itself every time the operator changes screen is not a setting, it is a bug that
+    // only shows up while you are trying to use it.
+    expect(document.querySelector('aside.sidebar').className).toContain('collapsed')
+
+    await userEvent.click(screen.getByRole('button', { name: /Expandir el men/ }))
+    expect(barra.className).not.toContain('collapsed')
+    expect(screen.getByRole('button', { name: /Colapsar el men/ }).getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('con sesión, el mismo shell monta el reporte que la URL pidió', async () => {
     const { t } = escenario()
     stores.push(t)
