@@ -178,7 +178,7 @@ describe('S1 registered surface', () => {
       // 002_identidades.sql beside it. Asserted as the real `db.migration.applied` so the
       // expectation tracks the directory instead of drifting one migration behind again.
       expect(v.lastRun.applied).toEqual(db.migration.applied)
-      expect(v.lastRun.applied).toEqual([1, 2, 3])
+      expect(v.lastRun.applied).toEqual(readMigrations(MIGRATIONS_DIR).map((m) => m.version))
     } finally {
       db.conn.checkpointAndClose()
       rmSync(base, { recursive: true, force: true })

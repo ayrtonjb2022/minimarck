@@ -512,7 +512,10 @@ describe('respaldarAntesDeMigrar — el paracaídas', () => {
     for (const nombre of readdirSync(p.migrationsDir)) {
       copyFileSync(path.join(p.migrationsDir, nombre), path.join(migDir, nombre))
     }
-    writeFileSync(path.join(migDir, '004_de_prueba.sql'), 'CREATE TABLE de_prueba (id INTEGER PRIMARY KEY)')
+    // La falsa va DESPUÉS de la migración real más alta (hoy 004_arqueo.sql): con el mismo número
+    // el runner la rechaza como versión duplicada (MIGRATION_DUPLICATE_VERSION). Renumerarla es el
+    // precio de tener una migración de mentira: subirla cada vez que una tajada agrega una real.
+    writeFileSync(path.join(migDir, '005_de_prueba.sql'), 'CREATE TABLE de_prueba (id INTEGER PRIMARY KEY)')
 
     const conPendientes = migrate(t.conn, {
       dir: migDir,
@@ -527,9 +530,9 @@ describe('respaldarAntesDeMigrar — el paracaídas', () => {
         })
     })
 
-    expect(conPendientes.applied).toEqual([4])
+    expect(conPendientes.applied).toEqual([5])
     expect(hechas).toHaveLength(1)
-    expect(hechas[0].versiones).toEqual([4])
+    expect(hechas[0].versiones).toEqual([5])
     expect(hechas[0].tablasAntes).toBe(0)
   })
 
