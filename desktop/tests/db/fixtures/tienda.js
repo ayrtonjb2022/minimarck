@@ -1,5 +1,4 @@
-import { mkdtempSync, rmSync, copyFileSync, readFileSync, readdirSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, rmSync, copyFileSync, readFileSync, readdirSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { bootstrapDatabase } from '../../../src/main/db/bootstrap.js'
 import { openDatabase } from '../../../src/main/db/connection.js'
@@ -49,6 +48,29 @@ if (!existsSync(INIT_SQL)) {
 }
 
 /**
+ * A fresh directory for one test shop, under `desktop/run/` instead of the OS temp dir.
+ *
+ * WHY NOT `%TEMP%`, which is where `mkdtempSync(tmpdir(), ...)` used to put these. Windows keeps a
+ * handle on a directory for as long as anything inside it is open, and `tmpdir()` is shared with
+ * every other process on the machine — including a previous test run whose `tienda.db-wal` was
+ * never checkpointed away. Under load, `rmSync(recursive, force)` then loses the race and throws
+ * `EPERM, Permission denied` on the directory it was told to delete, which failed
+ * `tests/db/cajas.spec.js` and `tests/ui/respaldos.spec.jsx` in a `verify:s0` run while the same
+ * specs passed twice in a row standalone. A teardown that fails intermittently teaches you to
+ * re-run the suite instead of reading it, so the base moved instead of the error being swallowed.
+ *
+ * `run/` is the same directory `scripts/electron-runner.mjs`'s `dirDePrueba` already uses, it is
+ * ignored by `.gitignore`, and `.gitignore` already names it as the home for local test data
+ * (`run/perfil-prueba/data/minimarck.db`). The two helpers cannot drift apart because there is
+ * only one convention.
+ */
+function dirDePrueba(prefijo) {
+  const raiz = enPaquete('run')
+  mkdirSync(raiz, { recursive: true })
+  return mkdtempSync(path.join(raiz, prefijo))
+}
+
+/**
  * The table census, derived from the ACTUAL migration files instead of retyped — and from ALL of
  * them, not just `001_init.sql`. Reading only 001 was a real limit once a second migration
  * existed: the template database had `user_identidades` (the runner widens the allowlist for every
@@ -67,7 +89,7 @@ let templateSeed = null
 
 function bootTemplate() {
   if (templateDb) return
-  templateDir = mkdtempSync(path.join(tmpdir(), 'mm-tienda-template-'))
+  templateDir = dirDePrueba('mm-tienda-template-')
   const r = bootstrapDatabase({
     userDataPath: templateDir,
     migrationsDir: MIGRATIONS_DIR,
@@ -81,7 +103,7 @@ function bootTemplate() {
 /** A fresh, fully migrated and seeded database in its own directory. */
 export function tienda() {
   bootTemplate()
-  const dir = mkdtempSync(path.join(tmpdir(), 'mm-tienda-'))
+  const dir = dirDePrueba('mm-tienda-')
   const file = path.join(dir, 'tienda.db')
   copyFileSync(templateDb, file)
   const conn = openDatabase(file, { walFile: `${file}-wal`, tables: [...TABLES] })
@@ -122,7 +144,7 @@ export function tienda() {
  * which is the whole point of the file above.
  */
 export function tiendaVacia() {
-  const dir = mkdtempSync(path.join(tmpdir(), 'mm-vacia-'))
+  const dir = dirDePrueba('mm-vacia-')
   const file = path.join(dir, 'tienda.db')
   const conn = openDatabase(file, { walFile: `${file}-wal`, tables: [...TABLES] })
   migrate(conn, { dir: MIGRATIONS_DIR })
