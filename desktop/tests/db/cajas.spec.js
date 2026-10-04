@@ -10,9 +10,11 @@ import {
   saldoCaja
 } from '../../src/main/db/repositories/cajas.repo.js'
 import { crear } from '../../src/main/db/repositories/ventas.repo.js'
+import { registrarPago } from '../../src/main/db/repositories/deudores.repo.js'
+import { cajaActiva } from '../../src/main/db/repositories/cajas.repo.js'
 import { balanceAsiento, CUENTA } from '../../src/main/db/repositories/cuentas.repo.js'
 import { hoyLocal } from '../../src/main/db/reportes/fechas.js'
-import { tienda, ctxDe, abrirCaja, insertarProducto } from './fixtures/tienda.js'
+import { tienda, ctxDe, abrirCaja, insertarProducto, insertarDeudor } from './fixtures/tienda.js'
 
 /**
  * The till (design D.5, spec CAJA-1..4), on REAL sqlite.
@@ -593,6 +595,95 @@ describe('registrarMovimiento — every movement carries the running balance', (
     ])
     expect(movs[2].origen).toBe('manual')
     expect(movs[2].venta_id).toBeNull()
+  })
+})
+
+/**
+ * A whole day, in one test, because the properties above are only meaningful in sequence: a till
+ * that counts correctly in isolation is not a till that counts correctly after a credit sale and a
+ * debtor payment have passed through it.
+ */
+describe('un día completo — float, ventas, un pago, un gasto, conteo y apertura del día siguiente', () => {
+  it('reconciles a full day and lets the next one start', () => {
+    const { t, ctx, caja } = tumbar()
+    // 9 kg: the day below sells 3,5 kg (0,5 + 1,5 + 1,5) and the fixture's 3 kg default is not
+    // enough. A stock error here would be a real refusal, not a flaky test.
+    const producto = insertarProducto(t, {
+      negocioId: t.negocioId,
+      usuarioId: t.usuarioId,
+      overrides: { nombre: 'Queso artesanal', precio_centavos: 20000, precio_compra_centavos: 12000, stock_milli: 9000 }
+    })
+    const deudor = insertarDeudor(t, { negocioId: t.negocioId, usuarioId: t.usuarioId })
+
+    // 1. cash
+    crear(ctx, {
+      items: [{ productoId: producto.id, cantidad: '0.5' }],
+      metodoPago: 'efectivo',
+      montoRecibido: 200
+    })
+    // 2. weighed, out of the same pesable product
+    crear(ctx, {
+      items: [{ productoId: producto.id, cantidad: '1.5' }],
+      metodoPago: 'efectivo',
+      montoRecibido: 600
+    })
+    // 3. credit — the shelf price is 200,00/kg, so this books 30.000 of REVENUE and NOTHING in the
+    //    drawer. A till test that only ever sells cash would never notice a credit sale wrongly
+    //    counted as cash, which is the mistake this line exists to catch.
+    crear(ctx, {
+      items: [{ productoId: producto.id, cantidad: '1.5' }],
+      metodoPago: 'credito',
+      clienteDeudorId: Number(deudor.id)
+    })
+    // 4. the debtor pays that same 300,00 in cash, which DOES enter the drawer
+    registrarPago(ctx, deudor.id, { monto: '300.00', metodoPago: 'efectivo' })
+    // 5. the owner's expense
+    registrarMovimiento(ctx, {
+      caja,
+      tipo: 'egreso',
+      concepto: 'Bolsa de hielo',
+      montoCentavos: 3000,
+      origen: 'manual'
+    })
+
+    // float 50.000 + cash 10.000 (0,5 kg) + weighed 30.000 (1,5 kg) + payment 30.000 − gasto 3.000
+    const esperado = 50000 + 10000 + 30000 + 30000 - 3000
+    expect(saldoCaja(t.conn.db.prepare('SELECT * FROM cajas WHERE id = ?').get(caja.id))).toBe(esperado)
+
+    // the count matches, so the close writes no difference at all
+    const cerrada = cerrar(ctx, caja.id, { conteo: '1170.00' })
+    expect(cerrada.diferencia_centavos).toBe(0)
+    expect(cerrada.saldo_final_centavos).toBe(esperado)
+
+    // the drawer and the books agree at the end of the day
+    expect(saldoCuenta(t, '1.1.01')).toBe(esperado)
+    // and the credit sale WAS revenue, even though it never touched the drawer: 10.000 + 30.000 + 30.000.
+    // NEGATIVE, because `saldoCuenta` is `debe − haber`: an asset reads positive and an income reads
+    // negative. That sign is not a typo to be "fixed" — it is what lets a trial balance sum to zero.
+    expect(saldoCuenta(t, '4.1.01')).toBe(-70000)
+    // nothing went to a count-difference account, because there was no difference
+    expect(saldoCuenta(t, '5.4.02')).toBe(0)
+    expect(saldoCuenta(t, '4.2.02')).toBe(0)
+
+    // ---- the next day -----------------------------------------------------------------------
+    // Opening after a close is the half of the feature that has to work, because a till the shop
+    // cannot reopen is a shop that cannot trade tomorrow. This is the `ux_cajas_abierta` invariant
+    // being RELEASED, not tightened.
+    // `abrir` runs its `saldoInicial` through `toCents`, so a bare number is PESOS — 100,00 here.
+// (The fixture helper `abrirCaja` takes centavos directly, which is the trap.)
+    const manana = abrir(ctx, { saldoInicial: '100.00' })
+    expect(manana.estado).toBe('abierta')
+    expect(cajaActiva(t.conn.db, t.negocioId).id).toBe(manana.id)
+    expect(manana.id).not.toBe(caja.id)
+
+    // and the shop's cash is yesterday's closing drawer plus today's float — kept as TWO figures, so
+    // a report can say what yesterday left and what today started with instead of one number that
+    // silently absorbed both
+    const g = saldoGeneral(t.conn.db, t.negocioId)
+    expect(g.saldoCerradas).toBe(esperado)
+    expect(g.cajasCerradas).toBe(1)
+    expect(g.saldoAbierta).toBe(10000)
+    expect(g.tieneCajaAbierta).toBe(true)
   })
 })
 
