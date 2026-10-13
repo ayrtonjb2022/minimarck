@@ -141,6 +141,7 @@ const Productos = () => {
   const [search, setSearch] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [soloActivos, setSoloActivos] = useState(false);
+  const [soloBajoStock, setSoloBajoStock] = useState(false);
   const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null);
@@ -170,6 +171,7 @@ const Productos = () => {
           search,
           categoriaId: categoriaFiltro === "" ? null : categoriaFiltro,
           soloActivos,
+          soloBajoStock,
           limit: PAGE_SIZE,
           offset: pagina * PAGE_SIZE,
         });
@@ -181,7 +183,7 @@ const Productos = () => {
         setLoading(false);
       }
     },
-    [search, categoriaFiltro, soloActivos, pagina]
+    [search, categoriaFiltro, soloActivos, soloBajoStock, pagina]
   );
 
   useEffect(() => {
@@ -197,7 +199,7 @@ const Productos = () => {
   // name that only exists on page 3 would otherwise land on an empty page 1 and read as "no results".
   useEffect(() => {
     setPagina(0);
-  }, [search, categoriaFiltro, soloActivos]);
+  }, [search, categoriaFiltro, soloActivos, soloBajoStock]);
 
   const etiquetaCategoria = useMemo(() => {
     const mapa = Object.fromEntries(categorias.map((c) => [String(c.id), c.nombre]));
@@ -334,6 +336,20 @@ const Productos = () => {
             />
             Sólo activos
           </label>
+          {/* The under-stock toggle is the same filter the STATUS column's red number already is:
+              `stockMilli <= stockMinimoMilli`, composed in the repository with the rest of the
+              filters so the page COUNT and the rows agree. The red number is the badge. */}
+          <label
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}
+            title="Sólo los productos con stock igual o menor al mínimo"
+          >
+            <input
+              type="checkbox"
+              checked={soloBajoStock}
+              onChange={(e) => setSoloBajoStock(e.target.checked)}
+            />
+            Sólo bajo stock
+          </label>
           <button className="btn-primary" onClick={abrirNuevo} data-testid="nuevo-producto">
             <i className="fa-solid fa-plus" aria-hidden="true"></i> Nuevo producto
           </button>
@@ -345,7 +361,7 @@ const Productos = () => {
       ) : filas.length === 0 ? (
         <div className="card">
           <p>
-            {search || categoriaFiltro
+            {search || categoriaFiltro || soloBajoStock
               ? "Ningún producto coincide con el filtro."
               : "Todavía no hay productos. Creá el primero para poder venderlo en el punto de venta."}
           </p>
