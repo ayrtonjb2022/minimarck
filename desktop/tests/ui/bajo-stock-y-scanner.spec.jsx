@@ -212,4 +212,102 @@ describe('el escáner del catálogo y el panel de stock', () => {
     expect(screen.queryByTestId('stock-in-panel')).toBeNull()
     expect(llamadas.some((c) => c.op === 'findByCode')).toBe(false)
   })
+
+  it('escanear un código desconocido abre el formulario de alta con el código cargado', async () => {
+    const { t } = unEscenario()
+    stores.push(t)
+    montar(nuevoCliente(), <Productos />)
+
+    const scan = await screen.findByTestId('scan-codigo')
+    await user.type(scan, '7799999999999{Enter}')
+
+    // The create form — NOT the stock panel. The code the reader typed is already in the field, so
+    // the operator adds the product without retyping what the scanner just read.
+    const codigo = await screen.findByLabelText('Código de barras')
+    expect(codigo.value).toBe('7799999999999')
+    expect(screen.queryByTestId('stock-in-panel')).toBeNull()
+    // The scan box is emptied so the next read starts clean.
+    expect(screen.getByTestId('scan-codigo').value).toBe('')
+  })
+
+  it('un código borrado (soft-delete) también abre el formulario de alta', async () => {
+    const { t } = unEscenario()
+    stores.push(t)
+    const creado = await crearProducto({
+      nombre: 'Producto discontinuado del catálogo',
+      codigo: '7793333333333',
+      precio: '5.00',
+      stock: '1',
+      unidadMedida: 'unidad'
+    })
+    // Soft-delete: `findByCode` stops seeing it (`deleted_at IS NULL`), which is the same `null`
+    // path an unknown code takes — the two land on the same create form.
+    await globalThis.minimarck.call('productos', 'remove', { id: creado.id })
+    montar(nuevoCliente(), <Productos />)
+
+    const scan = await screen.findByTestId('scan-codigo')
+    await user.type(scan, '7793333333333{Enter}')
+
+    const codigo = await screen.findByLabelText('Código de barras')
+    expect(codigo.value).toBe('7793333333333')
+    expect(screen.queryByTestId('stock-in-panel')).toBeNull()
+  })
+
+  it('dar de alta un código que ya existe avisa PRODUCTO_CODIGO_DUPLICADO', async () => {
+    const { t } = unEscenario()
+    stores.push(t)
+    const creado = await crearProducto({
+      nombre: 'Galletitas viejas',
+      codigo: '7791111111111',
+      precio: '10.00',
+      stock: '1',
+      unidadMedida: 'unidad'
+    })
+    // Soft-deleted, so the scan reaches the create form — but the code is still taken, and the
+    // repository's duplicate check does not care about `deleted_at`.
+    await globalThis.minimarck.call('productos', 'remove', { id: creado.id })
+    montar(nuevoCliente(), <Productos />)
+
+    const scan = await screen.findByTestId('scan-codigo')
+    await user.type(scan, '7791111111111{Enter}')
+
+    await user.type(await screen.findByLabelText('Nombre *'), 'Galletitas nuevas')
+    await user.type(screen.getByLabelText('Precio de venta *'), '12.00')
+    await user.click(screen.getByTestId('guardar-producto'))
+
+    // The repository's own sentence, which names the collision instead of a generic failure.
+    await screen.findByText(/ya existe en esta tienda/)
+    // And nothing was written: still exactly one row carrying that barcode.
+    expect(
+      t.conn.db.prepare('SELECT COUNT(*) AS n FROM productos WHERE codigo = ?').get('7791111111111').n
+    ).toBe(1)
+  })
+
+  it('crear el producto desde el formulario del escáner lo guarda y refresca el catálogo', async () => {
+    const { t } = unEscenario()
+    stores.push(t)
+    const client = nuevoCliente()
+    const invalidar = vi.spyOn(client, 'invalidateQueries')
+    montar(client, <Productos />)
+
+    const scan = await screen.findByTestId('scan-codigo')
+    await user.type(scan, '7792222222222{Enter}')
+
+    await user.type(await screen.findByLabelText('Nombre *'), 'Alfajor triple')
+    await user.type(screen.getByLabelText('Precio de venta *'), '150.00')
+    await user.click(screen.getByTestId('guardar-producto'))
+
+    // The row exists in the shop, with the barcode the scanner read and no retyping.
+    await waitFor(() => {
+      const fila = t.conn.db
+        .prepare('SELECT nombre, codigo FROM productos WHERE codigo = ?')
+        .get('7792222222222')
+      expect(fila?.nombre).toBe('Alfajor triple')
+    })
+    // The POS is told by PREFIX, exactly like the "Nuevo producto" button's create path.
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: ['productos'] })
+    // The modal closed and the reloaded list shows the new row without touching the filters.
+    await waitFor(() => expect(screen.getByText('Alfajor triple')).toBeTruthy())
+    expect(screen.queryByLabelText('Código de barras')).toBeNull()
+  })
 })

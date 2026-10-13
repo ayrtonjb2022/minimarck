@@ -231,9 +231,12 @@ const Productos = () => {
    * is the whole event — there is no submit button. A BLANK code returns before any call: the
    * reader fires an Enter on every stray keystroke, and an empty scan is not a request worth making.
    *
-   * This does NOT create products. A code the shop does not stock is answered by telling the
-   * operator it is not in the catalogue; the create hand-off is a later slice, so the branch stops
-   * at a notice here rather than opening a form this screen cannot yet fill in.
+   * A CODE THE SHOP DOES NOT STOCK IS A PRODUCT ABOUT TO BE CREATED. The reader already typed the
+   * barcode, so the unknown branch opens the create form with that code filled in — the operator
+   * adds the item without retyping what the scanner just read. It is the SAME modal the "Nuevo
+   * producto" button opens; creating from it still validates through the repository, so a code that
+   * collides with an existing row is refused by name (`PRODUCTO_CODIGO_DUPLICADO`) exactly as it is
+   * on the button's path.
    */
   const manejarEscaneo = async (evento) => {
     if (evento.key !== "Enter") return;
@@ -244,7 +247,10 @@ const Productos = () => {
     try {
       const encontrado = await productosAPI.buscarPorCodigo(codigo);
       if (!encontrado) {
-        toast.warn(`El código "${codigo}" no está en el catálogo.`);
+        // `buscarPorCodigo` answers `null` for an unknown code AND for a soft-deleted one — every
+        // read filters `deleted_at IS NULL`. Both mean "not on the shelf right now", and both are
+        // answered the same way: open the create form with the scanned code ready to save.
+        setForm({ ...VACIO, codigo, categoriaId: categorias[0] ? String(categorias[0].id) : "" });
         setScan("");
         return;
       }
