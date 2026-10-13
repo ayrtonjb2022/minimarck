@@ -39,7 +39,10 @@ export function registerProductosHandlers(registry, { conn }) {
         // `soloActivos` is a renderer-supplied filter, but a product the shop deactivated must
         // stay sellable only in an admin list. Defaulting it to true means a caller that forgets
         // it gets the safe answer.
-        soloActivos: payload?.soloActivos ?? true
+        soloActivos: payload?.soloActivos ?? true,
+        // `soloBajoStock` is opt-in the other way: the default answer is the whole (filtered)
+        // catalogue, and only the products screen asks for the under-stock subset.
+        soloBajoStock: payload?.soloBajoStock ?? false
       })
     },
 

@@ -380,8 +380,14 @@ export function buscarPorCodigo(ctx, codigo) {
  *
  * `soloActivos` defaults to true because a soft-deleted product must not be sellable, and the
  * filter lives HERE rather than in the renderer so a caller cannot forget it.
+ *
+ * `soloBajoStock` is the "Sólo bajo stock" toggle. It keeps only the rows whose stock sits AT or
+ * BELOW the minimum — `<=`, not `<` — because a shelf exactly on the minimum is one sale away
+ * from being under it. The predicate goes into the SAME `cond` array as every other filter, so
+ * the COUNT and the page SELECT agree on what "under stock" means: a filter that only narrowed
+ * the page would be a page whose total lied about it.
  */
-export function listar(ctx, { search = '', categoriaId = null, limit = 100, offset = 0, soloActivos = true } = {}) {
+export function listar(ctx, { search = '', categoriaId = null, limit = 100, offset = 0, soloActivos = true, soloBajoStock = false } = {}) {
   requireTenant(ctx.negocioId)
   const cond = ['negocio_id = ?', 'deleted_at IS NULL']
   const args = [ctx.negocioId]
@@ -396,6 +402,7 @@ export function listar(ctx, { search = '', categoriaId = null, limit = 100, offs
     const patron = `%${escaparLike(q.toLowerCase())}%`
     args.push(patron, patron)
   }
+  if (soloBajoStock) cond.push('stock_milli <= stock_minimo_milli')
   const where = cond.join(' AND ')
 
   const total = ctx.db.prepare(`SELECT COUNT(*) AS n FROM productos WHERE ${where}`).get(...args).n

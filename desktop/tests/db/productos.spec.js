@@ -258,6 +258,45 @@ describe('productos.list — the POS grid', () => {
     expect(listar(ctx, { soloActivos: false }).filas.map((p) => p.nombre)).toContain('Yogur natural')
   })
 
+  it('soloBajoStock keeps only the products at or below their minimum, and total is the filtered count', () => {
+    const { ctx } = tiendaCon()
+    crear(ctx, cuerpoProducto({ nombre: 'Aceite de oliva', codigo: 'ACE-1', stock: '1', stockMinimo: '2' }))
+    crear(ctx, cuerpoProducto({ nombre: 'Café molido', codigo: 'CAF-1', stock: '2', stockMinimo: '2' }))
+    crear(ctx, cuerpoProducto({ nombre: 'Harina leudante', codigo: 'HAR-1', stock: '10', stockMinimo: '2' }))
+    crear(ctx, cuerpoProducto({ nombre: 'Yerba mate', codigo: 'YER-1', stock: '3', stockMinimo: '5' }))
+
+    const r = listar(ctx, { soloBajoStock: true })
+    // `Café molido` sits EXACTLY on its minimum, and `<=` keeps it: a shelf on the minimum is one
+    // sale away from being under it. `Harina leudante` is the control that must stay out.
+    expect(r.filas.map((p) => p.nombre)).toEqual(['Aceite de oliva', 'Café molido', 'Yerba mate'])
+    // The total is the count of the FILTERED set, not the page length and not the whole catalogue.
+    expect(r.total).toBe(3)
+    // The filter is opt-in, like `soloActivos` — the default answer is still the full list.
+    expect(listar(ctx).total).toBe(4)
+  })
+
+  it('soloBajoStock composes AND with search, category and soloActivos', () => {
+    const { t, ctx } = tiendaCon()
+    const lacteo = crearCategoria(ctx, { nombre: 'Lácteos' })
+    crear(ctx, cuerpoProducto({ nombre: 'Queso bajo', codigo: 'QB-1', stock: '1', stockMinimo: '2', categoriaId: lacteo.id }))
+    crear(ctx, cuerpoProducto({ nombre: 'Queso sano', codigo: 'QS-1', stock: '9', stockMinimo: '2', categoriaId: lacteo.id }))
+    crear(ctx, cuerpoProducto({ nombre: 'Aceite bajo', codigo: 'AB-1', stock: '1', stockMinimo: '2' }))
+    const inactivo = crear(ctx, cuerpoProducto({ nombre: 'Té bajo', codigo: 'TB-1', stock: '1', stockMinimo: '2', categoriaId: lacteo.id }))
+    t.conn.db.prepare('UPDATE productos SET activo = 0 WHERE id = ?').run(inactivo.id)
+
+    // AND of three filters: under stock, in Lácteos, active. `Aceite bajo` matches the search but
+    // has no category; `Té bajo` matches both but is deactivated — only `Queso bajo` survives.
+    const r = listar(ctx, { soloBajoStock: true, categoriaId: lacteo.id, search: 'bajo' })
+    expect(r.filas.map((p) => p.nombre)).toEqual(['Queso bajo'])
+    expect(r.total).toBe(1)
+
+    // Weakening one constraint does not weaken the under-stock one: the inactive row returns and
+    // the others still do not.
+    const todos = listar(ctx, { soloBajoStock: true, categoriaId: lacteo.id, search: 'bajo', soloActivos: false })
+    expect(todos.filas.map((p) => p.nombre)).toEqual(['Queso bajo', 'Té bajo'])
+    expect(todos.total).toBe(2)
+  })
+
   it('never shows another business a product', () => {
     const { t, ctx } = tiendaCon()
     const mio = crear(ctx, cuerpoProducto())
