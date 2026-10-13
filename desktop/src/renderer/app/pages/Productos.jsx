@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { productosAPI } from "../api/productos";
 import { categoriasAPI } from "../api/categorias";
@@ -11,6 +11,7 @@ import {
   milliAEntrada,
 } from "../utils/formatters";
 import Modal from "../components/common/Modal";
+import StockInPanel from "../components/common/StockInPanel";
 
 /**
  * Productos — the catalogue itself: what the shop sells, at what price, with how much on the shelf.
@@ -148,6 +149,12 @@ const Productos = () => {
   const [guardando, setGuardando] = useState(false);
   const [porEliminar, setPorEliminar] = useState(null);
   const [eliminando, setEliminando] = useState(false);
+  // The scanner in the toolbar: the code the operator typed or scanned, whether a lookup is in
+  // flight, and the product a resolved code opened the stock panel for.
+  const [scan, setScan] = useState("");
+  const [escaneando, setEscaneando] = useState(false);
+  const [panelStock, setPanelStock] = useState(null);
+  const scanRef = useRef(null);
 
   /**
    * Categories are read ONCE and used for three things: the filter row, the form's `<select>` and
@@ -215,6 +222,56 @@ const Productos = () => {
   // A write the POS has to see. `["productos"]` matches by PREFIX, so it also catches the POS's
   // `["productos","all-for-pos"]` — one call covers create, edit, toggle and delete.
   const avisarAlPos = () => queryClient.invalidateQueries({ queryKey: ["productos"] });
+
+  /**
+   * EL ESCÁNER DEL CATÁLOGO.
+   *
+   * A barcode reader is a keyboard: it types the code and presses Enter. This field lives in the
+   * toolbar so the operator can scan a product without hunting for its row in the table, and Enter
+   * is the whole event — there is no submit button. A BLANK code returns before any call: the
+   * reader fires an Enter on every stray keystroke, and an empty scan is not a request worth making.
+   *
+   * This does NOT create products. A code the shop does not stock is answered by telling the
+   * operator it is not in the catalogue; the create hand-off is a later slice, so the branch stops
+   * at a notice here rather than opening a form this screen cannot yet fill in.
+   */
+  const manejarEscaneo = async (evento) => {
+    if (evento.key !== "Enter") return;
+    evento.preventDefault();
+    const codigo = scan.trim();
+    if (!codigo) return;
+    setEscaneando(true);
+    try {
+      const encontrado = await productosAPI.buscarPorCodigo(codigo);
+      if (!encontrado) {
+        toast.warn(`El código "${codigo}" no está en el catálogo.`);
+        setScan("");
+        return;
+      }
+      // Active or inactive BOTH open the panel: the difference is told inside it, with a warning
+      // and a disabled submit for the inactive one. Reactivation is a deliberate act on the row,
+      // never a side effect of counting stock.
+      setPanelStock(encontrado);
+    } catch (err) {
+      toast.error(mensajeDeError(err, "No se pudo buscar el código"), { autoClose: 9000 });
+    } finally {
+      setEscaneando(false);
+    }
+  };
+
+  /**
+   * After the stock panel writes: the POS cache is told, the list is reloaded, the box is emptied,
+   * the panel is closed and the cursor is put back in the scan field. The FOCUS RETURN is the point
+   * — restocking is several scans in a row, and a cursor left on a panel that just closed would make
+   * the next code start with a click.
+   */
+  const alAgregarStock = async () => {
+    await avisarAlPos();
+    setScan("");
+    setPanelStock(null);
+    await cargar({ suprimeCargando: true });
+    scanRef.current?.focus();
+  };
 
   const guardar = async (evento) => {
     evento.preventDefault();
@@ -350,6 +407,25 @@ const Productos = () => {
             />
             Sólo bajo stock
           </label>
+          {/* The scanner. A reader types the code and sends Enter, so `onKeyDown` is the handler;
+              `ref` + `autoFocus` make the field the default target on open, and the stock panel
+              puts the cursor back here after every write. */}
+          <input
+            ref={scanRef}
+            className="filter-input"
+            type="text"
+            placeholder="Escanear código de barras (catálogo)"
+            value={scan}
+            onChange={(e) => setScan(e.target.value)}
+            onKeyDown={manejarEscaneo}
+            aria-label="Escanear código de barras (catálogo)"
+            data-testid="scan-codigo"
+            autoFocus
+            style={{ minWidth: 260 }}
+          />
+          {escaneando ? (
+            <span style={{ fontSize: 12, color: "var(--kanagawa-fg-muted)" }}>Buscando…</span>
+          ) : null}
           <button className="btn-primary" onClick={abrirNuevo} data-testid="nuevo-producto">
             <i className="fa-solid fa-plus" aria-hidden="true"></i> Nuevo producto
           </button>
@@ -743,6 +819,16 @@ const Productos = () => {
             </button>
           </div>
         </Modal>
+      ) : null}
+
+      {/* The stock panel a resolved scan opens. `alAgregarStock` owns the post-write work, so the
+          panel itself only has to send the PATCH and say what happened. */}
+      {panelStock ? (
+        <StockInPanel
+          producto={panelStock}
+          onClose={() => setPanelStock(null)}
+          onDone={alAgregarStock}
+        />
       ) : null}
     </div>
   );
