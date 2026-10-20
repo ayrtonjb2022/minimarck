@@ -427,8 +427,37 @@ export function changePassword(conn, session, body = {}) {
 }
 
 /** `auth.logout` — end the session. Nothing is stored, so there is nothing to revoke. */
+function resetPassword(conn, session, body = {}) {
+  const actual = session.exigir()
+  if (actual.rol !== 'admin') {
+    throw new IpcError('SIN_PERMISO', 403, 'Solo el dueno puede restablecer contrasenas')
+  }
+  const pedido = body.usuarioId ?? body.userId
+  if (pedido === undefined || pedido === null || pedido === '') {
+    throw new IpcError('DATO_INVALIDO', 400, 'Falta el usuario a restablecer')
+  }
+  const id = Number(pedido)
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new IpcError('DATO_INVALIDO', 400, 'Ese usuario no existe')
+  }
+  if (id === actual.id) {
+    throw new IpcError('DATO_INVALIDO', 400, 'Usa "Cambiar contrasena" para cambiar la tuya')
+  }
+  const fila = usuarioPorId(conn, id)
+  if (!fila || fila.activo !== 1 || fila.negocio_id !== actual.negocioId) {
+    throw new IpcError('USUARIO_NO_ENCONTRADO', 404, 'Ese usuario no esta en este negocio')
+  }
+  const nombreAcceso = nombreDeAcceso(conn, id)
+  if (!nombreAcceso) {
+    throw new IpcError('SIN_CREDENCIAL', 409, 'Esa cuenta todavia no tiene contrasena')
+  }
+  const TEMPORAL = 'temporal123'
+  guardarCredencial(conn, id, nombreAcceso, TEMPORAL)
+  return { ok: true, usuarioId: id, nombre: fila.nombre, temporal: true }
+}
+
 export function logout(session) {
   return { ok: session.cerrar() }
 }
 
-export { ROLES, sesionPublica }
+export { ROLES, sesionPublica, resetPassword }

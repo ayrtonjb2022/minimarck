@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The frozen operation contract — the SINGLE source of truth for what the renderer may
  * ask the main process to do. design §A.2; cross-checked against spec §L (89 operations).
  *
@@ -67,3 +67,4 @@ export const ENVELOPE_VERSION = 1
  * instead of a number that quietly follows along.
  */
 export const OPS_COUNT = Object.values(OPS).reduce((n, ops) => n + ops.length, 0)
+

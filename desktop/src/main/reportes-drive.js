@@ -314,7 +314,7 @@ export function runReportesDrive(win, db) {
 
     // ---- 2. a shop whose every figure is computable by hand ----------------------------------
     // Said out loud for the same reason the payment drive says it: a fresh install has no
-    // catalogue, so the drive stocks a shelf before it reads a report off it.
+    // products, so the drive stocks a shelf before it reads a report off it.
     const producto = (nombre, codigo, precio, costo, stockMilli, unidad) => {
       const p = db1(`SELECT * FROM productos WHERE codigo = ?`, codigo)
       if (p) return p
@@ -337,7 +337,7 @@ export function runReportesDrive(win, db) {
     const gaseosa = producto('Gaseosa', 'DRV-GAS', 1_000, 600, 20_000, 'unidad')
     check('el producto pesado lo dice su UNIDAD, no una columna que se escribe a mano',
       queso.es_pesable === 1 && gaseosa.es_pesable === 0, `queso ${queso.es_pesable}, gaseosa ${gaseosa.es_pesable}`)
-    check('el recorrido tiene una góndola con dos productos', Boolean(queso && gaseosa), 'no se pudo cargar el catálogo')
+    check('el recorrido tiene una góndola con dos productos', Boolean(queso && gaseosa), 'no se pudieron cargar los productos')
 
     // `proveedores` has NO `user_id`: like `negocios`, the supplier is a fact about the BUSINESS, not
     // about the operator who typed it. Writing one is the same mistake as `negocios.user_id` — a

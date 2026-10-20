@@ -147,7 +147,7 @@ operación honestamente pendiente.
 ### 3.2 Qué puede hacer un usuario hoy
 
 - Abrir y cerrar la caja, con arqueo y desglose por método de pago.
-- Vender: catálogo, búsqueda, fraccionados por peso, venta libre, F2 para cobrar, cambio calculado.
+- Vender: productos, búsqueda, fraccionados por peso, venta libre, F2 para cobrar, cambio calculado.
 - Anular una venta en dos pasos, con motivo.
 - Fiar a un cliente y cobrar la deuda (efectivo, tarjeta o transferencia).
 - Comprar a proveedores, con costo promedio ponderado y anulación.
@@ -191,7 +191,7 @@ en el JSX contra las definidas en el CSS:
 | `fa-user-plus` | "Nuevo empleado", "Nuevo cliente" |
 | `fa-magnifying-glass` | botón **Buscar** (`Deudores.jsx:139`) |
 | `fa-crown`, `fa-coins`, `fa-truck-ramp-box`, `fa-file-invoice-dollar`, `fa-scale-balanced`, `fa-money-bill-trend-up` | **6 de las 10 pestañas de Reportes** (`Reportes.jsx:82-91`) |
-| `fa-ban`, `fa-circle-check`, `fa-box-open`, `fa-wand-magic-sparkles`, `fa-user-clock` | cancelar venta, catálogo vacío, etc. |
+| `fa-ban`, `fa-circle-check`, `fa-box-open`, `fa-wand-magic-sparkles`, `fa-user-clock` | cancelar venta, sin productos, etc. |
 
 Y en el sentido inverso: **27 glifos definidos en el CSS que nadie usa**.
 
@@ -212,7 +212,7 @@ tiene `mask-image` en `icons.css`.
 
 **D4 · El escáner de códigos de barras es invendible fuera de los primeros 500 productos**
 
-`puntoDeVenta.jsx:579` carga el catálogo con `limit: 500`; el "escaneo" es
+`puntoDeVenta.jsx:579` carga los productos con `limit: 500`; el "escaneo" es
 `manejarEnterBusqueda` (`puntoDeVenta.jsx:801-815`) filtrando **en memoria**. El método correcto
 existe — `productosAPI.buscarPorCodigo` → `productos.findByCode` — y está documentado como *"the
 read a USB scanner makes"* (`api/productos.js:16-21`), pero **nunca se llama**.
@@ -374,7 +374,7 @@ viejo.
 **D23 · Accesibilidad en un POS que se opera con teclado**
 
 El POS presume de `Ctrl+F`/`F2`/`Esc` (`puntoDeVenta.jsx:606-657`), pero las tarjetas de producto
-son `<div onClick>` sin `tabIndex`/`role` (`puntoDeVenta.jsx:1270`): **el catálogo no se puede
+son `<div onClick>` sin `tabIndex`/`role` (`puntoDeVenta.jsx:1270`): **los productos no se pueden
 recorrer con teclado**. Además: botones solo-icono sin `aria-label`, `<label>` sin `htmlFor`, tabs
 ARIA sin navegación por flechas, y colores hex fijos fuera del tema (`CajaGuard.jsx:33-38`) que
 dejan pantallas oscuras con tema claro.
@@ -528,7 +528,7 @@ y allí son legítimos (funciones puras de planificación).
   NULL` ni consulta `pragma_foreign_key_list`. El único agujero estructural.
 - `tests/lifecycle.spec.js` prueba funciones puras con objetos literales, no el cableado de
   `index.js`.
-- `tests/integration/demo-catalogue.spec.js:60-70` **transcribe** el cuerpo de `installIpc` desde
+- `tests/integration/demo-productos.spec.js:60-70` **transcribe** el cuerpo de `installIpc` desde
   `index.js:61-92` en vez de importarlo. El propio archivo lo admite: un refactor de `index.js`
   rompe producción sin romper la prueba.
 - `tests/security/offline-inert-hosts.spec.js`: 2 `expect` en todo el archivo.
@@ -587,7 +587,7 @@ Esto no es cortesía: es lo que hace que el proyecto merezca la pena.
 |---|---|---|---|
 | 1 | Implementar `platform.print` **o** borrar el botón de imprimir | El operador hoy cree que imprimió | Bajo |
 | 2 | Test que compare clases `fa-*` del JSX contra `icons.css` + agregar los 16 glifos | 16 iconos en blanco, incluida la nav principal | Bajo |
-| 3 | Sembrar el catálogo demo solo en "vacío confirmado", nunca en error | Un fallo de IPC hoy mete productos ficticios o abre una segunda caja | Bajo |
+| 3 | Sembrar los productos demo solo en "vacío confirmado", nunca en error | Un fallo de IPC hoy mete productos ficticios o abre una segunda caja | Bajo |
 | 4 | Unificar la semántica de fecha de gastos con la del libro | Dos pantallas dan cifras distintas del mismo gasto | Medio |
 | 5 | Sacar los drives de `src/main/` + gate de release que verifique su ausencia | 206 KB y una contraseña de prueba en cada instalador | Medio |
 | 6 | Proteger `MINIMARCK_S0_PROBE` (que no borre un `userData` real) | Una variable de entorno borra la base de una tienda | Bajo |
@@ -599,7 +599,7 @@ Esto no es cortesía: es lo que hace que el proyecto merezca la pena.
 | 12 | Cerrar la cobertura de `ON DELETE` y arreglar las 2 FK | Único agujero estructural de la suite | Medio |
 | 13 | Unificar los 5 mapas de método de pago y los formateos de fecha | Deriva ortográfica y de marca visible | Bajo |
 | 14 | `limit`/`offset` validados en la frontera (clamp + 400) | `LIMIT -1` es "sin límite" en SQLite | Bajo |
-| 15 | Accesibilidad del catálogo (tarjetas navegables con teclado) | Un POS que presume de teclado | Medio |
+| 15 | Accesibilidad de los productos (tarjetas navegables con teclado) | Un POS que presume de teclado | Medio |
 
 ---
 

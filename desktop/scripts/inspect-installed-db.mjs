@@ -141,7 +141,7 @@ try {
     }
   } else {
     console.log('')
-    console.log('  PRODUCTS: none — this is the empty-catalogue state a first run starts from')
+    console.log('  PRODUCTS: none — this is the no-products state a first run starts from')
   }
 } catch {
   /* products table missing is already reported above */

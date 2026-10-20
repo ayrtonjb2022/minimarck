@@ -14,7 +14,7 @@ import Modal from "../components/common/Modal";
 import StockInPanel from "../components/common/StockInPanel";
 
 /**
- * Productos — the catalogue itself: what the shop sells, at what price, with how much on the shelf.
+ * Productos — the product list itself: what the shop sells, at what price, with how much on the shelf.
  *
  * ── WHY THIS SCREEN EXISTED AS A HOLE ─────────────────────────────────────────────────────────
  *
@@ -133,7 +133,7 @@ const margenCalculado = (precioTexto, costoTexto) => {
 const Productos = () => {
   // React Query, to reach ACROSS screens. The POS caches the product list under
   // `["productos","all-for-pos"]` with a five-minute life, and this page never wrote to that cache:
-  // a product created here showed up in the catalogue and stayed missing at the till until the
+  // a product created here showed up in the product list and stayed missing at the till until the
   // cache expired. The writes below invalidate the `productos` family instead.
   const queryClient = useQueryClient();
   const [filas, setFilas] = useState([]);
@@ -224,7 +224,7 @@ const Productos = () => {
   const avisarAlPos = () => queryClient.invalidateQueries({ queryKey: ["productos"] });
 
   /**
-   * EL ESCÁNER DEL CATÁLOGO.
+   * EL ESCÁNER DE PRODUCTOS.
    *
    * A barcode reader is a keyboard: it types the code and presses Enter. This field lives in the
    * toolbar so the operator can scan a product without hunting for its row in the table, and Enter
@@ -364,9 +364,9 @@ const Productos = () => {
 
   return (
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Productos</h2>
-        <div className="bar">
+        <div className="toolbar">
           <input
             className="filter-input"
             type="search"
@@ -420,11 +420,11 @@ const Productos = () => {
             ref={scanRef}
             className="filter-input"
             type="text"
-            placeholder="Escanear código de barras (catálogo)"
+            placeholder="Escanear código de barras (productos)"
             value={scan}
             onChange={(e) => setScan(e.target.value)}
             onKeyDown={manejarEscaneo}
-            aria-label="Escanear código de barras (catálogo)"
+            aria-label="Escanear código de barras (productos)"
             data-testid="scan-codigo"
             autoFocus
             style={{ minWidth: 260 }}
@@ -450,7 +450,7 @@ const Productos = () => {
         </div>
       ) : (
         <div className="table-container">
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Nombre</th>
@@ -522,15 +522,17 @@ const Productos = () => {
                       </span>
                     </td>
                     <td>
-                      <button className="btn-secondary" onClick={() => setForm(aFormulario(p))}>
-                        Editar
-                      </button>{" "}
-                      <button className="btn-secondary" onClick={() => alternarActivo(p)}>
-                        {p.activo ? "Desactivar" : "Activar"}
-                      </button>{" "}
-                      <button className="btn-danger" onClick={() => setPorEliminar(p)}>
-                        Eliminar
-                      </button>
+                      <div className="table-actions">
+                        <button className="btn-secondary btn-sm" onClick={() => setForm(aFormulario(p))}>
+                          Editar
+                        </button>
+                        <button className="btn-secondary btn-sm" onClick={() => alternarActivo(p)}>
+                          {p.activo ? "Desactivar" : "Activar"}
+                        </button>
+                        <button className="btn-danger btn-sm" onClick={() => setPorEliminar(p)}>
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

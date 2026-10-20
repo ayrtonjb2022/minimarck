@@ -265,7 +265,7 @@ export function runPaymentDrive(win, db) {
     })()`)
     say(`  al abrir, la app queda en ${pantallaInicial?.ruta}${pantallaInicial?.vacio ? ' (React todavía no montó)' : `: "${pantallaInicial?.texto}"`}`)
 
-    // A brand-new database seeds a business and a user but NO catalogue — a real install on a real
+    // A brand-new database seeds a business and a user but NO products — a real install on a real
     // empty shelf. There is nothing to sell, so the drive stocks one product directly, BEFORE the
     // POS mounts, because the grid is fetched once when the screen mounts. That is not a shortcut
     // around the thing under test: the till, the ticket, the payment, the receipt and the
@@ -280,11 +280,11 @@ export function runPaymentDrive(win, db) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'unidad')`).run(
         'Gaseosa 500ml', 'DRINK-500', 1500, 900, 24000, 6000, usuario.id, negocio.id
       )
-      say('  (la base nueva no trae catálogo: se carga una "Gaseosa 500ml" para poder cobrar)')
+      say('  (la base nueva no trae productos: se carga una "Gaseosa 500ml" para poder cobrar)')
       // And then RELOAD, because a reload is what makes the app actually see it. The POS fetches
-      // its catalogue with `staleTime: 5 * 60 * 1000`, and `CajaGuard` lets `PuntoDeVenta` mount
+      // its product list with `staleTime: 5 * 60 * 1000`, and `CajaGuard` lets `PuntoDeVenta` mount
       // for a moment while the user is still loading — before the till exists. That early mount
-      // fires the query, caches an empty catalogue, and the five-minute freshness window means the
+      // fires the query, caches an empty product list, and the five-minute freshness window means the
       // grid is still empty long after the till opens and the product exists. Found by watching
       // the drive fail with a product sitting right there in the database.
       await recargar(win)
@@ -340,7 +340,7 @@ export function runPaymentDrive(win, db) {
     //
     // Those are different products whenever the grid is not sorted by insertion order, which is the
     // normal case: the POS sorts the shelf, so the first card is the first product ALPHABETICALLY,
-    // while `ORDER BY id LIMIT 1` is the first product SEEDED. With the demo catalogue those are
+    // while `ORDER BY id LIMIT 1` is the first product SEEDED. With the demo products those are
     // "Aceite 900 ml" and "Queso artesanal" respectively, so the drive used to assert that Queso's
     // stock fell after selling oil — reported as "the stock did not go down" on a run where the
     // decrement was exactly right. A check aimed at the wrong row is worse than no check: it
@@ -370,7 +370,7 @@ export function runPaymentDrive(win, db) {
       // Tender ENOUGH, computed from what is actually in the ticket.
       //
       // This used to type a hardcoded `500` pesos. That was only ever true for the drive's own
-      // throwaway product, which costs $15. Point the drive at a real catalogue — which is what
+      // throwaway product, which costs $15. Point the drive at real products — which is what
       // `verify-installed-e2e.mjs` does, seeding six products before selling — and the first card in
       // the grid may be a $2.400 oil, the tender comes up short, "Confirmar Venta" is correctly
       // disabled by `montoValido`, and the run fails on a harness assumption rather than on a

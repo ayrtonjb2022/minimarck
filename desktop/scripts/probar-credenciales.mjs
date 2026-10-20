@@ -88,7 +88,7 @@ try {
   check('el rol es admin (puede abrir caja y crear empleados)', quien?.rol === 'admin', `rol=${quien?.rol}`)
 
   const productos = conn.db.prepare('SELECT count(*) AS n FROM productos WHERE deleted_at IS NULL').get().n
-  check('el catalogo de ejemplo esta cargado', productos === 6, `${productos} producto(s)`)
+  check('los productos de ejemplo estan cargados', productos === 6, `${productos} producto(s)`)
 
   const identidades = conn.db.prepare('SELECT count(*) AS n FROM user_identidades').get().n
   check('hay exactamente una credencial', identidades === 1, `${identidades} fila(s)`)

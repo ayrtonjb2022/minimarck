@@ -1,7 +1,7 @@
 import { llamar } from './ipc'
 
 /**
- * The catalogue, over IPC instead of HTTP.
+ * The product list, over IPC instead of HTTP.
  *
  * The METHOD NAMES are the web's, unchanged, so the pages that call them are unchanged too. What
  * changed is the transport and, where main names things differently, the mapping below — done
@@ -9,11 +9,11 @@ import { llamar } from './ipc'
  */
 export const productosAPI = {
   /**
-   * The catalogue. `limit: 500` is the POS grid's answer — "a shop's worth of products in one call"
+   * The product list. `limit: 500` is the POS grid's answer — "a shop's worth of products in one call"
    * — and it stays the default because the grid filters IN MEMORY and a second round trip per
    * keystroke would be slower than the scan it replaces.
    *
-   * THE PRODUCTS SCREEN DOES NOT USE THAT DEFAULT. A catalogue screen pages, so it passes its own
+   * THE PRODUCTS SCREEN DOES NOT USE THAT DEFAULT. A product list screen pages, so it passes its own
    * `limit`/`offset` and gets `{ filas, total }` (the `total` is what makes a pager possible at
    * all). It also passes `soloActivos: false`, because `remove` DEACTIVATES a product that has
    * sales instead of deleting it — a list that hid inactive rows would make that product

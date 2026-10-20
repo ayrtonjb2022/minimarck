@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 /**
- * THE CATALOGUE HAS TO TELL THE TILL.
+ * THE PRODUCT LIST HAS TO TELL THE TILL.
  *
  * The point of sale caches the product list for five minutes (`["productos","all-for-pos"]`, with
- * `staleTime: 5 * 60 * 1000`). The catalogue had its own fetching — raw `productosAPI` calls and a
- * local `cargar()` — and never wrote to that cache. So a product created in the catalogue showed up
- * in the catalogue and stayed missing at the till until the five minutes ran out. The operator reads
+ * `staleTime: 5 * 60 * 1000`). The product list had its own fetching — raw `productosAPI` calls and a
+ * local `cargar()` — and never wrote to that cache. So a product created in the product list showed up
+ * in the product list and stayed missing at the till until the five minutes ran out. The operator reads
  * that as "it has not saved yet", which is what they said.
  *
  * The bug lives in the CACHE, and in the GAP BETWEEN TWO SCREENS, so the test has to cross both:
  *
  *   1. The till, already opened against a shop with one product. That is the cache.
- *   2. The catalogue, where a second product is created through the real form.
+ *   2. The product list, where a second product is created through the real form.
  *   3. The till again, with no five minutes elapsed, where the second product has to be there.
  *
  * The seam is one `QueryClient`, shared across every mount, exactly like the running app. A client
@@ -90,8 +90,8 @@ const montar = (client, contenido) =>
     </QueryClientProvider>
   )
 
-describe('el catálogo y el punto de venta: un solo caché, una sola verdad', () => {
-  it('un producto creado en el catálogo aparece en el punto de venta sin esperar los cinco minutos', async () => {
+describe('los productos y el punto de venta: un solo caché, una sola verdad', () => {
+  it('un producto creado en la lista de productos aparece en el punto de venta sin esperar los cinco minutos', async () => {
     const t = unEscenario()
     const user = userEvent.setup()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -102,7 +102,7 @@ describe('el catálogo y el punto de venta: un solo caché, una sola verdad', ()
     expect(screen.queryByText('Caramelo')).toBeNull()
     pos.unmount()
 
-    // ── 2. The catalogue, and a new product through the real form.
+    // ── 2. The product list, and a new product through the real form.
     const cat = montar(client, <Productos />)
     await user.click(await screen.findByTestId('nuevo-producto', {}, { timeout: 5000 }))
     await user.type(await screen.findByLabelText('Nombre *'), 'Caramelo')

@@ -157,7 +157,7 @@ export async function navegar(win, ruta) {
   return esperarEn(win, `location.pathname === ${JSON.stringify(ruta)}`, 4000)
 }
 
-/** Reload, because the POS fetches its catalogue once and caches it. */
+/** Reload, because the POS fetches its product list once and caches it. */
 export async function recargar(win) {
   win.webContents.reload()
   await new Promise((r) => setTimeout(r, 2500))

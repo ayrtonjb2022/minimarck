@@ -106,7 +106,7 @@ const Cuentas = ({ balance, cargando }) => {
             </span>
           </h3>
           <div className="table-container">
-            <table className="product-list">
+            <table>
               <thead>
                 <tr>
                   <th style={{ width: 90 }}>Código</th>

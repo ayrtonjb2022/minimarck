@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+﻿import React, { useCallback, useEffect, useState } from "react";
 import { proveedoresAPI } from "../api/proveedores";
 import { mensajeDeError } from "../api/ipc";
 import { toast } from "react-toastify";
@@ -148,9 +148,9 @@ const Proveedores = () => {
     // could not see and clicked a button that was not there. Deudores and Ventas, the screens that
     // work, both start from a bare `<div>`; this one now matches them.
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Proveedores</h2>
-        <div className="bar">
+        <div className="toolbar">
           <input
             className="filter-input"
             type="search"
@@ -177,7 +177,7 @@ const Proveedores = () => {
         </div>
       ) : (
         <div className="table-container">
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Nombre</th>
@@ -203,20 +203,22 @@ const Proveedores = () => {
                   <td>{p.comprasPendientesCentavos > 0 ? formatCentavos(p.comprasPendientesCentavos) : "—"}</td>
                   <td>{p.ultimaCompraAt ? formatDate(p.ultimaCompraAt) : "—"}</td>
                   <td>
-                    <span className={`status ${p.activo ? "status-activo" : "status-inactivo"}`}>
+                    <span className={`status ${p.activo ? "active-s" : "inactive-s"}`}>
                       {p.activo ? "Activo" : "Inactivo"}
                     </span>
                   </td>
                   <td>
-                    <button className="btn-secondary" onClick={() => setForm({ ...VACIO, ...p })}>
-                      Editar
-                    </button>{" "}
-                    <button className="btn-secondary" onClick={() => alternarActivo(p)}>
-                      {p.activo ? "Desactivar" : "Activar"}
-                    </button>{" "}
-                    <button className="btn-danger" onClick={() => setPorEliminar(p)}>
-                      Eliminar
-                    </button>
+                    <div className="table-actions">
+                      <button className="btn-secondary" onClick={() => setForm({ ...VACIO, ...p })}>
+                        Editar
+                      </button>
+                      <button className="btn-secondary" onClick={() => alternarActivo(p)}>
+                        {p.activo ? "Desactivar" : "Activar"}
+                      </button>
+                      <button className="btn-danger" onClick={() => setPorEliminar(p)}>
+                        Eliminar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

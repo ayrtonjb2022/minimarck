@@ -5,10 +5,10 @@ import { requireTenant } from '../seed.js'
 import { esViolacionUnicaEn } from '../errores-sqlite.js'
 
 /**
- * The catalogue: products and the category a product belongs to.
+ * The product list: products and the category a product belongs to.
  *
  * WHY THIS FILE EXISTS NOW. `ventas.repo.js` was shipped and tested without it, and a point of
- * sale that cannot list its own catalogue is a point of sale that cannot sell: `crear` in
+ * sale that cannot list its own products is a point of sale that cannot sell: `crear` in
  * `ventas.repo.js` reads `productos` by id to price a line, and there was no operation anywhere
  * in the app that could put a product there in the first place. The POS screen is therefore only
  * reachable once these reads exist, and they are inside the FROZEN contract already —
@@ -18,7 +18,7 @@ import { esViolacionUnicaEn } from '../errores-sqlite.js'
  * WHAT IS IMPLEMENTED. All of it: `list`, `get`, `findByCode`, `create`, `update` and `remove` for
  * products, and `list`, `get`, `create`, `update` and `remove` for categories. This paragraph spent
  * a while claiming that `update` and `remove` "are contract members whose handler is not in this
- * build" — true when the POS was the only reader, and stale from the moment the catalogue screen
+ * build" — true when the POS was the only reader, and stale from the moment the products screen
  * landed. A repository describing operations it now has is worse than one describing none: the next
  * reader trusts it and looks elsewhere for the bug.
  *
@@ -372,7 +372,7 @@ export function buscarPorCodigo(ctx, codigo) {
 }
 
 /**
- * The catalogue, filtered. This is the POS grid's one query.
+ * The product list, filtered. This is the POS grid's one query.
  *
  * `search` matches the name OR the barcode, case-insensitively, and `LIKE` is used with an
  * ESCAPE for `%` and `_` so a product called "100% cacao" is findable by typing "100%" instead
@@ -434,7 +434,7 @@ export function listarCategorias(ctx) {
 
 /**
  * Create a category. The POS's "fraccionar" flow needs somewhere to put a derived product, and a
- * catalogue with no categories at all is a catalogue whose filter row is permanently "Todas".
+ * product list with no categories at all is a product list whose filter row is permanently "Todas".
  *
  * The duplicate-name refusal is the same index-name check as the barcode: `ux_categorias_nombre_negocio`
  * is scoped to the business, so "Bebidas" can exist in two different shops and not twice in one.
@@ -640,14 +640,14 @@ export function actualizar(ctx, id, body) {
 }
 
 /**
- * Remove a product from the catalogue WITHOUT destroying what it sold.
+ * Remove a product from the product list WITHOUT destroying what it sold.
  *
  * TWO PATHS, AND THE DIFFERENCE IS HISTORY. A product with no sales has no history to protect, so
  * it is soft-deleted (`deleted_at` set, every read filters it out). A product that HAS sales is
  * only DEACTIVATED (`activo = 0`), never deleted. `ventas_detalles` keeps its own copy of the name
  * and the unit price, so a historical ticket still prints — but the PRODUCT row is what a later
  * report joins to for its current price and stock. Deleting it would make that join dangle: the
- * product would vanish from every catalogue read and the report would have to say "unknown product"
+ * product would vanish from every product list read and the report would have to say "unknown product"
  * about something the shop demonstrably sold.
  *
  * THE WEB REFUSES INSTEAD. `producto.controller.js` answers 400 when a product has sales (outside

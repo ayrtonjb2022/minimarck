@@ -13,8 +13,8 @@ import { randomUUID } from 'node:crypto'
  * deliberately in five places. The web's `compra.create` increments `productos.stock` and, if
  * `retirarDeCaja` is set, writes a drawer movement. That is all it does. So:
  *
- *   1. NO COST IS EVER UPDATED. The web leaves `precio_compra_centavos` at whatever the catalogue
- *      was seeded with, and then `ventas.controller.js` computes cost of goods sold from that same
+ *   1. NO COST IS EVER UPDATED. The web leaves `precio_compra_centavos` at whatever the products
+ *      were seeded with, and then `ventas.controller.js` computes cost of goods sold from that same
  *      stale column. Every margin the web has ever reported is a margin against a purchase price
  *      the shop may have stopped buying at years ago. Here every purchase folds its lot into a
  *      MOVING AVERAGE (§ below), and a sale snapshots the cost it actually used.
@@ -420,7 +420,7 @@ export function actualizar(ctx, id, body) {
  * This is the hardest operation in the file, and the reason is arithmetic rather than bookkeeping:
  * a MOVING AVERAGE CANNOT BE INVERTED FROM THE LOT PRICES. Undoing one lot means replaying every
  * lot after it, and the state before the FIRST lot of a product is not recorded anywhere in the
- * frozen schema — the catalogue's opening stock and cost are whatever the product was created with,
+ * frozen schema — the products' opening stock and cost are whatever the product was created with,
  * and no column holds them.
  *
  * So the reversal is exact when it can be, and refused when it cannot:

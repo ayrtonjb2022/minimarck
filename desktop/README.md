@@ -26,20 +26,20 @@ Expected: `verify:s0` green. The Node version is pinned in `package.json` `engin
 (`>=24.18.0 <25`) because the app ships Electron 44.4.5's Node **24.21.0** and the S0 spike
 exists precisely to pin that runtime rather than drift with whatever the machine has.
 
-## First run: the empty catalogue
+## First run: the empty product list
 
 A brand-new install has **no products** — MiniMarck does not ship a shop's stock. Opening the point
-of sale with an empty catalogue used to show an empty grid with no way forward, which reads as
+of sale with an empty product list used to show an empty grid with no way forward, which reads as
 "broken" rather than "new". It now distinguishes three different empties, because they need three
 different answers:
 
 | State | What the user sees |
 |---|---|
-| First run, nothing in the catalogue | A panel explaining the shelf is empty, with a button to load the **fictional demo catalogue** |
+| First run, nothing in the product list | A panel explaining the shelf is empty, with a button to load the **fictional demo products** |
 | A search or category filter that matches nothing | "No products match", keeping the search box and the filters in view |
 | Products exist but all are out of stock | The out-of-stock list, marked as such |
 
-The demo catalogue is **opt-in and fictional** (six generic grocery items: pan, leche, aceite, fideos,
+The demo products are **opt-in and fictional** (six generic grocery items: pan, leche, aceite, fideos,
 gaseosa, queso). It is created through the ordinary `productos.create` IPC operation — the same path
 the app uses for a real product — so loading it exercises real code rather than a back door. The
 same list is available from the command line:
@@ -48,7 +48,7 @@ same list is available from the command line:
 npm run db:demo     # seeds the CURRENT profile's database
 ```
 
-Both write through `src/shared/demo-catalogo.js`, so the button and the CLI can never disagree about
+Both write through `src/shared/demo-productos.js`, so the button and the CLI can never disagree about
 what the demo data is. The IPC contract is still **89 operations**; nothing was added for this.
 
 ## What S0 proves
@@ -137,7 +137,7 @@ Start-menu shortcut, and appears in Programs and Features as *MiniMarck 1.0.0*.
 - **Language.** The wizard is Spanish (`nsis.installerLanguages: [es_ES]`). Proven by running it —
   see `verify:installer-ui` below — not by grepping the binary.
 - **Uninstalling keeps the data.** `deleteAppDataOnUninstall: false` means the shop's database
-  survives, so reinstalling brings the catalogue, the sales ledger and the till history back. See
+  survives, so reinstalling brings the products, the sales ledger and the till history back. See
   `## Uninstall keeps the data` for the proof.
 
 ### Why the build stages into a timestamped directory
@@ -183,7 +183,7 @@ it is gone from Programs and Features          — HKCU Uninstall key
 the data directory was NOT deleted             — %APPDATA%\MiniMarck\data\minimarck.db
 the database is still valid after uninstall    — integrity_check: ok
 the sale ledger SURVIVED the uninstall, unchanged
-the catalogue survived the uninstall           — 6 products
+the products survived the uninstall            — 6 products
 the drawer movements survived                  — 3 movimiento(s)
 ```
 

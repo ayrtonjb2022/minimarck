@@ -22,12 +22,12 @@ import { registerNegocioHandlers } from '../../src/main/ipc/negocio.js'
 import { registerProductosHandlers } from '../../src/main/ipc/productos.js'
 import { registerCategoriasHandlers } from '../../src/main/ipc/categorias.js'
 import { registerDeudoresHandlers } from '../../src/main/ipc/deudores.js'
-import { CATALOGO_DEMO, demoToProductoInput } from '../../src/shared/demo-catalogo.js'
+import { PRODUCTOS_DEMO, demoToProductoInput } from '../../src/shared/demo-productos.js'
 
 /**
  * The demo button's path, driven end to end. Renderer -> preload -> main -> SQLite.
  *
- * WHY THIS FILE EXISTS. `src/renderer/app/pages/puntoDeVenta.jsx#sembrarCatalogoDemo` is the
+ * WHY THIS FILE EXISTS. `src/renderer/app/pages/puntoDeVenta.jsx#sembrarProductosDemo` is the
  * only way a shop owner with an empty till can get started, and it was the one piece of this
  * slice with NO test at all — the repo has no renderer tests. Meanwhile `verify:installed` seeds
  * through `npm run db:demo`, which calls `productos.crear(ctx, ...)` DIRECTLY in the main
@@ -150,18 +150,18 @@ describe('preload and main agree on one channel', () => {
   })
 })
 
-describe('the demo catalogue, as the button creates it', () => {
+describe('the demo products, as the button creates them', () => {
   it('puts all six products in a real database through the real handler', async () => {
     const { productosAPI } = await rendererApi()
 
-    // Exactly the loop in `sembrarCatalogoDemo`.
-    for (const p of CATALOGO_DEMO) {
+    // Exactly the loop in `sembrarProductosDemo`.
+    for (const p of PRODUCTOS_DEMO) {
       await productosAPI.crear(demoToProductoInput(p))
     }
 
     const creados = rows('SELECT * FROM productos ORDER BY id')
-    expect(creados).toHaveLength(CATALOGO_DEMO.length)
-    for (const esperado of CATALOGO_DEMO) {
+    expect(creados).toHaveLength(PRODUCTOS_DEMO.length)
+    for (const esperado of PRODUCTOS_DEMO) {
       const fila = creados.find((f) => f.nombre === esperado.nombre)
       expect(fila, esperado.nombre).toBeDefined()
       expect(fila.activo).toBe(1)
@@ -173,7 +173,7 @@ describe('the demo catalogue, as the button creates it', () => {
     // the assertion that the demo's `precio` (a decimal) survives that parse exactly — the one
     // place in this path where a float could quietly become a wrong centavo.
     const { productosAPI } = await rendererApi()
-    for (const p of CATALOGO_DEMO) await productosAPI.crear(demoToProductoInput(p))
+    for (const p of PRODUCTOS_DEMO) await productosAPI.crear(demoToProductoInput(p))
 
     const aceite = rows('SELECT precio_centavos, precio_compra_centavos FROM productos WHERE nombre = ?', 'Aceite 900 ml')[0]
     expect(aceite.precio_centavos).toBe(240000)
@@ -190,23 +190,23 @@ describe('the demo catalogue, as the button creates it', () => {
     // The read side of the same screen. A create that succeeds while `listar` cannot see the row
     // is the failure mode a shop owner sees as "I clicked it and nothing happened".
     const { productosAPI } = await rendererApi()
-    for (const p of CATALOGO_DEMO) await productosAPI.crear(demoToProductoInput(p))
+    for (const p of PRODUCTOS_DEMO) await productosAPI.crear(demoToProductoInput(p))
 
     // `listar` returns `{filas, total}` — the grid reads both.
     const grid = await productosAPI.listar()
-    expect(grid.total).toBe(CATALOGO_DEMO.length)
-    expect(grid.filas).toHaveLength(CATALOGO_DEMO.length)
-    expect(grid.filas.map((p) => p.nombre).sort()).toEqual(CATALOGO_DEMO.map((p) => p.nombre).sort())
+    expect(grid.total).toBe(PRODUCTOS_DEMO.length)
+    expect(grid.filas).toHaveLength(PRODUCTOS_DEMO.length)
+    expect(grid.filas.map((p) => p.nombre).sort()).toEqual(PRODUCTOS_DEMO.map((p) => p.nombre).sort())
   })
 
   it('running the button twice refuses the second run instead of duplicating the shelf', async () => {
     const { productosAPI } = await rendererApi()
-    for (const p of CATALOGO_DEMO) await productosAPI.crear(demoToProductoInput(p))
+    for (const p of PRODUCTOS_DEMO) await productosAPI.crear(demoToProductoInput(p))
     expect(rows('SELECT * FROM productos')).toHaveLength(6)
 
     // Same barcode, same shop: refused by name. This is the validation running for real through
     // the bridge, not a hand-built stub of it — the message is the repository's own.
-    await expect(productosAPI.crear(demoToProductoInput(CATALOGO_DEMO[0]))).rejects.toThrow(/ya existe/)
+    await expect(productosAPI.crear(demoToProductoInput(PRODUCTOS_DEMO[0]))).rejects.toThrow(/ya existe/)
     expect(rows('SELECT * FROM productos')).toHaveLength(6)
   })
 })
@@ -217,7 +217,7 @@ describe('the renderer cannot choose its own tenant (SEC-6)', () => {
     const { negocio_id: realTenant } = rows('SELECT id AS negocio_id FROM negocios LIMIT 1')[0]
 
     await productosAPI.crear({
-      ...demoToProductoInput(CATALOGO_DEMO[0]),
+      ...demoToProductoInput(PRODUCTOS_DEMO[0]),
       negocioId: 999999,
       userId: 999999
     })

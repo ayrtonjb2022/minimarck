@@ -809,7 +809,7 @@ describe('cross-tenant — the other shop\'s money is not this shop\'s money', (
 })
 
 // =============================================================================
-// The catalogue is the PRESENT; a sale keeps its own past.
+// The product list is the PRESENT; a sale keeps its own past.
 // =============================================================================
 
 /**
@@ -828,7 +828,7 @@ describe('cross-tenant — the other shop\'s money is not this shop\'s money', (
  *      resolving its name — and `reporteStock` must keep LISTING the row, flagged inactive and out
  *      of the restock alerts, rather than dropping a product the shop demonstrably owned.
  */
-describe('the catalogue is the present, the sale is the past', () => {
+describe('the product list is the present, the sale is the past', () => {
   it('a purchase-price change does not rewrite the margin of a sale already made', () => {
     // Take one of the queso lines posted in `beforeEach`: 12000/kg was its cost OF RECORD.
     const vieja = t.conn.db

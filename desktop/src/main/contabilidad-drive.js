@@ -260,7 +260,7 @@ export function runContabilidadDrive(win, db) {
 
     // ---- 2. a ledger with something in it ------------------------------------------------------
     // Said out loud for the same reason the reports drive says it: a fresh install has no
-    // catalogue, so the drive stocks a shelf before it reads a balance off it.
+    // products, so the drive stocks a shelf before it reads a balance off it.
     const producto = (nombre, codigo, precio, costo, stockMilli, unidad) => {
       const p = db1(`SELECT * FROM productos WHERE codigo = ?`, codigo)
       if (p) return p
@@ -280,7 +280,7 @@ export function runContabilidadDrive(win, db) {
 
     const queso = producto('Queso fresco', 'DRV-QUESO', 20_000, 12_000, 5_000, 'kg')
     const gaseosa = producto('Gaseosa', 'DRV-GAS', 1_000, 600, 20_000, 'unidad')
-    check('el recorrido tiene una góndola con dos productos', Boolean(queso && gaseosa), 'no se pudo cargar el catálogo')
+    check('el recorrido tiene una góndola con dos productos', Boolean(queso && gaseosa), 'no se pudieron cargar los productos')
 
     // `proveedores` has NO `user_id`: like `negocios`, the supplier is a fact about the BUSINESS, not
     // about the operator who typed it. Writing one is the same mistake as `negocios.user_id` — a

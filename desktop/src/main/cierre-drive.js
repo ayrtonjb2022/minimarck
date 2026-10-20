@@ -192,7 +192,7 @@ export function runCierreDrive(win, db) {
       // `.total_centavos` off the wrapper would be `undefined`, and `undefined` in a reconciliation
       // compares false forever instead of throwing, which is the quietest way to write a drive that
       // lies. The total is also the FILE's, never a number typed here: a drive that assumed $300,00
-      // would silently reconcile against the wrong expectation the day the catalogue changed.
+      // would silently reconcile against the wrong expectation the day the products changed.
       const { venta } = await crearVenta(ctx, {
         items: [{ productoId: producto.id, cantidad: '0.5' }],
         metodoPago: 'efectivo',
@@ -201,9 +201,9 @@ export function runCierreDrive(win, db) {
       esperada = FLOAT + venta.total_centavos
       say(`  · float ${pesos(FLOAT)} + venta ${pesos(venta.total_centavos)} = esperado ${pesos(esperada)}`)
     } else {
-      // No catalogue, so the day is the float alone. Still a real day, and the shortage below is
+      // No products, so the day is the float alone. Still a real day, and the shortage below is
       // still a shortage — the drive reports the shape it actually got instead of pretending.
-      say(`  · sin catalogo: el dia es solo el float ${pesos(esperada)}`)
+      say(`  · sin productos: el dia es solo el float ${pesos(esperada)}`)
     }
     // `caja` here is the ROW, not its id: `registrarMovimiento` re-reads the chain from the drawer
     // rather than trusting a caller's snapshot, so it takes the till and looks. Passing `caja.id`
@@ -227,7 +227,7 @@ export function runCierreDrive(win, db) {
     // repositories the window is still certain the shop has no drawer: the sidebar link does not
     // exist, and every keystroke goes nowhere. The renderer is not wrong to be confused, it is
     // answering an older question. Reloading is what a person gets when they open the app with a
-    // till already in the database, and it is the same `recargar` the POS catalogue needs.
+    // till already in the database, and it is the same `recargar` the product list needs.
     await recargar(win)
 
     // ---- 3. reach the screen the way the shop does ------------------------------------------------

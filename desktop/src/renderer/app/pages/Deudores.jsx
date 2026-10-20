@@ -537,7 +537,7 @@ const Cobro = ({ deudor, onCerrar, onRegistrado }) => {
       ) : (
         <div
           style={{
-            background: "var(--kanagawa-surface0)",
+            background: "var(--ctp-surface0)",
             borderRadius: 10,
             padding: 14,
             marginBottom: 12,

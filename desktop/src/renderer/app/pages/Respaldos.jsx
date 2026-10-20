@@ -10,7 +10,7 @@ import Modal from "../components/common/Modal";
  *
  * ── WHY THIS IS THE MOST DANGEROUS SCREEN IN THE APP ─────────────────────────────────────────
  *
- * Every other screen writes rows. `Restaurar` REPLACES THE DATABASE: the catalogue, the sales
+ * Every other screen writes rows. `Restaurar` REPLACES THE DATABASE: the products, the sales
  * ledger, the till history and the users all become whatever the archive holds. Done by mistake on
  * the wrong archive it is the only operation here with no undo — which is why the confirmation is
  * not a yes/no dialog. It states what will be lost, it says that main takes an automatic backup of
@@ -213,9 +213,9 @@ const Respaldos = () => {
 
   return (
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Respaldos</h2>
-        <div className="bar">
+        <div className="toolbar">
           <button
             className="btn-primary"
             onClick={crear}
@@ -279,7 +279,7 @@ const Respaldos = () => {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p style={{ fontSize: 13, color: "var(--kanagawa-fg-muted)", margin: 0 }}>
-          Un respaldo es <strong>una copia completa de la base</strong>: catálogo, ventas, caja,
+          Un respaldo es <strong>una copia completa de la base</strong>: productos, ventas, caja,
           cuentas corrientes y usuarios. Se guarda en{" "}
           <code style={{ fontSize: 12 }}>{dir ?? "la carpeta de datos"}</code> — copiá esa carpeta a
           un pendrive para tenerlo fuera de la máquina.
@@ -297,7 +297,7 @@ const Respaldos = () => {
         </div>
       ) : (
         <div className="table-container">
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Fecha</th>
@@ -401,7 +401,7 @@ const Respaldos = () => {
           </p>
           <p>
             Todo lo que se cargó <strong>después</strong> de esa fecha se pierde: ventas, cobros,
-            movimientos de caja y usuarios creados. El catálogo y los precios vuelven a como estaban.
+            movimientos de caja y usuarios creados. Los productos y los precios vuelven a como estaban.
           </p>
           <p style={{ fontSize: 13, color: "var(--kanagawa-fg-muted)" }}>
             Antes de tocar nada se guarda una <strong>copia automática del estado actual</strong>, así

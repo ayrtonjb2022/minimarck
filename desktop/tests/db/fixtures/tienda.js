@@ -128,7 +128,7 @@ export function tienda() {
 }
 
 /**
- * A shop file that has been MIGRATED and nothing else: no business, no users, no catalogue.
+ * A shop file that has been MIGRATED and nothing else: no business, no users, no products.
  *
  * WHY THIS EXISTS NOW AND NOT BEFORE. Until `003_ultimo_admin.sql` a test that wanted an empty
  * shop took `tienda()` and ran `DELETE FROM negocios` / `DELETE FROM users` on top of it. That was

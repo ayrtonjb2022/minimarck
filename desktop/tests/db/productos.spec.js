@@ -17,7 +17,7 @@ import { crear as crearDeudor, listar as listarDeudores } from '../../src/main/d
 import { tienda, ctxDe, insertarDeudor } from './fixtures/tienda.js'
 
 /**
- * The catalogue and the debtors, on REAL sqlite.
+ * The products and the debtors, on REAL sqlite.
  *
  * What these tests pin down, because each one is a place a sale is either right or plausibly
  * wrong:
@@ -217,7 +217,7 @@ describe('productos.list — the POS grid', () => {
     crear(ctx, cuerpoProducto({ nombre: 'Yogur natural', codigo: 'BBB222' }))
     return lacteo
   }
-  it('returns the catalogue alphabetically with a total, and the total is not the page length', () => {
+  it('returns the products alphabetically with a total, and the total is not the page length', () => {
     const { ctx } = tiendaCon()
     sembrar(ctx)
     const pagina = listar(ctx, { limit: 2 })
@@ -269,7 +269,7 @@ describe('productos.list — the POS grid', () => {
     // `Café molido` sits EXACTLY on its minimum, and `<=` keeps it: a shelf on the minimum is one
     // sale away from being under it. `Harina leudante` is the control that must stay out.
     expect(r.filas.map((p) => p.nombre)).toEqual(['Aceite de oliva', 'Café molido', 'Yerba mate'])
-    // The total is the count of the FILTERED set, not the page length and not the whole catalogue.
+    // The total is the count of the FILTERED set, not the page length and not the whole product list.
     expect(r.total).toBe(3)
     // The filter is opt-in, like `soloActivos` — the default answer is still the full list.
     expect(listar(ctx).total).toBe(4)
@@ -587,7 +587,7 @@ describe('productos.actualizar — the edit screen', () => {
 })
 
 describe('productos.eliminar — deactivate what sold, delete what never did', () => {
-  it('soft-deletes a product with no sales, and it disappears from the catalogue', () => {
+  it('soft-deletes a product with no sales, and it disappears from the product list', () => {
     const { t, ctx } = tiendaCon()
     const p = crear(ctx, cuerpoProducto())
 

@@ -17,8 +17,8 @@ import Deudas from "./contabilidad/Deudas";
  * them had a handler. Meanwhile `cuentas.repo.js` wrote a balanced journal entry inside every sale,
  * purchase, debtor payment and till movement — so the shop carried a real double-entry ledger that
  * no screen could open, and `App.jsx` listed `/contabilidad` as "son 15 operaciones del contrato y
- * ninguna esta". The data was real and unreachable, which is the same defect as a catalogue with no
- * catalogue screen.
+ * ninguna esta". The data was real and unreachable, which is the same defect as a product list with no
+ * product list screen.
  *
  * ── THE FOUR TABS, AND WHY THEY ARE TABS ──────────────────────────────────────────────────────
  *

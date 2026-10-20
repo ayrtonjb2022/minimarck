@@ -179,7 +179,7 @@ export function runDeudoresDrive(win, db) {
 
     // ---- 0. shelf and till -------------------------------------------------------------------
     // Said out loud, for the same reason the payment drive says it: a fresh install has no
-    // catalogue, so the drive stocks one product before selling. Nothing about the DEBT is faked.
+    // products, so the drive stocks one product before selling. Nothing about the DEBT is faked.
     if (db1(`SELECT COUNT(*) AS n FROM productos WHERE deleted_at IS NULL`).n === 0) {
       const negocio = db1(`SELECT id FROM negocios ORDER BY id LIMIT 1`)
       const usuario = db1(`SELECT id FROM users ORDER BY id LIMIT 1`)
@@ -191,7 +191,7 @@ export function runDeudoresDrive(win, db) {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'unidad')`
         )
         .run('Queso artesanal', 'QUESO-1', 20000, 12000, 10000, 1000, usuario.id, negocio.id)
-      say('  (la base nueva no trae catálogo: se carga un "Queso artesanal" a $200,00 el kilo)')
+      say('  (la base nueva no trae productos: se carga un "Queso artesanal" a $200,00 el kilo)')
       await recargar(win)
     }
 

@@ -18,7 +18,7 @@ import { asentar, asegurarPlan, balanceGeneral } from './cuentas.repo.js'
  * created implicitly by `asegurarPlan` and could not be listed, renamed or deactivated; entries
  * could not be looked at, added by hand or removed. Fifteen contract operations, and not one
  * handler. So a shop had a double-entry ledger it could not open, which is the same defect as a
- * catalogue screen with no catalogue: the data was real and unreachable.
+ * products screen with no products: the data was real and unreachable.
  *
  * ── WHY THIS IS A SEPARATE FILE FROM `cuentas.repo.js` ────────────────────────────────────────
  *

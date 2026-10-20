@@ -109,6 +109,7 @@ export const AuthProvider = ({ children }) => {
     await refrescar();
     return res;
   };
+  const resetPassword = restablecerPassword;
 
   /** End the session. The panel comes back, and the next launch starts here too. */
   const logout = async () => {
@@ -148,9 +149,15 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     restablecerPassword,
+    resetPassword,
     logout,
     refrescar
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
+
+
+
+
+

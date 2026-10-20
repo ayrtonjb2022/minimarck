@@ -34,7 +34,7 @@ const Modal = ({ isOpen, onClose, title, children, size = "md", className = "" }
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid var(--kanagawa-border)" }}>
                 <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--kanagawa-fg)" }}>{title}</h3>
                 <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: "var(--kanagawa-comment)", cursor: "pointer", padding: 4, borderRadius: 8 }}
-                  onMouseEnter={(e) => e.target.style.background = "var(--kanagawa-surface0)"} onMouseLeave={(e) => e.target.style.background = "transparent"}>
+                  onMouseEnter={(e) => e.target.style.background = "var(--ctp-surface0)"} onMouseLeave={(e) => e.target.style.background = "transparent"}>
                   <i className="fa-solid fa-xmark"></i>
                 </button>
               </div>

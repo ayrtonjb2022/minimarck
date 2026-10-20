@@ -257,4 +257,7 @@ export function exigirAdministradorDeUsuarios(rol) {
   if (!ROLES_QUE_ADMINISTRAN_USUARIOS.includes(rol)) {
     throw new IpcError('SIN_PERMISO', 403, 'Sólo el dueño o un supervisor pueden ver los usuarios')
   }
+
+
+
 }

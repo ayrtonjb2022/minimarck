@@ -134,7 +134,7 @@ allow('·', 'middle dot, used as a separator in Spanish lists')
 allow('→←↔', 'arrows used in flow documentation')
 allow('✓✔✗✘', 'check and cross marks used in verdict strings')
 allow('€$¢', 'currency symbols: euro, dollar, cent')
-allow('•', 'bullet, used in the product demo catalogue copy')
+allow('•', 'bullet, used in the demo products copy')
 allow('\u00A0', 'non-breaking space, occasionally wanted in UI copy')
 // A NAME IN A SCRIPT THAT IS NOT LATIN. Not decoration: `proveedores.spec.js` searches for a
 // supplier named "Café 100%是的" to prove that a non-ASCII name still matches LITERALLY through the

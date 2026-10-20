@@ -1,0 +1,5 @@
+-- 005 - FORCED PASSWORD CHANGE (auth)
+--
+-- ADDITIVE ONLY.
+ALTER TABLE user_identidades
+  ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;

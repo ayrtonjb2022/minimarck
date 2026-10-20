@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * THE CATALOGUE SCANNER, DRIVEN THE WAY A RESTOCK IS ACTUALLY DONE.
+ * THE PRODUCT SCANNER, DRIVEN THE WAY A RESTOCK IS ACTUALLY DONE.
  *
  * A barcode reader is a keyboard that types a code and presses Enter, and the products screen now
  * carries a scan box in its toolbar. Scanning resolves a code through `productos.findByCode` — a
@@ -12,7 +12,7 @@
  *   3. an INACTIVE product is told, not silently reactivated — the warning shows and Save is off;
  *   4. a blank code is not a request at all.
  *
- * The harness is the one `catalogo-y-pos.spec.jsx` and `deudores.spec.jsx` build: the real React
+ * The harness is the one `productos-y-pos.spec.jsx` and `deudores.spec.jsx` build: the real React
  * screen, the real handler registry, a real migrated SQLite file per test, and a `<ToastContainer />`
  * because a `toast` call with no container renders NOTHING — the screen would look like it worked
  * and said nothing.
@@ -102,7 +102,7 @@ function montar(client, contenido) {
 /** Create a product through the real handler, so it has a barcode the scanner can find. */
 const crearProducto = (datos) => globalThis.minimarck.call('productos', 'create', datos)
 
-describe('el escáner del catálogo y el panel de stock', () => {
+describe('el escáner de productos y el panel de stock', () => {
   let user
   beforeEach(() => {
     user = userEvent.setup()
@@ -234,7 +234,7 @@ describe('el escáner del catálogo y el panel de stock', () => {
     const { t } = unEscenario()
     stores.push(t)
     const creado = await crearProducto({
-      nombre: 'Producto discontinuado del catálogo',
+      nombre: 'Producto discontinuado',
       codigo: '7793333333333',
       precio: '5.00',
       stock: '1',
@@ -283,7 +283,7 @@ describe('el escáner del catálogo y el panel de stock', () => {
     ).toBe(1)
   })
 
-  it('crear el producto desde el formulario del escáner lo guarda y refresca el catálogo', async () => {
+  it('crear el producto desde el formulario del escáner lo guarda y refresca la lista de productos', async () => {
     const { t } = unEscenario()
     stores.push(t)
     const client = nuevoCliente()

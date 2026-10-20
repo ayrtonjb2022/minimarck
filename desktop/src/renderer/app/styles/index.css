@@ -69,14 +69,21 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
+  /* Inter se declara para futura instalación local; hoy cae a la fuente del sistema. */
   font-family: 'Inter', sans-serif;
   background: var(--kanagawa-bg-dim);
   color: var(--kanagawa-fg);
 }
 
+/* Alto FIJO al viewport y sin desborde: el scroll vive DENTRO de `.main`, no en el documento.
+   Con `min-height: 100vh` el contenedor crecía con el contenido, la página scrolleaba entera y
+   `.main` nunca recortaba nada — la barra lateral quedaba clavada por su propio `height:100vh`
+   pero el resto se comportaba como un documento largo. `height:100vh` + `overflow:hidden` fija
+   el alto y delega el scroll al hijo que corresponde. */
 .app-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* ===== SIDEBAR ===== */
@@ -94,6 +101,11 @@ body {
   overflow: hidden;
   z-index: 100;
   transition: all 0.3s ease;
+  /* En un POS el sidebar es cromo, no texto a leer: arrastrar marca las entradas en azul y el
+     operador termina copiando "Vender" sin querer. Ninguna etiqueta de acá se copia, así que la
+     barra entera va sin selección. `-webkit-` sigue siendo necesario en algunos motores. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .sidebar-brand {
@@ -203,7 +215,7 @@ body {
 }
 
 .sidebar-menu li {
-  padding: 7px 14px;
+  padding: 0;
   margin: 1px 0;
   border-radius: 8px;
   display: flex;
@@ -213,7 +225,9 @@ body {
   font-size: 13px;
   color: var(--kanagawa-comment);
   cursor: pointer;
-  transition: all 0.2s;
+  /* Sólo el fondo y el color: con `all` también entraba en la transición la barrita activa, que
+     así aparecía un instante después del clic. 0.15s hace el marcado inmediato. */
+  transition: background 0.15s ease, color 0.15s ease;
   position: relative;
 }
 
@@ -229,6 +243,9 @@ body {
   align-items: center;
   gap: 12px;
   width: 100%;
+  /* El padding vive en el `<a>` y no en el `<li>`: toda la fila es el enlace, así no queda una
+     zona muerta alrededor del texto donde el clic no marca nada. */
+  padding: 7px 14px;
   color: inherit;
   font: inherit;
   text-decoration: none;
@@ -241,7 +258,10 @@ body {
 
 .sidebar-menu li i { width: 20px; text-align: center; font-size: 15px; }
 
-.sidebar-menu li:hover:not(.disabled) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+.sidebar-menu li:hover:not(.disabled) {
+  background: color-mix(in srgb, var(--kanagawa-bg-alt) 50%, transparent);
+  color: var(--kanagawa-fg);
+}
 
 /* ── EL INDICADOR DE LA PÁGINA ACTIVA ───────────────────────────────────────────────────────────
    Estas dos reglas son UNA sola cosa escrita de dos formas. `li.active` es la que tenía el
@@ -260,8 +280,14 @@ body {
    Y si algún día la hoja se carga en un motor sin `:has()`, lo que se pierde es SÓLO la
    barrita — la fila sigue resaltada por el fondo — que es el mismo modo de falla silenciosa que
    `tests/ui/iconos.spec.js` documenta para un ícono sin glifo: se ve deliberado y no está. */
-.sidebar-menu li.active,
-.sidebar-menu li:has(> a.active) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+.sidebar-menu li.active:not(.disabled),
+.sidebar-menu li:has(> a.active):not(.disabled) { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
+
+/* El glifo activo en color de acento. Con el fondo del tema y la barrita sola, una fila activa
+   bajo el mouse se parecía demasiado al hover recién aclarado; el acento en el ícono vuelve el
+   marcado inconfundible al primer clic, sin depender de que el puntero se vaya de encima. */
+.sidebar-menu li.active i,
+.sidebar-menu li:has(> a.active) i { color: var(--kanagawa-blue); }
 
 .sidebar-menu li.active::before,
 .sidebar-menu li:has(> a.active)::before {
@@ -291,8 +317,6 @@ body {
 .sidebar-menu li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 .sidebar-menu li.disabled i { opacity: 0.4; }
 
-.sidebar-menu li .lock-icon { margin-left: auto; font-size: 12px; color: var(--kanagawa-fg-muted); }
-
 /* ===== SIDEBAR FOOTER ===== */
 .sidebar-footer {
   border-top: 1px solid var(--kanagawa-border);
@@ -318,67 +342,30 @@ body {
 .sidebar-footer .user-info .role-text { font-size: 10px; color: var(--kanagawa-comment); font-weight: 500; }
 
 /* ===== MAIN ===== */
-.main { flex: 1; padding: 24px 32px 32px 32px; overflow-x: auto; min-width: 0; }
+/* `overflow-y: auto` es lo que hace que el scroll ocurra ACÁ y no en el documento: `.app-layout`
+   ya tiene alto fijo, así que `.main` es el único que puede desbordar. Sin esto, con `height:100vh`
+   arriba, lo que pasara de alto quedaría directamente recortado. */
+.main { flex: 1; padding: 24px 32px 32px 32px; overflow-x: auto; overflow-y: auto; min-width: 0; }
 
 .main--pos { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 
-/* ===== TOPBAR ===== */
-.topbar {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
-}
+/* ===== TOPBAR =====
+   Acá vivía el bloque `.topbar` / `.topbar-left*` / `.topbar-right` con `.badge-store`,
+   `.notif-badge`, `.avatar-main` y `.btn-header`. Todas eran clases de `Navbar.jsx`, que no
+   monta nadie: la barra de arriba de verdad es `.mm-topbar` (AppShell.jsx) y el `Navbar`
+   viejo quedó como archivo muerto. Se borraron.
 
-.topbar-left h1 { font-size: 26px; font-weight: 700; color: var(--kanagawa-fg); }
-.topbar-left .breadcrumb { font-size: 13px; color: var(--kanagawa-comment); margin-top: 2px; }
-.topbar-left .breadcrumb span { color: var(--kanagawa-fg-muted); }
-
-.topbar-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-
-.topbar-right .badge-store {
-  background: var(--kanagawa-bg-alt); border-radius: 30px; padding: 6px 16px;
-  font-size: 13px; font-weight: 600; color: var(--kanagawa-fg);
-  display: flex; align-items: center; gap: 6px;
-}
-
-.topbar-right .badge-store i { color: var(--kanagawa-green); font-size: 10px; }
-
-.topbar-right .btn-header {
+   `.btn-header` es la única excepción, y por eso sobrevive: la usa `RelevoTurno.jsx`, que SÍ
+   se monta (dentro de `.mm-turno-controles`) — pero estaba escrita como descendiente de
+   `.topbar-right`, así que el botón nunca recibía el estilo que se le había querido dar.
+   Acá queda suelta, con las mismas declaraciones y sin inventar nada. */
+.btn-header {
   background: transparent; border: none; font-size: 20px;
   color: var(--kanagawa-fg-muted); cursor: pointer; position: relative;
   padding: 6px; border-radius: 8px; transition: 0.2s;
 }
 
-.topbar-right .btn-header:hover { background: var(--kanagawa-bg-alt); }
-
-.topbar-right .btn-header .dot {
-  position: absolute; top: 2px; right: 2px; background: var(--kanagawa-red);
-  width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--kanagawa-bg);
-}
-
-.topbar-right .notif-badge {
-  position: absolute; top: -4px; right: -4px; background: var(--kanagawa-red);
-  color: #181616; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px;
-  border-radius: 9px; display: flex; align-items: center; justify-content: center;
-  border: 2px solid var(--kanagawa-bg); line-height: 1;
-}
-
-.topbar-right .avatar-main {
-  width: 42px; height: 42px; border-radius: 50%;
-  background: var(--kanagawa-blue); color: #181616;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 16px; cursor: pointer; transition: 0.2s;
-}
-
-.topbar-right .avatar-main:hover { transform: scale(1.05); }
-
-/* ===== PAGES ===== */
-.page { display: none; animation: fadeIn 0.3s ease; }
-.page.active { display: block; }
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+.btn-header:hover { background: var(--kanagawa-bg-alt); }
 
 /* ===== STATS CARDS ===== */
 .stats-grid {
@@ -531,6 +518,11 @@ body {
 .btn-danger { background: var(--kanagawa-red); color: #181616; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
 .btn-danger:hover { background: var(--ctp-maroon); }
 
+/* Compact variant, for table rows where a stack of full-size buttons eats the row. Declared
+   AFTER the `.btn-*` colour classes on purpose: `.btn-sm` is a single class like them, so it
+   only wins the padding/font by source order. It carries no colour of its own. */
+.btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 6px; }
+
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 table th {
@@ -564,15 +556,14 @@ table tr:hover td { background: var(--kanagawa-bg); }
 /* ===== POS SEARCH BAR ===== */
 /* A TODO EL ANCHO DE LA PANTALLA, ARRIBA DE LOS PANELES. La caja dejó de ser hija de
    `.pos-left` (o sea, de la mitad izquierda) y pasó a ser hija directa de `.pos-container`, con
-   `.pos-split` — la fila productos/carrito — debajo. Los márgenes laterales repiten el padding
-   que ya tenía `.pos-left`, para que el input no quede pegado al borde de la grilla ni al del
-   carrito. */
+   `.pos-split` — la fila productos/carrito — debajo. Los márgenes laterales son simétricos (16px
+   y 16px): el input no queda pegado al borde de la ventana por ningún lado. */
 .pos-search-bar {
   background: var(--kanagawa-bg-alt);
   border-radius: 14px;
   border: 1px solid var(--ctp-surface1);
   padding: 16px 18px;
-  margin: 0 16px 12px 20px;
+  margin: 0 16px 12px 16px;
   flex: 0 0 auto;      /* ← que la fila larga NO se estire: mide lo que su contenido mide */
 }
 
@@ -695,9 +686,9 @@ table tr:hover td { background: var(--kanagawa-bg); }
   padding-bottom: 8px;
 }
 
-/* La pantalla de PRIMERA VEZ: catálogo vacío en una instalación nueva.
+/* La pantalla de PRIMERA VEZ: sin productos en una instalación nueva.
    Sin esto el POS mostraba un bloque con una lupa y la frase «No se encontraron productos», que es
-   exactamente el mensaje equivocado para un catálogo que todavía no existe. */
+   exactamente el mensaje equivocado para una lista de productos que todavía no existe. */
 .pos-primera-vez {
   display: flex;
   flex-direction: column;
@@ -747,6 +738,14 @@ table tr:hover td { background: var(--kanagawa-bg); }
 .pos-product-card.stock-bajo {
   border-color: var(--ctp-peach);
   background: rgba(250, 179, 135, 0.06);
+}
+
+/* El producto AGOTADO sigue en pantalla — el cajero necesita poder contestar «¿tenés X?» — pero
+   se muestra apagado y con el borde punteado para que se distinga de un vistazo de uno vendible.
+   No se oculta ni se lo saca del grid. */
+.pos-product-card.stock-cero {
+  opacity: 0.6;
+  border-style: dashed;
 }
 
 .pos-product-card .icon-product { font-size: 28px; color: var(--kanagawa-blue); margin-bottom: 6px; }
@@ -952,32 +951,11 @@ table tr:hover td { background: var(--kanagawa-bg); }
 .pos-cart .cart-item .remove-btn:hover { opacity: 1; background: rgba(243, 139, 168, 0.1); }
 
 /* ── Responsive ── */
-@media (max-width: 900px) {
-  .pos-cart { width: 340px; min-width: 280px; }
-}
-
-@media (max-width: 768px) {
-  /* `.pos-container` ya es columna, así que lo que se apila ahora es `.pos-split`: son los dos
-     paneles los que pasan uno debajo del otro. */
-  .pos-split { flex-direction: column; }
-  .pos-left { flex: 1; padding: 12px; min-height: 0; height: 50vh; }
-  .pos-cart {
-    width: 100%; min-width: unset; height: 50vh;
-    border-left: none; border-top: 1px solid var(--kanagawa-border);
-    padding: 12px 14px; flex-shrink: 0;
-  }
-  .pos-products { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
-  .pos-cart .cart-total { font-size: 20px; }
-}
-
-@media (max-width: 480px) {
-  .pos-cart .cart-actions { grid-template-columns: 1fr; }
-  .pos-cart .cart-actions .btn-success { padding: 12px; font-size: 15px; }
-  .pos-products { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 6px; }
-  .pos-product-card { padding: 8px 4px; }
-  .pos-product-card .name { font-size: 10px; }
-  .pos-cart .cart-item .qty-control input { width: 36px; font-size: 13px; }
-}
+/* ── EL POS NO TIENE RESPONSIVE ANGOSTO ───────────────────────────────────────────────────────
+   Acá vivían los `@media (max-width: 900px)`, `(max-width: 768px)` y `(max-width: 480px)` que
+   achicaban el carrito, apilaban `.pos-split` y encogían el grid de productos. Ninguno se activa:
+   la ventana de `src/main/window.js` tiene `minWidth: 1024`, así que el POS nunca mide menos de
+   1024px. Se borraron por higiene, no se rediseñó nada. */
 
 /* ===== FORMS ===== */
 .form-group { margin-bottom: 16px; }
@@ -1104,10 +1082,55 @@ select.input-field { cursor: pointer; }
 .sidebar.collapsed .sidebar-menu li .lock-icon { display: none; }
 .sidebar.collapsed .sidebar-brand { justify-content: center; padding-bottom: 12px; margin-bottom: 16px; }
 .sidebar.collapsed .sidebar-brand i { font-size: 28px; }
-.sidebar.collapsed .sidebar-menu li { justify-content: center; padding: 10px; }
-.sidebar.collapsed .sidebar-menu li i { width: auto; font-size: 20px; }
+.sidebar.collapsed .sidebar-menu li { justify-content: center; padding: 0; }
+.sidebar.collapsed .sidebar-menu li > a { padding: 10px; }
+/* SIN `width: auto`. Plegada, esa declaración colapsaba la caja del `<i>` a 0px —el `<i>` está
+   VACÍO y su tamaño sale de `icons.css` (`.fa-solid { width: 1em }`, relleno por `mask`)—, así que
+   el glifo no se pintaba. Sin el `auto`, manda el `width: 20px` de la regla base y el ícono se ve.
+   El `justify-content: center` del `<a>` es lo que lo centra. */
+.sidebar.collapsed .sidebar-menu li i { font-size: 20px; }
 .sidebar.collapsed .sidebar-footer { justify-content: center; padding: 12px 0; }
 .sidebar.collapsed .sidebar-footer .avatar-mini { width: 32px; height: 32px; font-size: 14px; }
+
+/* ── LA ETIQUETA DE DESTINO, CUANDO LA BARRA ESTÁ PLEGADA ─────────────────────────────────────
+   Plegada, cada fila es sólo su ícono y no hay forma de saber adónde lleva. El `<span>` con la
+   etiqueta sigue en el DOM —React Router no lo quita, sólo lo oculta el `display: none` de arriba—
+   así que acá se lo vuelve a mostrar como globo de ayuda al pasar el mouse por la fila.
+
+   Por qué `position: fixed`: la barra recorta lo que se sale de su caja (`.sidebar` y
+   `.sidebar-menu` son `overflow: hidden`) y un globo a la derecha del ícono cae justo fuera. Un
+   `fixed` no lo recorta ningún antecesor que no sea bloque contenedor, y nada de acá lleva
+   `transform`/`filter`. La posición se ancla al propio `<li>` con anclaje de CSS
+   (`anchor-name`/`position-anchor`), que Chromium 140 soporta; `anchor-scope` deja reusar el mismo
+   nombre en cada `<li>` sin que uno pise al otro. Si el motor no soportara el anclaje, el
+   `@supports` deja el globo sin dibujar: se pierde la pista, no el menú. */
+@supports (anchor-name: --mm-nav-item) {
+  .sidebar.collapsed .sidebar-menu li {
+    anchor-name: --mm-nav-item;
+    anchor-scope: --mm-nav-item;
+  }
+
+  .sidebar.collapsed .sidebar-menu li:hover > a > span {
+    display: block;
+    position: fixed;
+    position-anchor: --mm-nav-item;
+    top: anchor(50%);
+    left: anchor(right);
+    transform: translateY(-50%);
+    margin-left: 10px;
+    padding: 6px 10px;
+    background: var(--kanagawa-bg-alt);
+    color: var(--kanagawa-fg);
+    border: 1px solid var(--kanagawa-border);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    z-index: 200;
+    pointer-events: none;
+  }
+}
 
 /* Ahora es un `<button>` y no un `<div onClick>` — el operador llega con el teclado igual que con
    el mouse, y esto no lo pliega a mano. Un `<button>` trae fondo, borde y tipografía de sistema
@@ -1141,40 +1164,15 @@ select.input-field { cursor: pointer; }
   width: calc(100% + 20px);
 }
 
-@media (max-width: 992px) {
-  .sidebar-collapse-btn { display: none; }
-  .sidebar.collapsed { width: 72px; padding: 16px 10px; }
-  .sidebar.collapsed .sidebar-brand span,
-  .sidebar.collapsed .sidebar-menu li span,
-  .sidebar.collapsed .sidebar-menu .sub-label,
-  .sidebar.collapsed .sidebar-footer .user-info,
-  .sidebar.collapsed .sidebar-menu li .badge-count,
-  .sidebar.collapsed .sidebar-menu li .lock-icon { display: none; }
-  .sidebar.collapsed .sidebar-brand { justify-content: center; padding-bottom: 12px; margin-bottom: 16px; }
-  .sidebar.collapsed .sidebar-menu li { justify-content: center; padding: 10px; }
-  .sidebar.collapsed .sidebar-menu li i { font-size: 20px; }
-  .sidebar.collapsed .sidebar-footer { justify-content: center; }
-}
-
-/* ===== MOBILE TOGGLE =====
-   ESTE BLOQUE NO SE EJECUTA NUNCA EN ESTA APLICACIÓN, Y SE SABE POR QUÉ.
-
-   `.sidebar-toggle` (el botón flotante que abre el cajón) y `.sidebar-overlay` los dibujaba el
-   `Sidebar.jsx` viejo, que no monta nadie; ahora el que monta la barra lateral es `AppShell.jsx`
-   y no dibuja ninguno de los dos. No es un olvido: la ventana de `src/main/window.js` tiene
-   `minWidth: 1024`, así que el viewport nunca baja de 1024px y esta media query nunca se
-   cumple. Si algún día el piso de la ventana baja de 992, el menú se vuelve un cajón fuera de
-   pantalla SIN forma de abrirlo, y hay que montar el `.sidebar-toggle` junto con su estado
-   antes de bajar ese número. La hoja está escrita para ese día; el markup todavía no. */
-.sidebar-toggle { display: none; position: fixed; bottom: 20px; right: 20px; background: var(--kanagawa-blue); color: #181616; border: none; width: 56px; height: 56px; border-radius: 50%; font-size: 24px; cursor: pointer; box-shadow: 0 4px 16px rgba(137,180,250,0.3); z-index: 200; align-items: center; justify-content: center; }
-
-@media (max-width: 992px) {
-  .sidebar-toggle { display: flex; }
-  .sidebar { position: fixed; left: -280px; top: 0; height: 100vh; transition: left 0.3s ease; box-shadow: 4px 0 20px rgba(0,0,0,0.4); }
-  .sidebar.open { left: 0; }
-  .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 99; }
-  .sidebar-overlay.active { display: block; }
-}
+/* ── POR QUÉ NO HAY UNA MEDIA QUERY DE 992px PARA LA BARRA ────────────────────────────────────
+   Acá vivían un `@media (max-width: 992px)` que repetía el plegado de `.sidebar.collapsed`, el
+   botón flotante `.sidebar-toggle` con su cajón y el `.sidebar-overlay`, y un `@media
+   (max-width: 768px)` que apilaba el POS. Nada de eso se ejecuta NUNCA: `src/main/window.js` fija
+   `minWidth: 1024`, así que el viewport no baja de 1024px y ninguna de esas queries llega a
+   cumplirse. El plegado real (`.sidebar.collapsed`) vive SIN media query, más arriba, y el botón
+   `.sidebar-collapse-btn` de `AppShell.jsx` es el que lo acciona. Se borraron por higiene; si algún
+   día el piso de la ventana baja de 992 hay que volver a escribirlas junto con el `.sidebar-toggle`
+   y el estado del cajón, no antes. */
 
 /* ===== SPINNER ANIMATION ===== */
 @keyframes spin {
@@ -1266,6 +1264,13 @@ select.input-field { cursor: pointer; }
   --ctp-peach: #f97316;
   --ctp-red: #ef4444;
   --ctp-mauve: #a855f7;
+  /* Sky and yellow are redefined here, unlike the other Catppuccin hues, because the pastel
+     values from `:root` are fine on a dark surface and illegible on this light one: `.status.pending`
+     paints `var(--ctp-yellow)` as text over a very pale yellow, and `.restricted-banner` does the
+     same with `var(--kanagawa-yellow)`. These two darker tones keep the same hue reading and stay
+     legible on white. */
+  --ctp-sky: #0b6e99;
+  --ctp-yellow: #9a7b00;
 
   --kanagawa-bg: #ffffff;
   --kanagawa-bg-alt: #f8fafc;
@@ -1308,6 +1313,12 @@ body {
   border-radius: 14px;
   padding: 8px 14px;
   margin-bottom: 18px;
+  /* Fija arriba mientras el contenido de la pantalla scrollea dentro de `.main`. El fondo del
+     tema es opaco, así que lo que pasa por debajo no se transparenta. `z-index` la deja por
+     encima de las tarjetas pero por debajo de los modales (`z-index: 200`). */
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .mm-topbar-title {
@@ -1354,8 +1365,8 @@ body {
 .mm-turno-enlace:hover,
 .mm-turno-enlace.activo {
   color: var(--kanagawa-fg);
-  background: var(--kanagawa-surface-2, rgba(127, 160, 179, 0.12));
-  border-color: var(--kanagawa-border, rgba(127, 160, 179, 0.25));
+  background: var(--kanagawa-bg-alt);
+  border-color: var(--kanagawa-border);
 }
 
 .mm-turno-controles.compacto .mm-turno-enlace {
@@ -1639,4 +1650,193 @@ body {
 }
 .mm-tab:hover { background: var(--kanagawa-bg-alt); color: var(--kanagawa-fg); }
 .mm-tab.activa { color: var(--kanagawa-blue); font-weight: 600; }
+
+
+/* table actions */
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--kanagawa-fg-muted, #666);
+  gap: 12px;
+}
+
+.empty-state-icon {
+  font-size: 2.5rem;
+  opacity: 0.6;
+}
+
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--kanagawa-fg, #333);
+}
+
+.empty-state-cta {
+  margin-top: 8px;
+}
+
+/* ==================================================================
+   PAPEL DE BOLETA — POS (modal de cobro y boleta de pago)
+
+   LA BOLETA ES PAPEL BLANCO A PROPÓSITO. El modal de cobro y el recibo
+   que se le muestra al cliente representan un papel físico: se leen
+   sobre blanco con tinta oscura, con o sin el tema oscuro del resto de
+   la app. Por eso sus colores NO salen de `--kanagawa-*` / `--ctp-*`
+   (que sí cambian con el tema) sino de estos tokens propios, declarados
+   UNA vez en `:root` y nunca redefinidos por `.mm-theme-*`.
+
+   NO ADAPTAR ESTOS COLORES AL TEMA. Si querés cambiar cómo se ve la
+   boleta, cambiá los tokens de acá abajo; no los apuntes a las
+   variables de tema.
+   ================================================================== */
+:root {
+  --receipt-paper: #ffffff;
+  --receipt-ink: #1e293b;
+  --receipt-ink-muted: #64748b;
+  --receipt-ink-faint: #94a3b8;
+  --receipt-blue-bg: #eff6ff;
+  --receipt-blue-border: #dbeafe;
+  --receipt-blue-soft: #bfdbfe;
+  --receipt-blue-strong: #1d4ed8;
+  --receipt-green-bg: #f0fdf4;
+  --receipt-green-border: #bbf7d0;
+  --receipt-green: #16a34a;
+  --receipt-red: #dc2626;
+  --receipt-red-soft: #ef4444;
+  --receipt-yellow-bg: #fef9c3;
+  --receipt-yellow-border: #fde047;
+  --receipt-yellow-ink: #854d0e;
+  --receipt-line: #f1f5f9;
+  --receipt-line-strong: #e2e8f0;
+}
+
+/* El papel de la boleta de pago, encima del modal de cobro. */
+.receipt-paper {
+  background: var(--receipt-paper);
+  border-radius: 12px;
+  padding: 18px;
+  width: 100%;
+  max-width: 460px;
+}
+
+/* Total a cobrar, en el modal. */
+.receipt-total-box {
+  background: var(--receipt-blue-bg);
+  border: 1px solid var(--receipt-blue-border);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.receipt-total-label { font-size: 13px; color: var(--receipt-ink-muted); margin-bottom: 4px; }
+.receipt-total-value { font-size: 32px; font-weight: 700; color: var(--receipt-blue-strong); }
+
+/* Cambio a entregar (efectivo). */
+.receipt-change-box {
+  margin-top: 8px;
+  background: var(--receipt-green-bg);
+  border: 1px solid var(--receipt-green-border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+.receipt-change-label { font-size: 13px; color: var(--receipt-ink-muted); }
+.receipt-change-value { font-size: 24px; font-weight: 700; color: var(--receipt-green); }
+
+/* Panel celeste del cliente / cuenta corriente. `.tight` es la variante de 12px del selector. */
+.receipt-panel {
+  background: var(--receipt-blue-bg);
+  border: 1px solid var(--receipt-blue-soft);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.receipt-panel.tight { padding: 12px; }
+
+.receipt-title { font-size: 13px; color: var(--receipt-ink); font-weight: 600; }
+.receipt-name { font-weight: 600; color: var(--receipt-ink); }
+.receipt-line { margin: 4px 0 0; font-size: 12px; color: var(--receipt-ink-muted); }
+.receipt-line.ink { margin: 2px 0 0; color: var(--receipt-ink); }
+.receipt-danger { color: var(--receipt-red); }
+.receipt-faint { font-size: 12px; color: var(--receipt-ink-faint); }
+
+/* Aviso amarillo (deuda pendiente / límite de crédito). */
+.receipt-warning {
+  background: var(--receipt-yellow-bg);
+  border: 1px solid var(--receipt-yellow-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--receipt-yellow-ink);
+  font-weight: 500;
+}
+
+/* Lista de resultados de la búsqueda de deudores. */
+.receipt-results {
+  border: 1px solid var(--receipt-line-strong);
+  border-radius: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.receipt-result-row {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--receipt-line);
+  background: transparent;
+  cursor: pointer;
+  display: block;
+}
+.receipt-result-row.selected { background: var(--receipt-blue-bg); }
+.receipt-result-name { font-weight: 600; font-size: 14px; color: var(--receipt-ink); }
+.receipt-result-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--receipt-ink-muted);
+}
+.receipt-amount-ok { color: var(--receipt-green); font-weight: 600; }
+.receipt-amount-bad { color: var(--receipt-red-soft); font-weight: 600; }
+
+/* Adornos de input dentro del papel. */
+.receipt-icon { color: var(--receipt-ink-faint); }
+.receipt-close { border: none; background: none; cursor: pointer; color: var(--receipt-ink-faint); padding: 4px; }
+
+/* La fila de botones del pie del modal. */
+.receipt-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--receipt-line-strong);
+}
 

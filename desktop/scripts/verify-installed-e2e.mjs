@@ -18,9 +18,9 @@
  *     so it had been reporting a failure that did not exist — and would have reported one that did
  *     exist the moment `003_ultimo_admin.sql` shipped. A version a human retypes is a version that
  *     quietly stops describing the build.
- *   - The first run has an EMPTY catalogue. It does. Which meant the POS opened on a grid that said
+ *   - The first run has an EMPTY product list. It does. Which meant the POS opened on a grid that said
  *     "No se encontraron productos" and offered no way forward, and that is what motivated the
- *     first-run panel and the opt-in demo catalogue.
+ *     first-run panel and the opt-in demo products.
  *   - Uninstalling must not take the sales history with it. It does not, because
  *     `deleteAppDataOnUninstall: false` is set explicitly; had it been left to a default, this step
  *     would have been the one that discovered the loss.
@@ -396,11 +396,11 @@ if (!existsSync(DB)) {
     uv === esperadas && missing.length === 0,
     `user_version ${uv} (esperada ${esperadas}), ${applied} applied, ${missing.length} missing`
   )
-  record('a first run starts with an EMPTY catalogue', products === 0, `${products} products`)
+  record('a first run starts with an EMPTY product list', products === 0, `${products} products`)
 }
 
 // ---------------------------------------------------------------------------
-step('4. seed a catalogue and take a real sale through the installed app')
+step('4. seed products and take a real sale through the installed app')
 // ---------------------------------------------------------------------------
 // `db:demo` is the same module the first-run button uses, run against the real profile. The sale
 // itself is driven by the payment drive against the INSTALLED app's database path, so what is
@@ -413,7 +413,7 @@ step('4. seed a catalogue and take a real sale through the installed app')
   const creado = (seed.stdout || '').match(/creados\s+\((\d+)\)/)
   const output = (seed.stdout || seed.stderr || '').trim()
   record(
-    'a catalogue can be seeded into the installed profile',
+    'products can be seeded into the installed profile',
     creado !== null && Number(creado[1]) > 0,
     creado ? `created ${creado[1]}` : output.split('\n').slice(-1)[0]
   )
@@ -425,7 +425,7 @@ step('4. seed a catalogue and take a real sale through the installed app')
   // nothing about the installed app.
   // The seed is useless if the app is running: it holds the SQLite file open, and the drive's own
   // connection would then be a second writer on a database the first one owns. Worse, the POS
-  // caches the catalogue for five minutes, so a catalogue seeded underneath a live window is one
+  // caches the products for five minutes, so a product list seeded underneath a live window is one
   // the window will not show. The app is stopped here and started again by the drive.
   await stopApp()
   const r = spawnSync(process.execPath, [path.join(here, 'drive-payment-installed.mjs')], {
@@ -466,7 +466,7 @@ let snapshot = null
   // The stock of the product that was ACTUALLY SOLD, taken from the sale line.
   //
   // `SELECT stock_milli FROM productos ORDER BY id LIMIT 1` was the first product SEEDED; the POS grid
-  // is sorted by name, so the drive sells the first product ALPHABETICALLY. With the demo catalogue
+  // is sorted by name, so the drive sells the first product ALPHABETICALLY. With the demo products
   // those are different rows, and the check asserted that an untouched product's stock was unchanged
   // after a sale — passing or failing for reasons that had nothing to do with the sale. The sale line
   // names the product the shop actually sold, so that is what is read here.
@@ -562,7 +562,7 @@ if (existsSync(DB)) {
       ? rows.map((r) => `#${r.id} ${r.estado} ${r.total_centavos}c`).join(', ')
       : `before ${JSON.stringify(snapshot.rows)} vs after ${JSON.stringify(rows)}`
   )
-  record('the catalogue survived the uninstall', productos === snapshot.productos, `${productos} products`)
+  record('the products survived the uninstall', productos === snapshot.productos, `${productos} products`)
   record('the drawer movements survived', movimientos === snapshot.movimientos, `${movimientos} movimiento(s)`)
   record(
     'the sold product kept its stock level through the uninstall',

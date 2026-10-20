@@ -229,11 +229,11 @@ seeding scripts that no production install runs.
 shelf. That is the right call and it is unchanged here. It also means a fresh profile opens the
 POS onto «No se encontraron productos», where the sale flow cannot be evaluated by hand at all.
 
-So the catalog is a separate, opt-in command (`npm run db:demo`) instead of a second seed. It
+So the product list is a separate, opt-in command (`npm run db:demo`) instead of a second seed. It
 goes in through `productos.crear` — the same function the app calls — so a demo product cannot
 differ from a real one in a column a hand-written INSERT would have forgotten. It is idempotent
-by barcode, and `db:reset` removes it. The weighed product in the catalog is deliberate: the
-scale is where the two silent bugs lived (see Internal notes), and a catalog without one would let
+by barcode, and `db:reset` removes it. The weighed product in the product list is deliberate: the
+scale is where the two silent bugs lived (see Internal notes), and a product list without one would let
 them come straight back.
 
 **Status**: willed. Deliberate action installs fictitious data; a first launch must not.
@@ -246,7 +246,7 @@ them come straight back.
 stops. There is no journal entry, so the purchase never reaches `asientos_contables` and never
 touches `1.2.01 Mercaderías`; the goods arrive and the balance sheet is not told. It does not
 update `productos.precio_compra_centavos` either, so the cost a shop sells at afterwards is
-whatever the catalogue was seeded with. And a credit purchase — the one where nobody has paid —
+whatever the products were seeded with. And a credit purchase — the one where nobody has paid —
 posts nothing at all to a payable, so the amount the shop owes its supplier exists only as an
 undelivered order. The web's cash test is a boolean field on the line, not a drawer movement.
 
@@ -667,7 +667,7 @@ that added `5.4.01 Otros Gastos` without a migration.
   in `afterEach`. `toFake: ['Date']` is deliberate: the repositories are synchronous, so faking the
   scheduler would prove nothing about them and could mask a real timer dependency. A spec that
   hardcodes a day has to own the clock; if it does not, it will lie for twenty-three hours a day.
-- **A "still 501" test names the wrong member the moment the work lands.** `demo-catalogue.spec.js`
+- **A "still 501" test names the wrong member the moment the work lands.** `demo-productos.spec.js`
   proved `NOT_IMPLEMENTED` by calling `productos.update` — true while that member had no handler, and
   false the instant the CRUD batch gave it one, at which point the same call returned
   `PRODUCTO_NO_ENCONTRADO` (404) and the test went red for the RIGHT reason. It now calls

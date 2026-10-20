@@ -1,4 +1,4 @@
-/**
+﻿/**
  * THE ELEVEN SCREENS, and the four helpers every one of them is built from.
  *
  * WHAT THIS FILE IS NOT. It is not a set of components, and it is not ten copies of a table. It
@@ -698,7 +698,7 @@ const Reportes = () => {
 
   return (
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Reportes</h2>
       </div>
 

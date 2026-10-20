@@ -6,7 +6,7 @@ import { toast } from "react-toastify";
 import Modal from "../components/common/Modal";
 
 /**
- * Categorías — the buckets the catalogue is filed under, and the POS's filter row.
+ * Categorías — the buckets the products are filed under, and the POS's filter row.
  *
  * ── WHY THIS IS A SCREEN AND NOT A FIELD ──────────────────────────────────────────────────────
  *
@@ -71,7 +71,7 @@ const Categorias = () => {
 
   /**
    * The product count per category. Failures are NOT toasted: this is a courtesy figure next to a
-   * delete button, and a shop whose catalogue call failed should still be able to rename a category.
+   * delete button, and a shop whose product list call failed should still be able to rename a category.
    * A toast per category would be five toasts about something the operator did not ask for.
    */
   const cargarConteos = useCallback(async (lista) => {
@@ -176,9 +176,9 @@ const Categorias = () => {
 
   return (
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Categorías</h2>
-        <div className="bar">
+        <div className="toolbar">
           <button
             className="btn-primary"
             onClick={() => setForm({ ...VACIO })}
@@ -191,7 +191,7 @@ const Categorias = () => {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p style={{ fontSize: 13, color: "var(--kanagawa-fg-muted)", margin: 0 }}>
-          Las categorías son el filtro del punto de venta: agrupan el catálogo para encontrar un
+          Las categorías son el filtro del punto de venta: agrupan los productos para encontrar un
           producto rápido en el mostrador. Un producto sin categoría sigue siendo vendible.
         </p>
       </div>
@@ -207,7 +207,7 @@ const Categorias = () => {
         </div>
       ) : (
         <div className="table-container">
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Nombre</th>
@@ -233,30 +233,32 @@ const Categorias = () => {
                       </span>
                     </td>
                     <td>
-                      <button
-                        className="btn-secondary"
-                        onClick={() => setForm({ ...VACIO, ...c })}
-                      >
-                        Editar
-                      </button>{" "}
-                      <button className="btn-secondary" onClick={() => alternarActivo(c)}>
-                        {c.activo ? "Desactivar" : "Activar"}
-                      </button>{" "}
-                      {/* Offered only where it can succeed. A category with active products is
-                          refused by the repository, and a button that always fails is a button that
-                          teaches the operator to distrust the screen. */}
-                      <button
-                        className="btn-danger"
-                        onClick={() => setPorEliminar({ ...c, rechazada: false })}
-                        disabled={typeof n === "number" && n > 0}
-                        title={
-                          typeof n === "number" && n > 0
-                            ? `Tiene ${n} producto(s) activo(s): desactivala en su lugar`
-                            : undefined
-                        }
-                      >
-                        Eliminar
-                      </button>
+                      <div className="table-actions">
+                        <button
+                          className="btn-secondary"
+                          onClick={() => setForm({ ...VACIO, ...c })}
+                        >
+                          Editar
+                        </button>
+                        <button className="btn-secondary" onClick={() => alternarActivo(c)}>
+                          {c.activo ? "Desactivar" : "Activar"}
+                        </button>
+                        {/* Offered only where it can succeed. A category with active products is
+                            refused by the repository, and a button that always fails is a button that
+                            teaches the operator to distrust the screen. */}
+                        <button
+                          className="btn-danger"
+                          onClick={() => setPorEliminar({ ...c, rechazada: false })}
+                          disabled={typeof n === "number" && n > 0}
+                          title={
+                            typeof n === "number" && n > 0
+                              ? `Tiene ${n} producto(s) activo(s): desactivala en su lugar`
+                              : undefined
+                          }
+                        >
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

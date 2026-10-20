@@ -48,7 +48,7 @@ const { createSession } = await load('src/main/auth/session.js')
 const { registrar, login, me } = await load('src/main/auth/auth.service.js')
 const { tablesCreatedBy } = await load('src/main/db/migrate.js')
 const productos = await load('src/main/db/repositories/productos.repo.js')
-const { CATALOGO_DEMO, demoToProductoInput } = await load('src/shared/demo-catalogo.js')
+const { PRODUCTOS_DEMO, demoToProductoInput } = await load('src/shared/demo-productos.js')
 
 /**
  * Migrations come from SOURCE, not from `out/`. The packaged copy is what the installer runs and
@@ -112,7 +112,7 @@ try {
 
   const ctx = { db: conn.db, tx: conn.tx, negocioId, actorId }
   let creados = 0
-  for (const p of CATALOGO_DEMO) {
+  for (const p of PRODUCTOS_DEMO) {
     const ya = conn.db
       .prepare('SELECT id FROM productos WHERE negocio_id = ? AND codigo = ?')
       .get(negocioId, p.codigo)
@@ -127,7 +127,7 @@ try {
   // Log out explicitly: the app opens SIGNED OUT by design, and a script that left a session in a
   // file would be describing a state the app can never be in (`index.js` creates the session in
   // memory on every launch).
-  console.log(`  catalogo: ${creados} producto(s) creado(s), ${total} en total`)
+  console.log(`  productos: ${creados} producto(s) creado(s), ${total} en total`)
   console.log('')
   console.log('CREDENCIALES')
   console.log(`  usuario  : ${USUARIO}`)

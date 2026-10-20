@@ -21,3 +21,63 @@ Thumbs.db
 # Perfil de PRUEBA y artefactos de lanzamiento local (run/perfil-prueba/data/minimarck.db).
 # Es una base de datos de taller con credenciales conocidas: nunca debe viajar en el repo.
 run/
+run/**
+perfil*/
+*/perfil*/
+tmp/
+tmp-*/
+zz/
+zz-copy-test/
+*.bak
+*.bad
+*.old
+*.orig
+fix.js
+electron-smoke.cjs
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Backups / data dirs
+backups/
+**/data/*.db
+**/data/*.sqlite*
+
+# Installer / packaging
+release/
+out/
+dist/
+*.exe
+*.msi
+*.nsis.7z
+*.zip
+LATEST.txt
+builder-debug.yml
+
+# Certs/keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.keystore
+*.jks
+
+# Logs
+*.log
+logs/
+
+# Env
+.env
+.env.*
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini

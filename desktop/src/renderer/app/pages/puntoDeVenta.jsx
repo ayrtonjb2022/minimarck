@@ -17,9 +17,9 @@ import { formatCentavos, formatCantidad } from "../utils/formatters";
 // apunta a `desktop/shared/`, que no existe, y el error sólo aparece al resolver, no al parsear.
   import { lineTotalCentavos, toMilli, escalaUnidad, QTY_SCALE, MAX_MILLI } from "../../../shared/qty";
   import { toCents } from "../../../shared/money";
-  // El catálogo de ejemplo es la MISMA definición que usa `npm run db:demo`, no una copia: dos
+  // Los productos de ejemplo son la MISMA definición que usa `npm run db:demo`, no una copia: dos
   // listas se desincronizan y el día que lo hacen, el botón carga algo que el script ya no conoce.
-  import { CATALOGO_DEMO, demoToProductoInput } from "../../../shared/demo-catalogo";
+  import { PRODUCTOS_DEMO, demoToProductoInput } from "../../../shared/demo-productos";
 
 
 const METODOS_PAGO = [
@@ -165,9 +165,9 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
           <button onClick={onClose} className="btn-secondary" style={{padding:"6px 10px"}}><i className="fa-solid fa-times"></i></button>
         </div>
         <div style={{padding:"0 22px 22px",overflowY:"auto",flex:1}}>
-          <div style={{background:"#eff6ff",borderRadius:"12px",padding:"16px",textAlign:"center",marginBottom:"16px",border:"1px solid #dbeafe"}}>
-            <p style={{fontSize:"13px",color:"#64748b",marginBottom:"4px"}}>Total a cobrar</p>
-            <p style={{fontSize:"32px",fontWeight:700,color:"#1d4ed8"}}>{formatCentavos(totalCentavos)}</p>
+          <div className="receipt-total-box">
+            <p className="receipt-total-label">Total a cobrar</p>
+            <p className="receipt-total-value">{formatCentavos(totalCentavos)}</p>
           </div>
           <div className="form-group">
             <label>Método de pago</label>
@@ -185,9 +185,9 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
                 onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
                 placeholder={`Mínimo ${formatCentavos(totalCentavos)}`} className={!montoValido && montoEntregado ? "error" : ""} />
               {cambioCentavos > 0 && (
-                <div style={{marginTop:"8px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:"8px",padding:"12px",textAlign:"center"}}>
-                  <p style={{fontSize:"13px",color:"#64748b"}}>Cambio a entregar</p>
-                  <p style={{fontSize:"24px",fontWeight:700,color:"#16a34a"}}>{formatCentavos(cambioCentavos)}</p>
+                <div className="receipt-change-box">
+                  <p className="receipt-change-label">Cambio a entregar</p>
+                  <p className="receipt-change-value">{formatCentavos(cambioCentavos)}</p>
                 </div>
               )}
             </div>
@@ -196,13 +196,13 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
             <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
               {deudorSel && (
                 <div>
-                  <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"8px",padding:"12px 14px"}}>
-                    <p style={{margin:0,fontSize:"13px",color:"#1e293b",fontWeight:600}}>Cliente: {deudorSel.nombre}</p>
-                    <p style={{margin:"4px 0 0",fontSize:"12px",color:"#64748b"}}>Deuda actual: <strong style={{color:"#dc2626"}}>{formatCentavos(deudorSel.deudaPendienteCentavos)}</strong></p>
-                    <p style={{margin:"2px 0 0",fontSize:"12px",color:"#1e293b"}}>Nueva deuda: <strong>{formatCentavos(deudorSel.deudaPendienteCentavos + totalCentavos)}</strong></p>
+                  <div className="receipt-panel">
+                    <p className="receipt-title">Cliente: {deudorSel.nombre}</p>
+                    <p className="receipt-line">Deuda actual: <strong className="receipt-danger">{formatCentavos(deudorSel.deudaPendienteCentavos)}</strong></p>
+                    <p className="receipt-line ink">Nueva deuda: <strong>{formatCentavos(deudorSel.deudaPendienteCentavos + totalCentavos)}</strong></p>
                   </div>
                   {deudorSel.deudaPendienteCentavos > 0 && (
-                    <div style={{marginTop:"6px",background:"#fef9c3",border:"1px solid #fde047",borderRadius:"8px",padding:"8px 12px",fontSize:"12px",color:"#854d0e",fontWeight:500}}>
+                    <div className="receipt-warning" style={{marginTop:"6px"}}>
                       <i className="fa-solid fa-exclamation-triangle" style={{marginRight:"4px"}}></i>
                       Tiene deuda pendiente
                     </div>
@@ -221,22 +221,22 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
               <div className="form-group" style={{margin:0}}>
                 <label>Cliente (cuenta corriente)</label>
                 <div style={{position:"relative"}}>
-                  <i className="fa-solid fa-search" style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"#94a3b8",fontSize:"14px"}}></i>
+                  <i className="fa-solid fa-search receipt-icon" style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",fontSize:"14px"}}></i>
                   <input type="text" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscá por nombre o documento..." style={{paddingLeft:"30px"}} />
-                  {buscando && <span style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:"#94a3b8"}}>Buscando...</span>}
+                  {buscando && <span className="receipt-faint" style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",fontSize:"11px"}}>Buscando...</span>}
                 </div>
               </div>
               {deudores.length > 0 && (
-                <div style={{border:"1px solid #e2e8f0",borderRadius:"8px",maxHeight:"160px",overflowY:"auto"}}>
+                <div className="receipt-results">
                   {deudores.map((d) => {
                     const seleccionado = deudorSel?.id === d.id;
                     return (
                       <button key={d.id} onClick={() => setDeudorSel(d)}
-                        style={{width:"100%",textAlign:"left",padding:"10px 14px",border:"none",borderBottom:"1px solid #f1f5f9",background:seleccionado?"#eff6ff":"transparent",cursor:"pointer",display:"block"}}>
-                        <p style={{fontWeight:600,fontSize:"14px",color:"#1e293b",margin:0}}>{d.nombre}</p>
-                        <div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#64748b"}}>
+                        className={`receipt-result-row${seleccionado ? " selected" : ""}`}>
+                        <p className="receipt-result-name">{d.nombre}</p>
+                        <div className="receipt-result-meta">
                           <span>{d.documento || "sin doc."}</span>
-                          <span style={{color:d.deudaPendienteCentavos>0?"#ef4444":"#16a34a",fontWeight:600}}>
+                          <span className={d.deudaPendienteCentavos>0?"receipt-amount-bad":"receipt-amount-ok"}>
                             Deuda: {formatCentavos(d.deudaPendienteCentavos)}
                           </span>
                         </div>
@@ -246,30 +246,30 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
                 </div>
               )}
               {deudorSel && (
-                <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"8px",padding:"12px"}}>
+                <div className="receipt-panel tight">
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                     <div>
-                      <p style={{fontWeight:600,color:"#1e293b",margin:0}}>{deudorSel.nombre}</p>
-                      <p style={{fontSize:"12px",color:"#64748b",margin:"2px 0 0"}}>Documento: {deudorSel.documento || "-"}</p>
+                      <p className="receipt-name">{deudorSel.nombre}</p>
+                      <p className="receipt-line" style={{margin:"2px 0 0"}}>Documento: {deudorSel.documento || "-"}</p>
                     </div>
-                    <button onClick={() => setDeudorSel(null)} style={{border:"none",background:"none",cursor:"pointer",color:"#94a3b8",padding:"4px"}}><i className="fa-solid fa-times"></i></button>
+                    <button onClick={() => setDeudorSel(null)} className="receipt-close"><i className="fa-solid fa-times"></i></button>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"8px",fontSize:"12px"}}>
-                    <span>Deuda actual: <strong style={{color:"#dc2626"}}>{formatCentavos(deudorSel.deudaPendienteCentavos)}</strong></span>
+                    <span>Deuda actual: <strong className="receipt-danger">{formatCentavos(deudorSel.deudaPendienteCentavos)}</strong></span>
                     <span>Límite: <strong>{deudorSel.limiteCreditoCentavos != null ? formatCentavos(deudorSel.limiteCreditoCentavos) : "sin límite"}</strong></span>
                   </div>
                   {advertencia && (
-                    <div style={{marginTop:"8px",background:"#fef9c3",border:"1px solid #fde047",borderRadius:"8px",padding:"8px 12px",fontSize:"12px",color:"#854d0e",fontWeight:500}}>
+                    <div className="receipt-warning" style={{marginTop:"8px"}}>
                       <i className="fa-solid fa-exclamation-triangle" style={{marginRight:"4px"}}></i>
                       Esta venta supera el límite de crédito del cliente. Deuda proyectada: {formatCentavos(deudorSel.deudaPendienteCentavos + totalCentavos)}
                     </div>
                   )}
                 </div>
               )}
-              <p style={{fontSize:"12px",color:"#94a3b8",margin:0}}>La venta se agregará a la cuenta corriente del cliente</p>
+              <p className="receipt-faint">La venta se agregará a la cuenta corriente del cliente</p>
             </div>
           )}
-          <div style={{display:"flex",gap:"12px",marginTop:"16px",paddingTop:"16px",borderTop:"1px solid #e2e8f0"}}>
+          <div className="receipt-actions">
             <button onClick={onClose} className="btn-secondary" style={{flex:1}} disabled={isSubmitting}>Cancelar</button>
             <button onClick={handleConfirm} disabled={metodoPago==="credito"?!deudorSel:!montoValido||isSubmitting}
               className="btn-success" style={{flex:1}}>
@@ -287,7 +287,7 @@ function ModalCobro({ totalCentavos, onConfirm, onClose, isSubmitting }) {
           aria-label="Boleta de pago"
           style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(4px)",zIndex:210,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px",overflowY:"auto"}}
         >
-          <div style={{background:"#fff",borderRadius:"12px",padding:"18px",width:"100%",maxWidth:"460px"}}>
+          <div className="receipt-paper">
             <BoletaPago
               deudor={boleta.deudor}
               pagos={boleta.pagos}
@@ -572,7 +572,7 @@ export default function PuntoDeVenta() {
   // React Query — productos cacheados (comparte caché con Productos)
   // Respuesta DIRECTA del IPC: `productos.list` devuelve `{ filas, total }`. El `r.data?.data` de
   // la web era el desarrollo del sobre de axios, y en el desktop no existe ese sobre: desenvolver
-  // `undefined` a `|| []` convertiría un fallo en un catálogo vacío silencioso.
+  // `undefined` a `|| []` convertiría un fallo en una lista de productos vacía silenciosa.
   const { data: productosAll = [] } = useQuery({
     queryKey: ["productos", "all-for-pos"],
     queryFn: () => productosAPI.listar({ limit: 500 }).then((r) => r.filas || []),
@@ -689,46 +689,46 @@ export default function PuntoDeVenta() {
   // `conStock` y `sinStock` vacíos significaban las tres cosas siguientes con el mismo mensaje,
   // "No se encontraron productos", y las tres necesitan una acción distinta:
   //
-  //   1. PRIMERA VEZ — el catálogo está VACÍO de verdad. Ocurre en cada instalación nueva, que es
+  //   1. PRIMERA VEZ — la lista de productos está VACÍA de verdad. Ocurre en cada instalación nueva, que es
   //      el primer minuto de uso de una app que el usuario acaba de instalar. Decir "no se
   //      encontraron" suena a que la búsqueda falló, cuando en realidad no hay nada que buscar y
   //      el POS queda entero —productos, escáner, balanza, venta— inalcanzable sin que ninguna de
-  //      esas pantallas avise que falta algo. Por eso acá va el botón para cargar el catálogo de
+  //      esas pantallas avise que falta algo. Por eso acá va el botón para cargar los productos de
   //      ejemplo.
-  //   2. BÚSQUEDA — hay catálogo pero el texto no matchea. Corregir el texto es la acción.
-  //   3. CATEGORÍA — hay catálogo pero se está mirando una categoría vacía o sin stock. Volver a
+  //   2. BÚSQUEDA — hay productos pero el texto no matchea. Corregir el texto es la acción.
+  //   3. CATEGORÍA — hay productos pero se está mirando una categoría vacía o sin stock. Volver a
   //      "Todas" es la acción.
   //
-  // La distinción se hace contra `productos` (el catálogo entero, sin filtrar) y no contra
+  // La distinción se hace contra `productos` (los productos enteros, sin filtrar) y no contra
   // `productosFiltrados`, porque sólo la primera responde a la pregunta "¿es la primera vez?".
-  const catalogoVacio = productos.length === 0;
+  const productosVacio = productos.length === 0;
   const filtrando = filtro.trim() !== "" || categoriaActiva !== "Todas";
   const [confirmDemo, setConfirmDemo] = useState(false);
 
   // La siembra usa `productos.create`, el MISMO camino que usa la pantalla de Productos. No se
   // agregó ninguna operación al contrato IPC — sigue en 89 — ni un atajo de INSERT.
   // Un producto que entrara por una puerta distinta no dispararía las mismas validaciones que uno
-  // cargado de verdad, y un catálogo de ejemplo que esquiva las reglas de un producto real no es
+  // cargado de verdad, y unos productos de ejemplo que esquivan las reglas de un producto real no son
   // una demostración de la app: es un dato basura con forma de app.
   //
   // El `withGuard` que se usa es el MISMO de la venta, no una segunda instancia. Dos guards en la
   // misma pantalla significan dos candados: el usuario podía apretar «Cargar ejemplo» mientras una
-  // venta estaba en vuelo, y las dos escrituras al mismo catálogo se cruzaban.
-  const sembrarCatalogoDemo = async () => {
+  // venta estaba en vuelo, y las dos escrituras a la misma lista de productos se cruzaban.
+  const sembrarProductosDemo = async () => {
     setConfirmDemo(false);
     await withGuard(async () => {
       try {
-        for (const p of CATALOGO_DEMO) {
+        for (const p of PRODUCTOS_DEMO) {
           await productosAPI.crear(demoToProductoInput(p));
         }
         await queryClient.invalidateQueries({ queryKey: ["productos"] });
         showToast(
-          `Catálogo de ejemplo cargado: ${CATALOGO_DEMO.length} productos. Son ficticios; borralos desde Productos cuando quieras.`,
+                    `Productos de ejemplo cargados: ${PRODUCTOS_DEMO.length} productos. Son ficticios; borralos desde Productos cuando quieras.`,
           "success",
           6000
         );
       } catch (err) {
-        showToast(mensajeDeError(err) || "No se pudo cargar el catálogo de ejemplo", "error");
+        showToast(mensajeDeError(err) || "No se pudieron cargar los productos de ejemplo", "error");
       }
     });
   };
@@ -1062,6 +1062,9 @@ export default function PuntoDeVenta() {
 
   return (
     <div className="pos-container">
+      {/* El POS conserva su propio toast inline en lugar de react-toastify (el sistema
+          de notificaciones del resto de la app, estilado en styles/index.css). Los dos
+          conviven a propósito: unificarlos requiere un refactor mayor. */}
       {toast && <div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:100,padding:"12px 20px",borderRadius:"12px",boxShadow:"0 4px 12px rgba(0,0,0,0.15)",color:"#fff",fontSize:"14px",fontWeight:600,display:"flex",alignItems:"center",gap:"8px",whiteSpace:"pre-line",background:toast.type==="error"?"#ef4444":toast.type==="warn"?"#f59e0b":"#22c55e"}}>{toast.msg}</div>}
 
       {modalCobro && <ModalCobro totalCentavos={totalCentavos} onConfirm={handleConfirmarVenta} onClose={() => setModalCobro(false)} isSubmitting={isSubmitting} />}
@@ -1168,28 +1171,28 @@ export default function PuntoDeVenta() {
         <div className="pos-left">
           <div className="pos-scroll">
             {conStock.length === 0 && sinStock.length === 0 ? (
-              catalogoVacio ? (
-                /* PRIMERA VEZ. El POS acaba de instalarse y el catálogo está vacío de verdad. Este
+              productosVacio ? (
+                /* PRIMERA VEZ. El POS acaba de instalarse y la lista de productos está vacía de verdad. Este
                    caso NOexistía antes: caía en el mismo mensaje de búsqueda, de modo que el primer
                    minuto de uso de una app recién instalada era una grilla vacía sin explicación y
                    sin salida — sin productos no hay venta, ni escáner, ni balanza. */
                 <div className="pos-primera-vez">
                   <i className="fa-solid fa-box-open" style={{fontSize:"36px"}} aria-hidden="true"></i>
-                  <h3>Aún no cargaste ningún producto</h3>
+                    <h3>Aún no cargaste ningún producto</h3>
                   <p style={{maxWidth:"420px",textAlign:"center",lineHeight:"1.5"}}>
                     Para poder cobrar necesitás al menos un producto con precio y stock.
-                    Podés empezar con un catálogo de ejemplo y borrarlo cuando quieras.
+                    Podés empezar con productos de ejemplo y borrarlos cuando quieras.
                   </p>
                   {confirmDemo ? (
-                    <div className="pos-primera-vez-confirm" role="group" aria-label="Confirmar carga del catálogo de ejemplo">
+                    <div className="pos-primera-vez-confirm" role="group"                       aria-label="Confirmar carga de productos de ejemplo">
                       <p style={{textAlign:"center",maxWidth:"420px",lineHeight:"1.5"}}>
-                        Se van a crear <strong>{CATALOGO_DEMO.length} productos ficticios</strong> con
+                        Se van a crear <strong>{PRODUCTOS_DEMO.length} productos ficticios</strong> con
                         precios y stock de ejemplo. No se borra nada existente, y podés eliminarlos
                         desde <strong>Productos</strong> cuando cargues los tuyos.
                       </p>
                       <div style={{display:"flex",gap:"8px"}}>
-                        <button className="btn-primary" onClick={sembrarCatalogoDemo} disabled={isSubmitting}>
-                          {isSubmitting ? "Cargando..." : `Sí, cargar ${CATALOGO_DEMO.length} productos de ejemplo`}
+                        <button className="btn-primary" onClick={sembrarProductosDemo} disabled={isSubmitting}>
+                          {isSubmitting ? "Cargando..." : `Sí, cargar ${PRODUCTOS_DEMO.length} productos de ejemplo`}
                         </button>
                         <button className="btn-secondary" onClick={() => setConfirmDemo(false)} disabled={isSubmitting}>
                           Cancelar
@@ -1201,15 +1204,15 @@ export default function PuntoDeVenta() {
                        build no tiene login, así que la pantalla de Productos es un placeholder y no
                        es a dónde puede ir el cajero: ofrecer «Cargar mis productos» como alternativa
                        sería mandar a un sitio que dice «todavía no existe». Sin productos esta
-                       pantalla no puede cobrar nada, entonces sembrar el catálogo es la acción, no
+                       pantalla no puede cobrar nada, entonces sembrar los productos es la acción, no
                        un adorno. */
                     <button className="btn-primary" onClick={() => setConfirmDemo(true)}>
-                      <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Cargar catálogo de ejemplo
+                      <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Cargar productos de ejemplo
                     </button>
                   )}
                 </div>
               ) : filtrando ? (
-                /* HAY catálogo pero el filtro no matchea. La acción es cambiar el filtro, no cargar
+                /* HAY productos pero el filtro no matchea. La acción es cambiar el filtro, no cargar
                    datos: ofrecer «cargar ejemplo» acá metería productos de mentira en una tienda que
                    ya tiene los suyos. */
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
@@ -1220,7 +1223,7 @@ export default function PuntoDeVenta() {
                   </button>
                 </div>
               ) : (
-                /* Hay catálogo y no hay filtros, pero los productos visibles están todos sin stock.
+                /* Hay productos y no hay filtros, pero los productos visibles están todos sin stock.
                    Es information, no un vacío: el artículo existe y hay que reponerlo. */
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"300px",color:"var(--kanagawa-comment)",gap:"12px"}}>
                   <i className="fa-solid fa-triangle-exclamation" style={{fontSize:"32px"}} aria-hidden="true"></i>
@@ -1316,7 +1319,7 @@ export default function PuntoDeVenta() {
             {ticket.length === 0 ? (
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"200px",color:"var(--kanagawa-comment)",gap:"8px"}}>
                 <i className="fa-solid fa-cash-register" style={{fontSize:"36px"}}></i>
-                <p style={{fontSize:"14px"}}>Seleccioná productos del catálogo</p>
+                <p style={{fontSize:"14px"}}>Seleccioná productos de la lista</p>
               </div>
             ) : (
               ticket.map((item) => {
@@ -1394,8 +1397,8 @@ export default function PuntoDeVenta() {
                 so the only way to learn it was to read the source. */}
             {ticket.length > 0 && !procesando && !isSubmitting && (
               <div className="cart-hint" style={{textAlign:"center",fontSize:"11px",color:"var(--kanagawa-fg-muted)",marginTop:"6px"}}>
-                <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>F2</kbd>
-                {" "}para cobrar · <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border-dim)",borderRadius:"4px",padding:"1px 5px"}}>Esc</kbd>
+                <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border)",borderRadius:"4px",padding:"1px 5px"}}>F2</kbd>
+                {" "}para cobrar · <kbd style={{fontFamily:"inherit",border:"1px solid var(--kanagawa-border)",borderRadius:"4px",padding:"1px 5px"}}>Esc</kbd>
                 {" "}para cerrar
               </div>
             )}

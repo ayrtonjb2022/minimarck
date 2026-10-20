@@ -595,7 +595,7 @@ export function runComprasDrive(win, db) {
 
     // ---- 0. a shelf to buy onto ------------------------------------------------------------
     // Said out loud for the same reason the other two drives say it: a fresh install has no
-    // catalogue. The product is WEIGHED, because a fractional purchase is the point of this drive
+    // products. The product is WEIGHED, because a fractional purchase is the point of this drive
     // and a fractional purchase of a discrete item would be nonsense.
     if (db1(`SELECT COUNT(*) AS n FROM productos WHERE deleted_at IS NULL`).n === 0) {
       const usuario = db1(`SELECT id FROM users ORDER BY id LIMIT 1`)
@@ -628,7 +628,7 @@ export function runComprasDrive(win, db) {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'kg')`
         )
         .run('Miel de campo 1kg', 'MIEL-1', 15000, 9000, 6000, 500, usuario.id, negocioId)
-      say('  (la base nueva no trae catálogo: se cargan "Queso artesanal" pesado, 10 kg a $200,00, y "Miel de campo 1kg")')
+      say('  (la base nueva no trae productos: se cargan "Queso artesanal" pesado, 10 kg a $200,00, y "Miel de campo 1kg")')
       await recargar(win)
     }
     const producto = db1(`SELECT * FROM productos WHERE codigo = 'QUESO-1' AND deleted_at IS NULL`)

@@ -101,9 +101,9 @@ const Panel = () => {
 
   return (
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Panel</h2>
-        <div className="bar" role="group" aria-label="Período">
+        <div className="toolbar" role="group" aria-label="Período">
           {PERIODOS.map((per) => (
             <button
               key={per.clave}

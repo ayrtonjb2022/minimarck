@@ -1,4 +1,4 @@
-/**
+﻿/**
  * THE `auth` GROUP — all five contract operations, none of them 501 any more.
  *
  * Every handler here takes `{ conn, session }` instead of `{ conn }`, because `auth.login`,
@@ -13,7 +13,7 @@
  * is empty until somebody signs in, and an empty session is the signal the renderer uses to
  * show the sign-in panel.
  */
-import { login, logout, me, registrar, changePassword } from '../auth/auth.service.js'
+import { login, logout, me, registrar, changePassword, resetPassword } from '../auth/auth.service.js'
 import { createSession } from '../auth/session.js'
 
 export function registerAuthHandlers(registry, { conn, session }) {
@@ -58,3 +58,4 @@ export function registerAuthHandlers(registry, { conn, session }) {
 
   return registry
 }
+

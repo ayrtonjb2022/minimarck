@@ -6,7 +6,7 @@ import { formatCantidad, milliAEntrada } from "../../utils/formatters";
 import Modal from "./Modal";
 
 /**
- * StockInPanel — restore stock to a product the catalogue already knows.
+ * StockInPanel — restore stock to a product the product list already knows.
  *
  * ── WHY A SCAN, AND WHY THIS PANEL EXISTS ─────────────────────────────────────────────────────
  *

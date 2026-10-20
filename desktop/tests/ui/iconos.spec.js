@@ -19,7 +19,7 @@ import { join, relative, resolve } from 'node:path'
  * That is not hypothetical. Seventeen classes were in that state when this test was written, and
  * they were the ones an operator looks at most: the "Buscar" button on the debtors screen, the
  * customers/searches/suppliers entries in the top bar, six of the ten report tabs, and the "Cargar
- * catálogo de ejemplo" button on a brand-new install. Nothing in the suite could see any of it,
+ * productos de ejemplo" button on a brand-new install. Nothing in the suite could see any of it,
  * because a test asserting "the app rendered" is satisfied by an empty box.
  *
  * ── WHY BOTH DIRECTIONS ARE ASSERTED ──────────────────────────────────────────────────────────

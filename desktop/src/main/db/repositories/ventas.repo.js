@@ -277,7 +277,7 @@ export function crear(ctx, body) {
 
     for (const linea of lineas) {
       const producto = linea.productoId === null ? null : productos.get(linea.productoId)
-      // A free-text POS line may name its own price and cost; a catalog line takes the product's
+      // A free-text POS line may name its own price and cost; a product line takes the product's
       // price, and the SALE-2 test exists because the web does exactly this.
       const precioUnitarioCentavos =
         linea.precioUnitario !== null

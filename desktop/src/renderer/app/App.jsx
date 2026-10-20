@@ -316,7 +316,7 @@ const App = () => {
           </AppShell>
         }
       />
-      {/* The catalogue, and the categories it is filed under.
+      {/* The products, and the categories they are filed under.
           NOT behind `CajaGuard`, for the same reason `Proveedores` is not: pricing a product and
           organising the shelf are not till operations, and `productos.*` never touches the drawer.
           Putting them behind the open-register guard would mean a shopkeeper cannot fix a price on

@@ -98,7 +98,7 @@ describe('the seed still seeds a file that has no shop', () => {
     //
     // This used to ask the question of a SEEDED shop with `DELETE FROM negocios` and
     // `DELETE FROM users` laid on top. That was never the same thing — the seed's identity row,
-    // its catalogue and everything it had touched were all still there — and since
+    // its products and everything it had touched were all still there — and since
     // 003_ultimo_admin.sql it is also IMPOSSIBLE, because the engine now refuses to delete the
     // only owner. A test that needs a shop with nobody in it can no longer be written by emptying
     // one, and that is the correct state of affairs: the answer to "how do I get an empty shop?"

@@ -1,5 +1,5 @@
 /**
- * `npm run db:demo` — put a small, DELIBERATE catalog in the real shop file so the till can be
+ * `npm run db:demo` — put a small, DELIBERATE product list in the real shop file so the till can be
  * rung up by hand.
  *
  * WHY THIS IS A COMMAND AND NOT A SEED. `src/main/db/seed.js` is the first-run seed and it is
@@ -9,10 +9,10 @@
  *
  * But an empty grid is also a screen nobody can evaluate. The POS on a fresh profile shows
  * «No se encontraron productos», there is nothing to click, and the only honest description of
- * the sale flow would be a sentence in a document. So the catalog is opt-in: a person types this
+ * the sale flow would be a sentence in a document. So the product list is opt-in: a person types this
  * command, knows exactly what it did, and `db:reset` throws it away.
  *
- * THE CATALOG GOES IN THROUGH THE REPOSITORIES, not through raw INSERTs. That is the whole point
+ * THE PRODUCTS GO IN THROUGH THE REPOSITORIES, not through raw INSERTs. That is the whole point
  * of using this route: `productos.crear` is the code the app runs, so a demo product cannot
  * differ from a real one in a column the seed forgot. Every price below is in PESOS, because
  * that is the unit `productos.crear` takes.
@@ -45,12 +45,12 @@ const TABLES = tablesCreatedBy(
 )
 
 /**
- * The demo shop catalogue is NOT defined here. It lives in `src/shared/demo-catalogo.js` and is
+ * The demo shop product list is NOT defined here. It lives in `src/shared/demo-productos.js` and is
  * imported, so this terminal route and the renderer's first-run button seed byte-identical data.
- * Two copies would drift, and the day they did, the button in the app would load a catalogue the
+ * Two copies would drift, and the day they did, the button in the app would load products the
  * script no longer matched.
  */
-const { CATALOGO_DEMO, demoToProductoInput } = await import('../src/shared/demo-catalogo.js')
+const { PRODUCTOS_DEMO, demoToProductoInput } = await import('../src/shared/demo-productos.js')
 
 const paths = resolveDataPaths(process.env.APPDATA ? path.join(process.env.APPDATA, 'MiniMarck') : '', process.env)
 if (!paths.dbFile) {
@@ -73,7 +73,7 @@ try {
     actorId: identity.actorId
   }
 
-  console.log('db:demo — catalogo de prueba (opt-in, se borra con db:reset)')
+  console.log('db:demo — productos de prueba (opt-in, se borra con db:reset)')
   console.log(`  negocio : ${identity.negocioNombre} (${DEFAULT_NEGOCIO.nombre === identity.negocioNombre ? identity.negocioNombre : identity.negocioNombre})`)
   console.log(`  operador: ${identity.operadorNombre} (${identity.rol})`)
   console.log(`  archivo : ${paths.dbFile}`)
@@ -81,7 +81,7 @@ try {
 
   const creados = []
   const existentes = []
-  for (const p of CATALOGO_DEMO) {
+  for (const p of PRODUCTOS_DEMO) {
     const yaEsta = conn.db
       .prepare('SELECT id FROM productos WHERE negocio_id = ? AND codigo = ?')
       .get(ctx.negocioId, p.codigo)

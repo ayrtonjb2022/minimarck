@@ -8,7 +8,7 @@ import { buscarPorCodigo, crear, listar, obtener, actualizar, eliminar } from '.
  * ALL SIX contract operations are implemented: `list`, `get`, `findByCode`, `create`, `update` and
  * `remove`. This header used to say that `update` and `remove` had no handler and answered
  * NOT_IMPLEMENTED (501) — true when the POS was the only screen, and false from the moment the
- * catalogue screen landed. The operations were added without this paragraph following them, which
+ * products screen landed. The operations were added without this paragraph following them, which
  * is how a file ends up describing a build that no longer exists.
  *
  * WHY THE READS EXIST. A point of sale cannot show a grid it has no query for, and
@@ -26,7 +26,7 @@ export function registerProductosHandlers(registry, { conn }) {
 
   registry.register('productos', {
     /**
-     * The catalogue. One query serves the POS grid, the product table and the barcode lookup's
+     * The product list. One query serves the POS grid, the product table and the barcode lookup's
      * fallback filter, and it is scoped to active rows so a soft-deleted product cannot be sold.
      */
     list: (payload, reqCtx) => {
@@ -41,7 +41,7 @@ export function registerProductosHandlers(registry, { conn }) {
         // it gets the safe answer.
         soloActivos: payload?.soloActivos ?? true,
         // `soloBajoStock` is opt-in the other way: the default answer is the whole (filtered)
-        // catalogue, and only the products screen asks for the under-stock subset.
+        // product list, and only the products screen asks for the under-stock subset.
         soloBajoStock: payload?.soloBajoStock ?? false
       })
     },

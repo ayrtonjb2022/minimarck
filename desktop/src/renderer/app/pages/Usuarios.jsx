@@ -22,7 +22,7 @@ import Modal from "../components/common/Modal";
  * who mysteriously cannot work the till.
  */
 const Usuarios = () => {
-  const { personas, register, negocio, actual, restablecerPassword } = useAuth();
+  const { personas, register, negocio, actual, restablecerPassword, resetPassword } = useAuth();
   const [abierto, setAbierto] = useState(false);
   const [nombre, setNombre] = useState("");
   const [nombreAcceso, setNombreAcceso] = useState("");
@@ -93,14 +93,17 @@ const Usuarios = () => {
   };
 
   return (
-    <div className="card">
-      <div className="card-header">
-        <h3>Usuarios de {negocio?.nombre || "la tienda"}</h3>
-        <button className="btn-primary" onClick={() => { setAbierto(true); setExito(null); }}>
-          <i className="fa-solid fa-user-plus"></i> Nuevo empleado
-        </button>
+    <div>
+      <div className="toolbar">
+        <h2>Usuarios de {negocio?.nombre || "la tienda"}</h2>
+        <div className="toolbar">
+          <button className="btn-primary" onClick={() => { setAbierto(true); setExito(null); }}>
+            <i className="fa-solid fa-user-plus"></i> Nuevo empleado
+          </button>
+        </div>
       </div>
-      <table className="table">
+      <div className="table-container">
+        <table>
         <thead>
           <tr>
             <th>Nombre</th>
@@ -115,7 +118,7 @@ const Usuarios = () => {
             <tr key={p.id}>
               <td>{p.nombre}</td>
               <td>{p.email}</td>
-              <td>{p.rol}</td>
+              <td><span className={`rol-badge ${p.rol}`}>{p.rol}</span></td>
               <td>
                 {p.puedeIngresar
                   ? p.ultimoAcceso
@@ -145,6 +148,7 @@ const Usuarios = () => {
           ))}
         </tbody>
       </table>
+      </div>
 
       {exito && <div className="acceso-ok">{exito}</div>}
 

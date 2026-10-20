@@ -199,9 +199,9 @@ const Deudas = () => {
 
   return (
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Deudas del negocio</h2>
-        <div className="bar">
+        <div className="toolbar">
           <input
             className="filter-input"
             type="search"
@@ -251,7 +251,7 @@ const Deudas = () => {
         </div>
       ) : (
         <div className="table-container">
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Nombre</th>
@@ -292,7 +292,7 @@ const Deudas = () => {
                         percentage is read faster than two amounts side by side. */}
                     <div
                       style={{
-                        background: "var(--kanagawa-surface0)",
+                        background: "var(--ctp-surface0)",
                         borderRadius: 4,
                         height: 8,
                         overflow: "hidden"
@@ -460,7 +460,7 @@ const Deudas = () => {
           {historial.pagos.length === 0 ? (
             <p>Todavía no hay pagos registrados de esta deuda.</p>
           ) : (
-            <table className="product-list">
+            <table>
               <thead>
                 <tr>
                   <th>Fecha</th>

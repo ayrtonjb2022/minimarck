@@ -86,7 +86,7 @@ export function registerBackupHandlers(registry, { conn, paths, send = () => {} 
      *
      * `db:changed` IS EMITTED AFTER A SUCCESSFUL RESTORE, and it is the one place in this app where
      * that topic means exactly what its name says: every number the renderer is holding — the open
-     * till, the catalogue, the reports — belongs to a database that no longer exists. A screen that
+     * till, the products, the reports — belongs to a database that no longer exists. A screen that
      * kept showing them would be showing another shop's day.
      */
     restore: async (payload) => {

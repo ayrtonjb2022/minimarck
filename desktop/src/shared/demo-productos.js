@@ -1,18 +1,18 @@
 /**
- * The demo catalogue. ONE definition, two consumers.
+ * The demo products. ONE definition, two consumers.
  *
- * WHY A SHARED MODULE. The catalogue used to live only inside `scripts/db-demo.mjs`, which meant the
+ * WHY A SHARED MODULE. The demo used to live only inside `scripts/db-demo.mjs`, which meant the
  * only way to get a product into a fresh install was to open a terminal on the developer's machine
  * and run an npm script. That is not a first-run experience for a shop: a real owner double-clicks
  * `MiniMarck Setup.exe`, and has no npm, no repo, and no reason to believe a terminal is involved.
- * With an empty catalogue the POS rendered "No se encontraron productos" and every product card,
+ * With no products the POS rendered "No se encontraron productos" and every product card,
  * every cash sale, the barcode scanner and the scale were all unreachable — the app looked broken
  * when in fact it was simply empty.
  *
- * So the catalogue is defined here, once, and imported by BOTH `scripts/db-demo.mjs` (the terminal
+ * So the list is defined here, once, and imported by BOTH `scripts/db-demo.mjs` (the terminal
  * route, still useful for a developer) and the renderer's first-run button (the route the shop
  * actually has). Two copies of this list would drift, and the day they did, the button would load a
- * catalogue that the script no longer matched — which is the kind of bug that only shows up on
+ * list that the script no longer matched — which is the kind of bug that only shows up on
  * someone else's machine.
  *
  * WHY THE PRICES AND QUANTITIES ARE IN PESOS AND WHOLE UNITS. `productos.crear` parses pesos to
@@ -21,11 +21,11 @@
  * means this list is a fixture of INPUTS, not of storage.
  *
  * WHY ONE PRODUCT IS WEIGHED, DELIBERATELY. `Queso artesanal` is sold by the kilo. The scale is the
- * part of this app with the longest history of silent arithmetic bugs, and a demo catalogue with
+ * part of this app with the longest history of silent arithmetic bugs, and a demo with
  * nothing to weigh would let every one of them pass unnoticed. A weighed product in the demo is not
  * decoration; it is the cheapest regression test that a human will ever run.
  */
-export const CATALOGO_DEMO = [
+export const PRODUCTOS_DEMO = [
   { nombre: 'Queso artesanal', codigo: '7790123000015', precio: 2000, costo: 1200, stock: 12, unidad: 'kg' },
   { nombre: 'Pan de molde', codigo: '7790123000022', precio: 850, costo: 500, stock: 40, unidad: 'unidad' },
   { nombre: 'Leche entera 1 L', codigo: '7790123000039', precio: 1200, costo: 900, stock: 60, unidad: 'unidad' },

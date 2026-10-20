@@ -14,7 +14,7 @@
  * Every one of those is done through the real window with real keystrokes. The sale is
  * made through the real POS: click the product, F2, take the money. Only the shelf is
  * stocked directly, and the drive says so out loud, because a fresh install has no
- * catalogue and pretending otherwise would be a lie in a file whose job is to be
+ * products and pretending otherwise would be a lie in a file whose job is to be
  * believed.
  *
  * WHY THE DRAWER IS CHECKED TO THE CENTAVO. The till is money. A handover that loses
@@ -157,7 +157,7 @@ export function runHandoverDrive(win, db) {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'unidad')`
         )
         .run('Gaseosa 500ml', 'DRINK-500', 1500, 900, 24000, 6000, duena.id, negocio.id)
-      say('  (la base nueva no trae catálogo: se carga una "Gaseosa 500ml" a $15,00 para poder cobrar)')
+      say('  (la base nueva no trae productos: se carga una "Gaseosa 500ml" a $15,00 para poder cobrar)')
       await recargar(win)
     }
 

@@ -15,13 +15,13 @@ const secciones = [
   {
     icon: "fa-solid fa-box",
     titulo: "Productos",
-    desc: "Gestioná tu catálogo: alta, edición y baja de productos. Cada producto tiene nombre, código, precio de venta y compra, stock y stock mínimo para alertas. El plan Básico permite hasta 500 productos.",
+    desc: "Gestioná tus productos: alta, edición y baja. Cada producto tiene nombre, código, precio de venta y compra, stock y stock mínimo para alertas. El plan Básico permite hasta 500 productos.",
     atajos: "Ctrl+3",
   },
   {
     icon: "fa-solid fa-tags",
     titulo: "Categorías",
-    desc: "Organizá productos por categorías para filtrar y ordenar mejor tu catálogo.",
+    desc: "Organizá productos por categorías para filtrar y ordenar mejor tus productos.",
   },
   {
     icon: "fa-solid fa-truck",
@@ -102,7 +102,7 @@ export default function HelpModal({ onClose }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   <i className={s.icon} style={{ color: "var(--kanagawa-blue)", fontSize: 16, width: 20 }}></i>
                   <span style={{ fontWeight: 600, fontSize: 14, color: "var(--kanagawa-fg)" }}>{s.titulo}</span>
-                  {s.atajos && <span style={{ marginLeft: "auto", fontSize: 10, background: "var(--kanagawa-surface0)", padding: "2px 6px", borderRadius: 4, color: "var(--kanagawa-subtext0)", fontFamily: "monospace" }}>{s.atajos}</span>}
+                  {s.atajos && <span style={{ marginLeft: "auto", fontSize: 10, background: "var(--ctp-surface0)", padding: "2px 6px", borderRadius: 4, color: "var(--ctp-subtext0)", fontFamily: "monospace" }}>{s.atajos}</span>}
                 </div>
                 <p style={{ fontSize: 12, color: "var(--kanagawa-fg-muted)", lineHeight: 1.5, margin: 0 }}>{s.desc}</p>
               </div>

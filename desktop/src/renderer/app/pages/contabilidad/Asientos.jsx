@@ -207,9 +207,9 @@ const Asientos = ({ cuentas, cargandoCuentas }) => {
 
   return (
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Libro diario</h2>
-        <div className="bar">
+        <div className="toolbar">
           <input
             className="filter-input"
             type="search"
@@ -267,7 +267,7 @@ const Asientos = ({ cuentas, cargandoCuentas }) => {
         </div>
       ) : (
         <div className="table-container">
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Fecha</th>
@@ -337,7 +337,7 @@ const Asientos = ({ cuentas, cargandoCuentas }) => {
             {formatDate(detalle.fecha)} · {ETIQUETA_TIPO[detalle.tipo] ?? detalle.tipo}
             {detalle.referencia ? ` · referencia ${detalle.referencia}` : ""}
           </p>
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Código</th>
@@ -445,7 +445,7 @@ const Asientos = ({ cuentas, cargandoCuentas }) => {
 
             <h3 className="mm-sub">Partidas</h3>
             <div className="table-container">
-              <table className="product-list">
+              <table>
                 <thead>
                   <tr>
                     <th>Cuenta</th>

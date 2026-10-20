@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { comprasAPI } from "../api/compras";
 import { proveedoresAPI } from "../api/proveedores";
 import { productosAPI } from "../api/productos";
@@ -52,6 +52,11 @@ const METODOS = [
 const METODO_LABEL = { efectivo: "Efectivo", tarjeta: "Tarjeta", credito: "Crédito" };
 
 const ESTADO_LABEL = { pendiente: "Pendiente", completada: "Completada", cancelada: "Cancelada" };
+
+// The `status` badge classes are shared with Ventas: `paid`/`pending`/`cancelled`. A purchase's
+// `estado` is `completada`/`pendiente`/`cancelada`, so it needs its own map — interpolating the
+// raw value (`status-${estado}`) produced `status-completada`, a class that exists nowhere.
+const ESTADO_CLASS = { pendiente: "pending", completada: "paid", cancelada: "cancelled" };
 
 const Compras = () => {
   const [compras, setCompras] = useState([]);
@@ -243,9 +248,9 @@ const Compras = () => {
     // nothing in a react-router app ever adds `.active`. With that class the whole screen rendered
     // invisible while every selector kept matching it. Deudores and Ventas start from a bare `<div>`.
     <div>
-      <div className="bar">
+      <div className="toolbar">
         <h2>Compras</h2>
-        <div className="bar">
+        <div className="toolbar">
           <input
             className="filter-input"
             type="search"
@@ -283,7 +288,7 @@ const Compras = () => {
         </div>
       ) : (
         <div className="table-container">
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Folio</th>
@@ -305,7 +310,7 @@ const Compras = () => {
                   {/* The method the repository derived from the account this purchase credited. */}
                   <td>{c.metodoPago ? METODO_LABEL[c.metodoPago] : "—"}</td>
                   <td>
-                    <span className={`status status-${c.estado}`}>{ESTADO_LABEL[c.estado]}</span>
+                    <span className={`status ${ESTADO_CLASS[c.estado]}`}>{ESTADO_LABEL[c.estado]}</span>
                   </td>
                   <td>
                     <button className="btn-secondary" onClick={() => ver(c)}>
@@ -527,7 +532,7 @@ const Compras = () => {
           </div>
 
           <h3>Productos</h3>
-          <table className="product-list">
+          <table>
             <thead>
               <tr>
                 <th>Producto</th>
@@ -551,7 +556,7 @@ const Compras = () => {
           {detalle.asiento ? (
             <>
               <h3>Asiento contable</h3>
-              <table className="product-list">
+              <table>
                 <thead>
                   <tr>
                     <th>Cuenta</th>

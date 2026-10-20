@@ -81,6 +81,26 @@ win:
   # shipping a self-signed certificate, which teaches users to click through warnings permanently.
 
 nsis:
+  # CUSTOM INSTALLER SCRIPT. Read `build/installer.nsi` before touching this line.
+  #
+  # electron-builder normally produces the uninstaller by COMPILING a throwaway NSIS stub with
+  # `BUILD_UNINSTALLER` defined, RUNNING it at build time, and harvesting the `Uninstall.exe` it
+  # writes (`NsisTarget.computeScriptAndSignUninstaller`). On a Windows build host that step is a
+  # headless GUI process, and here it never returns: it stops on a modal "NSIS Error: Error
+  # writing temporary file." dialog, so electron-builder waits out its 120 s timeout, kills the
+  # process and fails with `ERR_ELECTRON_BUILDER_CANNOT_EXECUTE ... Exit code: null`. The payload
+  # and the rest of the build are fine; the final installer is simply never assembled. Everything
+  # else was ruled out by probe: NSIS itself, `WriteUninstaller`, `$PLUGINSDIR` extraction, the
+  # plugin calls, the working directory and stale `%TEMP%\ns*.tmp` scratch dirs all work on this
+  # machine.
+  #
+  # Setting `script` makes electron-builder skip the harvest entirely, so the script owns the
+  # uninstaller: it calls `WriteUninstaller` at INSTALL time, which is a native NSIS instruction,
+  # needs no elevation, and cannot fail this way. The rest of the script deliberately mirrors
+  # electron-builder's own templates (same payload extraction macro, same per-user registry layout,
+  # same shortcuts) so what lands on the till is unchanged.
+  script: build/installer.nsi
+
   # `oneClick: false` -> the ASSISTED wizard, not the one-shot installer.
   #
   # This is the single most user-visible decision in the file. electron-builder's default is a
